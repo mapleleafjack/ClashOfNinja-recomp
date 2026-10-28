@@ -24,8 +24,11 @@ orig/
 build/
 build-*/
 
-# The memory card and input logs.
+# The memory card and input logs. The runtime writes `saves/` beside the current
+# directory, so a run started from the project root leaves one there too.
 naruto/saves/
+/saves/
+/inputs/
 
 # The launcher's build output.
 launcher/build/
