@@ -1,0 +1,38 @@
+# Nothing derived from the game may be committed. The extracted disc, the build output
+# and the memory card all come from the user's own copy. `tools/check_publish.py` proves
+# it before anything is published.
+
+# The extracted disc, and any disc image in any format nodtool reads.
+naruto/rom/
+*.iso
+*.ciso
+*.rvz
+*.wia
+*.gcz
+*.wbfs
+*.tgc
+*.nfs
+*.h4m
+*.trk
+*.bnr
+*.dol
+
+# Build output, dtk output, and the disc-derived dtk project config.
+naruto/build/
+config/GNREDA/
+orig/
+build/
+
+# The memory card and input logs.
+naruto/saves/
+
+# The launcher's generated material.
+launcher/.venv/
+launcher/build/
+launcher/dist/
+launcher/packaging/*
+
+__pycache__/
+*.pyc
+.DS_Store
+.probe/probe
