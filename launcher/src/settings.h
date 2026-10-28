@@ -12,6 +12,9 @@ struct Settings {
     bool input_log = true;
     int window_width = 1060;
     int window_height = 820;
+    bool check_updates = true;
+    // A version the player said "not now" to, so the prompt does not return every start.
+    std::wstring skipped_update;
 
     static Settings load();
     void save() const;

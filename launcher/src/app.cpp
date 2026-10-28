@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include "disc.h"
+#include "git.h"
 #include "shortcut.h"
 #include "tools_package.h"
 #include "util.h"
@@ -39,6 +40,9 @@ std::wstring picker_join(const std::wstring& folder, const std::wstring& name) {
 }  // namespace
 
 App::~App() {
+    // A check in flight posts its answer to the dispatcher, so it must be finished before
+    // anything it touches goes away. The request has a short timeout of its own.
+    if (update_thread_.joinable()) update_thread_.join();
     job_.shutdown();
     game_.shutdown();
 }
@@ -46,6 +50,8 @@ App::~App() {
 bool App::create() {
     settings_ = Settings::load();
     tools_ = check_tools();
+    // What an earlier update could not remove once its helper had finished.
+    clean_up_after_update();
 
     auto root = Project::locate(settings_.project_root);
     if (root) project_.emplace(*root);
@@ -74,6 +80,8 @@ bool App::create() {
     window_.show();
     invalidate();
 
+    if (settings_.check_updates) start_update_check(false);
+
     if (!project_) {
         append_log(L"[launcher] project folder not located yet; Launch the game asks "
                    L"for it.\n");
@@ -86,7 +94,7 @@ bool App::create() {
 
 int App::run() {
     bool running = true;
-    while (running) {
+    while (running && !quit_) {
         animate();
         if (window_.take_invalidated()) paint();
 
@@ -412,11 +420,32 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         return true;
     };
 
+    // A stand-in release, so the update prompt and the header button can be rendered
+    // without a network.
+    auto fake_update = [this] {
+        update_state_ = UpdateState::Available;
+        update_release_.version = L"1.1.0";
+        update_release_.page_url = L"https://example.invalid/releases/tag/v1.1.0";
+        update_release_.asset_name = L"NarutoLauncher-macOS-arm64-v1.1.0.zip";
+        update_release_.asset_url = L"https://example.invalid/" + update_release_.asset_name;
+    };
+
     if (view == "settings") {
         open_settings();
     } else if (view == "picker") {
         open_picker(PickerKind::Image, L"Choose your own disc image",
                     project_ ? project_->root() : home_dir(), [](const fs::path&) {});
+    } else if (view == "update") {
+        fake_update();
+        show_update_prompt();
+    } else if (view == "update-banner") {
+        fake_update();
+    } else if (view.rfind("update-click:", 0) == 0) {
+        fake_update();
+        if (!click(view.substr(13))) {
+            std::fprintf(stderr, "usage: update-click:<x>,<y>\n");
+            return 1;
+        }
     } else if (view == "confirm") {
         show_confirm(L"Replace the extracted disc?",
                      L"A disc is already extracted. Extract again from this image and "
@@ -474,13 +503,22 @@ void App::paint_header() {
                               rgb(0xffffff), TextAlign::Center);
     }
 
-    painter_.text(kTitle, RectF(82, 14, width_ - 260, 46), Face::Title,
-                  rgb(theme::Text));
-    painter_.text(kSubtitle, RectF(83, 48, width_ - 260, 68), Face::Subtitle,
-                  rgb(theme::Muted));
-
     Rect settings_button{width_ - 24 - 104, 24, 104, 34};
     button(Id::OpenSettings, settings_button, L"Settings", false, true);
+
+    float title_right = width_ - 260;
+    if (update_state_ == UpdateState::Available && !update_release_.version.empty()) {
+        std::wstring label = L"Update " + update_release_.version;
+        float badge_w = text_width(label, Face::Button) + 30;
+        Rect badge{settings_button.x - 8 - badge_w, 24, badge_w, 34};
+        button(Id::UpdateBanner, badge, label, true, !busy_);
+        title_right = std::min(title_right, badge.x - 16);
+    }
+
+    painter_.text(kTitle, RectF(82, 14, title_right, 46), Face::Title,
+                  rgb(theme::Text));
+    painter_.text(kSubtitle, RectF(83, 48, title_right, 68), Face::Subtitle,
+                  rgb(theme::Muted));
 
     painter_.line(24, 86, width_ - 24, 86, rgb(theme::Border));
 }
@@ -701,7 +739,7 @@ void App::paint_activity() {
 void App::paint_settings() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
     float panel_w = std::min(720.0f, width_ - 48);
-    float panel_h = std::min(560.0f, height_ - 40);
+    float panel_h = std::min(640.0f, height_ - 40);
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
@@ -716,14 +754,16 @@ void App::paint_settings() {
     float right = panel.x + panel.w - 26;
     float y = panel.y + 56;
 
+    // The sections are laid out tight enough that the whole panel fits below the header
+    // at the window's smallest size.
     auto section = [&](const std::wstring& text) {
         painter_.text(text, RectF(left, y, left + content_w, y + 18), Face::Tiny,
                       rgb(theme::Accent));
-        y += 22;
+        y += 18;
     };
     auto separator = [&] {
         painter_.line(left, y, left + content_w, y, rgb(theme::Border));
-        y += 12;
+        y += 10;
     };
 
     section(L"PROJECT");
@@ -735,7 +775,31 @@ void App::paint_settings() {
     button(Id::SettingsProject, Rect{right - 110, y, 110, 32}, L"Change…", false, !busy_);
     button(Id::SettingsOpenProject, Rect{right - 110 - 8 - 84, y, 84, 32}, L"Open", false,
            project_.has_value());
-    y += 38;
+    y += 36;
+
+    std::wstring source_text;
+    Color source_color = rgb(theme::Muted);
+    if (!project_) {
+        source_text = L"Game source: no project folder yet";
+    } else if (!git_found_) {
+        source_text = L"Game source: git was not found";
+    } else if (!project_checkout_) {
+        source_text = L"Game source: this folder is not a git checkout";
+    } else if (source_revision_.empty()) {
+        source_text = L"Game source: git could not read this folder";
+    } else if (project_behind_) {
+        source_text = L"Game source " + source_revision_ +
+                      L" is older than this launcher — update it, then Rebuild";
+        source_color = rgb(theme::Warn);
+    } else {
+        source_text = L"Game source: " + source_revision_;
+    }
+    painter_.text(elide(source_text, Face::Small, content_w - 170),
+                  RectF(left, y + 7, left + content_w - 170, y + 29), Face::Small,
+                  source_color);
+    button(Id::SettingsUpdateProject, Rect{right - 150, y, 150, 32}, L"Update project", false,
+           !busy_ && git_found_ && project_checkout_);
+    y += 36;
     separator();
 
     section(L"DISC IMAGE");
@@ -748,7 +812,7 @@ void App::paint_settings() {
            !busy_ && project_.has_value());
     button(Id::SettingsOpenDisc, Rect{right - 150 - 8 - 104, y, 104, 32}, L"Disc folder",
            false, !busy_ && project_.has_value());
-    y += 38;
+    y += 36;
     separator();
 
     section(L"PLAY");
@@ -758,7 +822,7 @@ void App::paint_settings() {
     checkbox(Id::ToggleMute, left + 300, y + 7, L"Mute music", settings_.mute_music, !busy_);
     checkbox(Id::ToggleInputLog, left + 430, y + 7, L"Log controller input",
              settings_.input_log, !busy_);
-    y += 38;
+    y += 36;
     separator();
 
     section(L"GAME FILES");
@@ -767,7 +831,7 @@ void App::paint_settings() {
            !busy_);
     button(Id::SettingsResetControls, Rect{left + 256, y, 128, 32}, L"Reset controls", false,
            !busy_, true);
-    y += 38;
+    y += 36;
     separator();
 
     section(L"BUILD");
@@ -795,7 +859,7 @@ void App::paint_settings() {
         button(Id::SettingsFetchTools, Rect{right - 100 - 8 - 78 - 8 - 132 - 8 - 150, y, 150, 32},
                L"Get build tools", false, !busy_);
     }
-    y += 38;
+    y += 36;
     separator();
 
     section(L"SHORTCUTS");
@@ -803,7 +867,44 @@ void App::paint_settings() {
            true);
     button(Id::SettingsStartShortcut, Rect{left + 176, y, 190, 32},
            shortcut_folder_label(), false, true);
-    y += 38;
+    y += 36;
+    separator();
+
+    section(L"UPDATES");
+    std::wstring update_line = L"Version " + launcher_version() + L".";
+    Color update_color = rgb(theme::Muted);
+    switch (update_state_) {
+        case UpdateState::Checking:
+            update_line = L"Asking GitHub for the newest release…";
+            break;
+        case UpdateState::UpToDate:
+            update_line = L"Version " + launcher_version() + L" is the newest release.";
+            update_color = rgb(theme::Ok);
+            break;
+        case UpdateState::Available:
+            update_line = L"Version " + update_release_.version + L" is available.";
+            update_color = rgb(theme::Accent);
+            break;
+        case UpdateState::Failed:
+            update_line = L"Version " + launcher_version() + L". " + update_error_;
+            update_color = rgb(theme::Warn);
+            break;
+        case UpdateState::Never:
+            break;
+    }
+    painter_.text(elide(update_line, Face::Small, content_w - 250),
+                  RectF(left, y + 7, left + content_w - 250, y + 29), Face::Small,
+                  update_color);
+    button(Id::SettingsCheckNow, Rect{right - 100, y, 100, 32}, L"Check now", false,
+           !busy_ && update_state_ != UpdateState::Checking);
+    if (update_state_ == UpdateState::Available) {
+        button(Id::SettingsInstallUpdate, Rect{right - 100 - 8 - 128, y, 128, 32},
+               L"Install update", true, !busy_);
+    }
+    y += 36;
+    checkbox(Id::SettingsToggleUpdates, left, y + 4, L"Check when the launcher starts",
+             settings_.check_updates, !busy_);
+    y += 24;
 
     if (!settings_note_.empty()) {
         painter_.text(settings_note_, RectF(left, y, left + content_w, y + 22),
@@ -1018,10 +1119,13 @@ void App::install_tools(bool then_launch) {
     start_job(tools_package_tasks(), then_launch);
 }
 
-void App::start_job(std::vector<Task> tasks, bool then_launch) {
+void App::start_job(std::vector<Task> tasks, bool then_launch, bool exits,
+                    std::function<void(int)> done) {
     if (busy_ || tasks.empty()) return;
     busy_ = true;
     job_then_launch_ = then_launch;
+    job_exits_ = exits;
+    job_done_ = std::move(done);
     progress_ = -1;
     stage_.clear();
     log_visible_ = true;
@@ -1053,7 +1157,9 @@ void App::on_job_done(int code) {
     progress_ = -1;
     stage_.clear();
     bool then_launch = job_then_launch_;
+    bool exits = job_exits_;
     job_then_launch_ = false;
+    job_exits_ = false;
     if (code == 0) {
         append_log(L"[launcher] done\n");
         // A job can be the one that installed the tools, so look for them again.
@@ -1070,6 +1176,13 @@ void App::on_job_done(int code) {
     }
     refresh();
     if (code == 0 && then_launch) continue_launch();
+    // The helper that swaps in the new version is waiting for this process to go.
+    if (code == 0 && exits) quit_ = true;
+    if (job_done_) {
+        auto follow_up = std::move(job_done_);
+        job_done_ = nullptr;
+        follow_up(code);
+    }
 }
 
 void App::append_log(const std::wstring& text) {
@@ -1160,6 +1273,12 @@ void App::activate(Id id) {
             close_overlay();
             if (callback) callback();
         } else if (id == Id::OverlayCancel) {
+            // "Not now" on the update prompt is remembered for that version only, so a
+            // later release asks again.
+            if (overlay_update_ && !update_release_.version.empty()) {
+                settings_.skipped_update = update_release_.version;
+                save_settings();
+            }
             close_overlay();
         }
         return;
@@ -1216,6 +1335,20 @@ void App::activate(Id id) {
                 open_path(dir);
                 return;
             }
+            case Id::SettingsUpdateProject:
+                update_project();
+                return;
+            case Id::SettingsToggleUpdates:
+                settings_.check_updates = !settings_.check_updates;
+                save_settings();
+                break;
+            case Id::SettingsCheckNow:
+                start_update_check(true);
+                return;
+            case Id::SettingsInstallUpdate:
+                settings_open_ = false;
+                begin_update();
+                return;
             case Id::SettingsDesktopShortcut: create_shortcut(false); break;
             case Id::SettingsStartShortcut: create_shortcut(true); break;
             case Id::Scale:
@@ -1274,6 +1407,7 @@ void App::activate(Id id) {
             log_offset_ = 0;
             break;
         case Id::OpenSettings: open_settings(); break;
+        case Id::UpdateBanner: show_update_prompt(); break;
         case Id::Scale:
             scale_open_ = !scale_open_;
             if (scale_open_) anchor_scale();
@@ -1789,6 +1923,7 @@ void App::show_message(const std::wstring& title, const std::wstring& text,
     overlay_text_ = text;
     overlay_action_ = action;
     overlay_callback_ = nullptr;
+    overlay_update_ = false;
     scale_open_ = false;
     invalidate();
 }
@@ -1802,6 +1937,7 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
     overlay_text_ = text;
     overlay_action_ = action;
     overlay_callback_ = std::move(confirmed);
+    overlay_update_ = false;
     scale_open_ = false;
     invalidate();
 }
@@ -1809,8 +1945,169 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
 void App::close_overlay() {
     overlay_open_ = false;
     overlay_confirm_ = false;
+    overlay_update_ = false;
     overlay_callback_ = nullptr;
     invalidate();
+}
+
+void App::refresh_source_status() {
+    git_found_ = !git_tool().empty();
+    project_checkout_ = false;
+    project_behind_ = false;
+    source_revision_.clear();
+    if (!project_) return;
+    project_checkout_ = project_is_checkout(project_->root());
+    if (!project_checkout_) return;
+    source_revision_ = project_revision(project_->root());
+    project_behind_ =
+        git_found_ && project_is_older_than(project_->root(), launcher_source(),
+                                            launcher_source_time());
+}
+
+void App::update_project() {
+    if (!project_ || busy_) return;
+    if (git_tool().empty()) {
+        show_message(L"git was not found",
+                     L"Updating the game source needs git, and it is not installed. Get the "
+                     L"newest source yourself, then press Rebuild.");
+        return;
+    }
+    if (!project_checkout_) {
+        show_message(L"Not a git checkout",
+                     L"This project folder is not a git checkout, so the launcher cannot "
+                     L"update it. Download the newest source and point Settings at that "
+                     L"folder.");
+        return;
+    }
+    std::wstring reason;
+    if (!project_is_clean(project_->root(), &reason)) {
+        show_message(L"Cannot update the project", reason);
+        return;
+    }
+    settings_open_ = false;
+    start_job(source_tasks(project_->root()), false, false, [this](int code) {
+        refresh_source_status();
+        refresh();
+        if (code != 0) return;
+        settings_note_ = L"Game source updated.";
+        if (status_.built) {
+            // The binary on disk was built from the source that just changed.
+            show_confirm(L"Game source updated",
+                         L"The project is now at " + project_revision(project_->root()) +
+                             L". Rebuild the game with the new source?",
+                         L"Rebuild", [this] { start_build(); });
+        } else {
+            show_message(L"Game source updated",
+                         L"Launch the game builds it with the new source.");
+        }
+    });
+}
+
+void App::start_update_check(bool manual) {
+    if (update_state_ == UpdateState::Checking) return;
+    if (!manual && !settings_.check_updates) return;
+    if (development_build()) {
+        update_state_ = UpdateState::Failed;
+        update_error_ = L"This build was not made from a release tag.";
+        if (manual) show_message(L"Updates", update_error_);
+        invalidate();
+        return;
+    }
+    if (update_thread_.joinable()) update_thread_.join();
+    update_state_ = UpdateState::Checking;
+    update_error_.clear();
+    append_log(format(L"[launcher] checking for updates (version %ls)\n",
+                      launcher_version().c_str()));
+    update_thread_ = std::thread([this, manual] {
+        auto result = check_for_update();
+        post([this, result, manual] { on_update_checked(result, manual); });
+    });
+    invalidate();
+}
+
+void App::on_update_checked(UpdateCheck result, bool manual) {
+    switch (result.state) {
+        case UpdateCheck::State::Available:
+            update_state_ = UpdateState::Available;
+            update_release_ = result.release;
+            append_log(format(L"[launcher] version %ls is available (this is %ls)\n",
+                              result.release.version.c_str(), launcher_version().c_str()));
+            // At start the prompt is an interruption, so a version the player already
+            // answered "not now" to waits behind the header button instead, and a step
+            // that is running is never talked over.
+            if (!busy_ && (manual || settings_.skipped_update != result.release.version)) {
+                show_update_prompt();
+            }
+            break;
+        case UpdateCheck::State::UpToDate:
+            update_state_ = UpdateState::UpToDate;
+            append_log(L"[launcher] this is the newest release\n");
+            if (manual) {
+                settings_note_ = L"GitHub was checked: this is the newest release.";
+            }
+            break;
+        case UpdateCheck::State::Failed:
+            update_state_ = UpdateState::Failed;
+            update_error_ = result.error;
+            append_log(L"[launcher] update check failed: " + result.error + L"\n");
+            if (manual) show_message(L"Cannot check for updates", result.error);
+            break;
+    }
+    invalidate();
+}
+
+void App::show_update_prompt() {
+    if (update_release_.version.empty()) return;
+    auto target = install_target();
+    bool writable = install_writable();
+    if (update_release_.asset_url.empty() || !writable) {
+        std::wstring text = format(L"You have version %ls. ", launcher_version().c_str());
+        text += update_release_.asset_url.empty()
+                    ? L"This release has no download for this system, so the launcher "
+                      L"cannot install it itself."
+                    : L"This copy of the launcher sits in a folder it cannot write to, so "
+                      L"it cannot replace itself.";
+        text += L" The release page has the download.";
+        show_confirm(format(L"Version %ls is available", update_release_.version.c_str()),
+                     text, L"Open release page", [this] { open_update_page(); });
+        overlay_update_ = true;
+        return;
+    }
+    std::wstring text = format(L"You have version %ls. The launcher can download version "
+                               L"%ls, replace this copy and start it again.",
+                               launcher_version().c_str(),
+                               update_release_.version.c_str());
+    if (!target.empty()) text += L"\n\nIt replaces:\n" + path_display(target);
+    show_confirm(format(L"Version %ls is available", update_release_.version.c_str()), text,
+                 L"Update now", [this] { begin_update(); });
+    overlay_update_ = true;
+}
+
+void App::begin_update() {
+    if (busy_ || update_release_.version.empty()) return;
+    if (game_.running()) {
+        // Replacing the launcher ends this process, and the game goes with it.
+        show_message(L"Close the game first",
+                     L"The update restarts the launcher, which would end the game. Stop it, "
+                     L"then install the update.");
+        return;
+    }
+    if (update_release_.asset_url.empty() || !install_writable()) {
+        open_update_page();
+        return;
+    }
+    start_job(update_tasks(update_release_), false, true);
+}
+
+void App::open_update_page() {
+    if (update_release_.page_url.empty()) {
+        show_message(L"Updates", L"This release has no page to open.");
+        return;
+    }
+    std::wstring error;
+    if (!open_url(update_release_.page_url, &error)) {
+        show_message(L"Cannot open", error.empty() ? update_release_.page_url : error);
+    }
 }
 
 void App::open_settings() {
@@ -1818,6 +2115,7 @@ void App::open_settings() {
     scale_open_ = false;
     settings_note_.clear();
     tools_ = check_tools();
+    refresh_source_status();
     invalidate();
 }
 

@@ -57,6 +57,8 @@ Settings Settings::load() {
     if (settings.scale < 1 || settings.scale > 4) settings.scale = 2;
     settings.mute_music = read_bool(values, L"muteMusic", false);
     settings.input_log = read_bool(values, L"inputLog", true);
+    settings.check_updates = read_bool(values, L"checkUpdates", true);
+    settings.skipped_update = read_text(values, L"skippedUpdate");
     settings.window_width = read_int(values, L"windowWidth", 1060);
     settings.window_height = read_int(values, L"windowHeight", 820);
     if (settings.window_width < 940) settings.window_width = 940;
@@ -77,6 +79,8 @@ void Settings::save() const {
     put(L"scale", std::to_wstring(scale));
     put(L"muteMusic", mute_music ? L"1" : L"0");
     put(L"inputLog", input_log ? L"1" : L"0");
+    put(L"checkUpdates", check_updates ? L"1" : L"0");
+    put(L"skippedUpdate", skipped_update);
     put(L"windowWidth", std::to_wstring(window_width));
     put(L"windowHeight", std::to_wstring(window_height));
     write_text_file(fs::path(file_path()), narrow(text));

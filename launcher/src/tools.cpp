@@ -208,6 +208,15 @@ std::wstring find_tool(const std::wstring& executable) {
     return {};
 }
 
+std::wstring find_tool_from(const std::vector<std::wstring>& known,
+                            const std::wstring& name) {
+    for (const auto& candidate : known) {
+        auto found = find_tool(candidate);
+        if (!found.empty()) return found;
+    }
+    return find_tool(name);
+}
+
 std::vector<ToolInfo> check_tools() {
     std::vector<ToolInfo> tools;
 #if defined(_WIN32)

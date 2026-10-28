@@ -14,8 +14,10 @@
 #include <shellapi.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #else
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -247,6 +249,32 @@ wstring read_text_file(const fs::path& path) {
     return widen(stream.str());
 }
 
+bool capture_output(const std::wstring& exe, const std::vector<std::wstring>& args,
+                    std::string* output, int* status) {
+    auto command = command_line(exe, args);
+#if defined(_WIN32)
+    FILE* pipe = _wpopen(command.c_str(), L"rb");
+#else
+    FILE* pipe = popen(narrow(command).c_str(), "r");
+#endif
+    if (!pipe) return false;
+    std::string text;
+    char buffer[4096];
+    size_t got = 0;
+    while ((got = std::fread(buffer, 1, sizeof(buffer), pipe)) > 0) text.append(buffer, got);
+#if defined(_WIN32)
+    int code = _pclose(pipe);
+    int result = code;
+#else
+    // pclose gives the wait status, not the exit code.
+    int code = pclose(pipe);
+    int result = code >= 0 && WIFEXITED(code) ? WEXITSTATUS(code) : -1;
+#endif
+    if (output) *output = std::move(text);
+    if (status) *status = result;
+    return true;
+}
+
 bool write_text_file(const fs::path& path, std::string_view bytes) {
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file) return false;
@@ -322,6 +350,14 @@ fs::path temp_dir() {
     std::error_code ec;
     auto path = fs::temp_directory_path(ec);
     return ec ? fs::path(L"/tmp") : path;
+}
+
+unsigned long process_id() {
+#if defined(_WIN32)
+    return GetCurrentProcessId();
+#else
+    return static_cast<unsigned long>(::getpid());
+#endif
 }
 
 // -- SHA-1 -----------------------------------------------------------------
@@ -559,6 +595,35 @@ bool open_url(const std::wstring& url, wstring* error) {
     return run_detached({"open", narrow(url)}, error);
 #else
     return run_detached({"xdg-open", narrow(url)}, error);
+#endif
+}
+
+bool start_detached(const std::wstring& exe, const std::vector<std::wstring>& args,
+                    wstring* error) {
+#if defined(_WIN32)
+    auto line = command_line(exe, args);
+    std::vector<wchar_t> command(line.begin(), line.end());
+    command.push_back(L'\0');
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION info{};
+    // DETACHED_PROCESS: no console of its own and nothing inherited from the launcher,
+    // so the helper is still there after this process exits.
+    if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE,
+                        DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr,
+                        &startup, &info)) {
+        if (error) *error = format(L"cannot start %ls: %ls", exe.c_str(), last_error().c_str());
+        return false;
+    }
+    CloseHandle(info.hThread);
+    CloseHandle(info.hProcess);
+    return true;
+#else
+    std::vector<std::string> argv;
+    argv.reserve(args.size() + 1);
+    argv.push_back(narrow(exe));
+    for (const auto& arg : args) argv.push_back(narrow(arg));
+    return run_detached(argv, error);
 #endif
 }
 

@@ -24,6 +24,9 @@ void rescan_environment();
 
 const std::wstring& search_path();
 std::wstring find_tool(const std::wstring& executable);
+// The first of `known` that exists, else `name` from the search path. For a tool that
+// ships with the system in a fixed place but may also be installed elsewhere.
+std::wstring find_tool_from(const std::vector<std::wstring>& known, const std::wstring& name);
 
 std::vector<ToolInfo> check_tools();
 

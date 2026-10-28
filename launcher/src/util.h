@@ -29,10 +29,16 @@ wstring command_line(const wstring& exe, const std::vector<wstring>& args);
 
 wstring read_text_file(const fs::path& path);
 bool write_text_file(const fs::path& path, std::string_view bytes);
+
+// Runs a program and keeps what it prints, without showing a window. For short commands
+// whose answer the launcher reads, like curl's or git's.
+bool capture_output(const std::wstring& exe, const std::vector<std::wstring>& args,
+                    std::string* output, int* status = nullptr);
 uint64_t file_size(const fs::path& path);
 
 wstring exe_path();
 wstring exe_dir();
+unsigned long process_id();
 fs::path home_dir();
 fs::path user_data_dir();
 fs::path temp_dir();
@@ -52,6 +58,11 @@ void set_environment(const wstring& name, const wstring& value);
 
 bool open_path(const fs::path& path, wstring* error);
 bool open_url(const std::wstring& url, wstring* error = nullptr);
+
+// Starts a program and returns at once, so the program outlives the launcher. Used for
+// the helper that swaps in an update once this process has exited.
+bool start_detached(const std::wstring& exe, const std::vector<std::wstring>& args,
+                    wstring* error = nullptr);
 
 // A short, human-readable description of the last operating-system error.
 wstring last_error();

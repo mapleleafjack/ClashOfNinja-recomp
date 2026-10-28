@@ -104,6 +104,24 @@ What it does:
 - **Play** — the same `--scale`, `--no-music`, `--no-input-log` and `--controls` arguments
   as the command line. Stop sends `SIGINT` on macOS and Linux, which the runtime answers by
   dumping its GX FIFO, then escalates if the game ignores it.
+- **Updates** — the launcher asks GitHub for the newest release when it starts, and
+  offers it when that release is newer than the one it was built from. "Update now"
+  downloads the zip for this system, unpacks it and hands over to a small helper: the
+  launcher exits, the helper puts the new version in place of the old one and starts it.
+  Until then nothing is touched. Settings names the version, has *Check now* and can turn
+  the check off; a version answered with *Cancel* is not asked about again, but stays
+  behind the **Update** button in the header. A build made from a branch rather than a
+  tag hides itself from this, and an install that cannot be written to falls back to the
+  release page. The check is the only network request the launcher makes, unless the
+  project source is updated from git as below.
+- **Game source** — an update replaces the launcher only; the game itself is compiled
+  from the project folder, so releases carry no `naruto/` source. When that folder is a
+  git checkout, Settings names its revision and **Update project** runs
+  `git pull --ff-only --tags --prune` in it, then offers Rebuild. It refuses a folder with
+  uncommitted changes, so nothing local is merged, rebased or lost, and the disc, the
+  build output and the saves inside the tree are untouched. The launcher also records the
+  commit it was built from; when the checkout is older than that, Settings says so instead
+  of letting an unmatched pair fail later in the build.
 - **Settings** — everything that is not part of launching the game: the project folder,
   a replacement disc image, the play defaults (window scale, music, input log), the saves
   and controls files, the build tools with a Rebuild action, and a Desktop or menu
@@ -121,15 +139,21 @@ Drag a disc image or a project folder onto the window, or use the built-in picke
 launcher finds the project beside itself, or remembers the folder you choose. "Show
 details" reveals the Activity log whenever it is hidden.
 
-`ctest --test-dir launcher/build` renders the main window, Settings and the picker to BMP
-files — through `--render <file> [main|settings|picker|confirm|click:x,y|settings-click:x,y]`,
+`ctest --test-dir launcher/build` renders the main window, Settings, the picker and the
+update prompt to BMP files, through
+`--render <file> [main|settings|picker|confirm|update|update-banner|click:x,y|settings-click:x,y|update-click:x,y]`,
 which needs no window and no desktop. The click modes paint, click that point and paint
-again (the `settings-` form opens Settings first), so the tests cover hit testing and
-activation as well as drawing. A render also needs one usable system font; on a minimal
+again (the `settings-` and `update-` forms open those views first), so the tests cover hit
+testing and activation as well as drawing. A render also needs one usable system font; on a minimal
 Linux install that means `fonts-dejavu` or `fonts-liberation`.
 
 `launcher/tests/extract_test.cpp` runs the extractor from a console so its output can be
 compared with `tools/extract_disc.py`; it is a developer target, not shipped.
+`launcher/tests/update_test.cpp` covers the update check without a network: version
+comparison, reading a release out of GitHub's JSON, and the helper script, which the test
+runs for real against a stand-in install. It also builds a throwaway git repository to
+check that an out-of-date clone fast-forwards and a modified one is refused.
+`update_test --live` also asks GitHub once, and prints the release it finds.
 
 `--fetch-tools <log>` runs the same download the launcher offers, without a window, and
 writes what its steps report to `log`. A release build uses it to prove the pinned archive
@@ -190,10 +214,13 @@ there — it needs the user's own disc image.
 The assets are named after the tag: `NarutoLauncher-macOS-arm64-v<version>.zip` holding the
 `.app` plus the notices, `NarutoLauncher-Windows-x64-v<version>.zip` holding the launcher,
 and `NarutoLauncher-tools-windows-x64-v<version>.zip` holding the toolchain it downloads on
-first use. The tag also names the version: the workflow passes it as `NLA_VERSION`, which
-becomes the bundle's `CFBundleShortVersionString`, and the tool archive is written before
-the launcher is configured so its URL, digest and size can be pinned into the build. A
-lean Windows zip is uploaded as a workflow artifact on every run.
+first use. A lean Windows zip is uploaded as a workflow artifact on every run. The tag also
+names the version: the workflow passes it as `NLA_VERSION`, which becomes the bundle's
+`CFBundleShortVersionString` and, compiled into the launcher, the version it compares
+against the newest release. A build from a branch says `0.0.0` and never offers to update
+itself. The tool archive is written before the launcher is configured, so its URL, digest
+and size are pinned into the build, and the configure step also records the commit and its
+date, which is how Settings knows the project folder is older than the launcher.
 
 ```sh
 gh workflow run build.yml -f bundle=true     # exercise the bundle without a release

@@ -68,7 +68,8 @@ jobs:
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
-        run: ninja -C launcher/build-ci NarutoLauncher
+        # update_test is a ctest case of its own, so it has to exist before ctest runs.
+        run: ninja -C launcher/build-ci NarutoLauncher update_test
 
       - name: Test
         run: ctest --test-dir launcher/build-ci --output-on-failure
@@ -150,7 +151,7 @@ jobs:
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
-        run: ninja -C launcher/build-release NarutoLauncher
+        run: ninja -C launcher/build-release NarutoLauncher update_test
 
       - name: Test
         run: ctest --test-dir launcher/build-release --output-on-failure
@@ -237,7 +238,7 @@ jobs:
           -DNLA_TOOLS_BYTES="${{ env.NLA_TOOLS_BYTES }}"
 
       - name: Build
-        run: ninja -C launcher/build-release NarutoLauncher
+        run: ninja -C launcher/build-release NarutoLauncher update_test
 
       - name: Test
         run: ctest --test-dir launcher/build-release --output-on-failure

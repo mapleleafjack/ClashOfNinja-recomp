@@ -5,6 +5,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <SDL.h>
@@ -14,6 +15,7 @@
 #include "project.h"
 #include "settings.h"
 #include "tools.h"
+#include "update.h"
 #include "window.h"
 
 namespace nla {
@@ -52,6 +54,11 @@ enum class Id {
     SettingsFetchTools,
     SettingsDesktopShortcut,
     SettingsStartShortcut,
+    SettingsUpdateProject,
+    SettingsToggleUpdates,
+    SettingsCheckNow,
+    SettingsInstallUpdate,
+    UpdateBanner,
     Scale,
     Scale1,
     Scale2,
@@ -94,6 +101,8 @@ class App {
 
     enum class Pill { Muted, Ok, Warn, Bad };
     enum class PickerKind { None, Folder, Image };
+    // What came of looking for a newer release.
+    enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
 
     void handle_event(const SDL_Event& event);
     void handle_key(const SDL_KeyboardEvent& key);
@@ -140,7 +149,11 @@ class App {
     void activate(Id id);
     bool modal_active() const { return settings_open_ || overlay_open_ || picker_ != PickerKind::None; }
 
-    void start_job(std::vector<Task> tasks, bool then_launch = false);
+    // `exits` ends the launcher once the steps succeed: an update hands over to its
+    // helper, which cannot swap this copy while it is running. `done` runs after the
+    // usual reporting, for a step that has its own next move.
+    void start_job(std::vector<Task> tasks, bool then_launch = false, bool exits = false,
+                   std::function<void(int)> done = nullptr);
     void on_log(const std::wstring& text);
     void on_stage(const std::wstring& text);
     void on_progress(int percent);
@@ -157,6 +170,14 @@ class App {
     void open_settings();
     void create_shortcut(bool system_wide);
     void save_settings();
+
+    void refresh_source_status();
+    void update_project();
+    void start_update_check(bool manual);
+    void on_update_checked(UpdateCheck check, bool manual);
+    void show_update_prompt();
+    void begin_update();
+    void open_update_page();
 
     // The in-app replacements for the platform's folder and file pickers.
     void open_picker(PickerKind kind, const std::wstring& title, const fs::path& start,
@@ -185,7 +206,10 @@ class App {
     bool log_visible_ = false;
     int log_offset_ = 0;
     bool busy_ = false;
+    bool quit_ = false;
+    bool job_exits_ = false;
     bool job_then_launch_ = false;
+    std::function<void(int)> job_done_;
     bool launch_wanted_ = false;
     int progress_ = -1;
     std::wstring stage_;
@@ -201,10 +225,24 @@ class App {
 
     bool overlay_open_ = false;
     bool overlay_confirm_ = false;
+    bool overlay_update_ = false;
     std::wstring overlay_title_;
     std::wstring overlay_text_;
     std::wstring overlay_action_;
     std::function<void()> overlay_callback_;
+
+    // The newest release, and what came of looking for it.
+    UpdateState update_state_ = UpdateState::Never;
+    ReleaseInfo update_release_;
+    std::wstring update_error_;
+    std::thread update_thread_;
+
+    // The project folder as a git checkout, and whether its source is older than this
+    // launcher, which would build the game from source the launcher does not expect.
+    bool git_found_ = false;
+    bool project_checkout_ = false;
+    bool project_behind_ = false;
+    std::wstring source_revision_;
 
     PickerKind picker_ = PickerKind::None;
     std::wstring picker_title_;

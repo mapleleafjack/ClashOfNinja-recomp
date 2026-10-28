@@ -65,6 +65,7 @@ set(NLA_SOURCES
   src/app.cpp
   src/disc.cpp
   src/font.cpp
+  src/git.cpp
   src/image.cpp
   src/painter.cpp
   src/jobs.cpp
@@ -73,6 +74,7 @@ set(NLA_SOURCES
   src/shortcut.cpp
   src/tools.cpp
   src/tools_package.cpp
+  src/update.cpp
   src/util.cpp
   src/window.cpp
 )
@@ -119,7 +121,35 @@ if(WIN32)
     NLA_TOOLS_BYTES=${_nla_tools_bytes})
 endif()
 
-target_compile_definitions(NarutoLauncher PRIVATE SDL_MAIN_HANDLED)
+# The tag the release was built from, which the update check compares against, and the
+# commit, which tells Settings whether the project folder's source is older than this.
+set(NLA_SOURCE "")
+set(NLA_SOURCE_TIME 0)
+find_package(Git QUIET)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short=12 HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    OUTPUT_VARIABLE _nla_commit
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} log -1 --format=%ct HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    OUTPUT_VARIABLE _nla_time
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if(_nla_commit)
+    set(NLA_SOURCE "${_nla_commit}")
+  endif()
+  if(_nla_time MATCHES "^[0-9]+$")
+    set(NLA_SOURCE_TIME "${_nla_time}")
+  endif()
+endif()
+
+target_compile_definitions(NarutoLauncher PRIVATE
+  SDL_MAIN_HANDLED NLA_VERSION="${PROJECT_VERSION}" NLA_SOURCE="${NLA_SOURCE}"
+  NLA_SOURCE_TIME=${NLA_SOURCE_TIME})
 
 if(WIN32)
   configure_file(src/launcher.rc.in ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc @ONLY)
@@ -194,7 +224,38 @@ add_test(NAME click-settings
 add_test(NAME click-details
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,567)
 add_test(NAME click-choose-image
-         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-choose-image.bmp" settings-click:789,294)
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-choose-image.bmp" settings-click:789,280)
+add_test(NAME render-update
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-update.bmp" update)
+add_test(NAME render-update-banner
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-update-banner.bmp" update-banner)
+# Clicks the Update button in the header, which must open the prompt.
+add_test(NAME click-update
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-update.bmp" update-click:871,41)
+
+# The update check's offline half: version comparison, reading a release out of GitHub's
+# JSON, and the helper that swaps a downloaded version in. It runs the helper for real
+# against a stand-in install, so the swap is covered without a network.
+add_executable(update_test
+  tests/update_test.cpp
+  src/git.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  src/update.cpp
+  src/util.cpp
+)
+target_include_directories(update_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(update_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(update_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(update_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(update_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME update-logic COMMAND $<TARGET_FILE:update_test>)
 
 install(TARGETS NarutoLauncher
   BUNDLE DESTINATION .
