@@ -83,8 +83,9 @@ if (-not $SkipBuild) {
     if ($Clean -and (Test-Path $buildDir)) { Remove-Item $buildDir -Recurse -Force }
     Write-Host "`nConfiguring and building the launcher..."
     # A release names the version the bundle reports; a plain build keeps the default.
+    # This must be an array: splatting a bare string passes it one character at a time.
     $versionArg = @()
-    if ($Version) { $versionArg = "-DNLA_VERSION=$Version" }
+    if ($Version) { $versionArg = @("-DNLA_VERSION=$Version") }
     & $cmake -S $launcher -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=Release `
         "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_CXX_COMPILER=$gxx" @versionArg
     if ($LASTEXITCODE -ne 0) { throw "cmake configure failed ($LASTEXITCODE)" }

@@ -49,6 +49,12 @@ elseif(APPLE AND TARGET SDL2::SDL2-static)
   # the package provides one.
   set(NLA_SDL2 SDL2::SDL2-static)
 elseif(TARGET SDL2::SDL2)
+  if(APPLE)
+    message(WARNING
+      "SDL2 is being linked dynamically, so this .app only runs where SDL2 is installed. "
+      "Build it statically for a release: launcher/packaging/build-sdl2.ps1, then configure "
+      "with -DSDL2_DIR=<prefix>/lib/cmake/SDL2.")
+  endif()
   set(NLA_SDL2 SDL2::SDL2)
 else()
   set(NLA_SDL2 SDL2::SDL2-static)

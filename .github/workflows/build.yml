@@ -51,16 +51,20 @@ jobs:
             echo "value=0.0.0" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install SDL2
+      - name: Build SDL2 statically
+        shell: pwsh
+        # Homebrew's SDL2 is a shared library, and a bundle linking it only runs on a
+        # machine that has SDL2 installed. Build the pinned source instead, so the bundle
+        # carries it and Windows and macOS build against the same version.
         run: |
-          brew list sdl2 >/dev/null 2>&1 || brew install sdl2
-          echo "SDL2_PREFIX=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
+          ./launcher/packaging/build-sdl2.ps1 -Prefix "$env:RUNNER_TEMP/sdl2"
+          "SDL2_DIR=$env:RUNNER_TEMP/sdl2/lib/cmake/SDL2" >> $env:GITHUB_ENV
 
       - name: Configure
         run: >
           cmake -S launcher -B launcher/build-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_PREFIX_PATH="$SDL2_PREFIX"
+          -DSDL2_DIR="$SDL2_DIR"
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
@@ -68,6 +72,18 @@ jobs:
 
       - name: Test
         run: ctest --test-dir launcher/build-ci --output-on-failure
+
+      - name: No dynamic SDL2
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="launcher/build-ci/NarutoLauncher.app/Contents/MacOS/NarutoLauncher"
+          if otool -L "$bin" | grep -qi sdl; then
+            echo "::error::the bundle links SDL2 dynamically, so the download would need SDL2 installed"
+            otool -L "$bin" | grep -i sdl
+            exit 1
+          fi
+          echo "SDL2 is linked statically"
 
       - name: Sign ad hoc and package
         shell: bash
@@ -139,6 +155,18 @@ jobs:
       - name: Test
         run: ctest --test-dir launcher/build-release --output-on-failure
 
+      - name: No dynamic SDL2
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=launcher/build-release/NarutoLauncher.exe
+          if objdump -p "$exe" | grep -qi 'DLL Name:.*SDL'; then
+            echo "::error::the launcher links SDL2 dynamically, so it would need SDL2 beside it"
+            objdump -p "$exe" | grep -i 'DLL Name:.*SDL'
+            exit 1
+          fi
+          echo "SDL2 is linked statically"
+
       - name: Package lean
         shell: pwsh
         run: >
@@ -190,6 +218,18 @@ jobs:
         run: >
           ./launcher/packaging/build-release.ps1 -Zip -Clean
           -Version "${{ steps.version.outputs.value }}"
+
+      - name: No dynamic SDL2
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=launcher/build-release/NarutoLauncher.exe
+          if objdump -p "$exe" | grep -qi 'DLL Name:.*SDL'; then
+            echo "::error::the launcher links SDL2 dynamically, so it would need SDL2 beside it"
+            objdump -p "$exe" | grep -i 'DLL Name:.*SDL'
+            exit 1
+          fi
+          echo "SDL2 is linked statically"
 
       - uses: actions/upload-artifact@v4
         with:
