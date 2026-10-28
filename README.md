@@ -58,6 +58,10 @@ ninja -C build
 `cmake` picks up `rom/disc` on its own; `-DGAME_ISO=/path/to/image.iso` still works, as
 does putting an `.iso`/`.ciso` in `rom/` instead of the tree.
 
+Under MinGW-w64 the game is linked with `-static -static-libgcc -static-libstdc++`, so the
+built `naruto.exe` carries the C++ runtime: it starts on its own, with no toolchain DLLs
+beside it or on `PATH`.
+
 ## Launcher (Windows, macOS, Linux)
 
 `launcher/` is one C++ application that builds on all three. Its window is a single
