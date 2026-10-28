@@ -1,0 +1,226 @@
+name: Build
+
+# A tag publishes a release; every other event is a build check. The game itself cannot
+# be built here — it needs the user's own disc image — so only the launcher is built, and
+# only the launcher's windowless render tests run. `tools/check_publish.py` is the guard
+# that nothing derived from the disc is in the tree being built.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: Also build the full Windows bundle, which is normally release-only
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Publish gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nothing derived from the disc may be published
+        run: python3 tools/check_publish.py
+
+  macos:
+    name: macOS (arm64)
+    # macos-14 and later are Apple Silicon, which is what this build targets; macos-13
+    # and earlier are Intel.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install SDL2
+        run: |
+          brew list sdl2 >/dev/null 2>&1 || brew install sdl2
+          echo "SDL2_PREFIX=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: >
+          cmake -S launcher -B launcher/build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$SDL2_PREFIX"
+          -DNLA_VERSION="${{ steps.version.outputs.value }}"
+
+      - name: Build
+        run: ninja -C launcher/build-ci NarutoLauncher
+
+      - name: Test
+        run: ctest --test-dir launcher/build-ci --output-on-failure
+
+      - name: Sign ad hoc and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          app="launcher/build-ci/NarutoLauncher.app"
+          # Ad hoc, exactly like a local build: an unsigned arm64 bundle will not start,
+          # and notarisation needs an Apple identity this project does not have.
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          stage="launcher/build-ci/package/Naruto Launcher ${version}"
+          mkdir -p "$stage"
+          ditto "$app" "$stage/Naruto Launcher.app"
+          cp LICENSE THIRD-PARTY-NOTICES.md "$stage/"
+          ditto licenses "$stage/licenses"
+
+          zip="launcher/build-ci/NarutoLauncher-macOS-arm64-v${version}.zip"
+          ditto -c -k --norsrc --keepParent "$stage" "$zip"
+          shasum -a 256 "$zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: launcher/build-ci/NarutoLauncher-macOS-arm64-*.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64, lean)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+
+      - name: Put MinGW-w64 on PATH
+        shell: bash
+        run: echo "${{ steps.msys2.outputs.msys2-location }}/mingw64/bin" >> "$GITHUB_PATH"
+
+      - name: Build SDL2 for MinGW-w64
+        shell: pwsh
+        run: ./launcher/packaging/build-sdl2.ps1
+
+      - name: Configure
+        run: >
+          cmake -S launcher -B launcher/build-release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DNLA_VERSION="${{ steps.version.outputs.value }}"
+
+      - name: Build
+        run: ninja -C launcher/build-release NarutoLauncher
+
+      - name: Test
+        run: ctest --test-dir launcher/build-release --output-on-failure
+
+      - name: Package lean
+        shell: pwsh
+        run: >
+          ./launcher/packaging/build-release.ps1 -Lean -SkipBuild -Zip
+          -Output launcher/build-ci/out -Version "${{ steps.version.outputs.value }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-lean
+          path: launcher/build-ci/out/*.zip
+          if-no-files-found: error
+
+  windows-bundle:
+    name: Windows (x64, full bundle)
+    # The bundle is about 1 GB before compression, most of it MinGW-w64, so it is only
+    # built for a release; a manual run can ask for it with -f bundle=true.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+
+      - name: Put MinGW-w64 on PATH
+        shell: bash
+        run: echo "${{ steps.msys2.outputs.msys2-location }}/mingw64/bin" >> "$GITHUB_PATH"
+
+      - name: Build SDL2 for MinGW-w64
+        shell: pwsh
+        run: ./launcher/packaging/build-sdl2.ps1
+
+      - name: Build the bundle
+        shell: pwsh
+        run: >
+          ./launcher/packaging/build-release.ps1 -Zip -Clean
+          -Version "${{ steps.version.outputs.value }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: launcher/dist/NarutoLauncher-Windows-x64-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [gate, macos, windows-bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find dist -name '*.zip' -type f | sort)
+          printf '%s\n' "${assets[@]}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --generate-notes
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

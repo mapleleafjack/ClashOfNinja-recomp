@@ -134,13 +134,45 @@ powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Z
 
 That writes `launcher/dist/NarutoLauncher/` with `NarutoLauncher.exe`, `tools\` (CMake,
 Ninja, MinGW-w64, embedded Python, nodtool, and a built SDL2 prefix when one exists), and
-the notices. `-Lean` skips the tools and leaves the launcher looking on PATH. A full
+the notices; `-Version 1.0.1` names the build and the zip after the release. `-Lean` skips
+the tools and leaves the launcher looking on PATH. A full
 release is about 1 GB before compression, almost all of it MinGW-w64. Unzip it to a path
 with no spaces in it (for example `C:\Games\NarutoLauncher`): MinGW-w64 cannot run from a
 path containing spaces, and it is the compiler that builds the game.
 
 The launcher holds no game data: the extracted tree stays where the extractor put it, and
 `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
+
+## Automated builds
+
+`.github/workflows/build.yml` builds the launcher on GitHub Actions. The game is not built
+there — it needs the user's own disc image.
+
+| Event | What happens |
+| --- | --- |
+| pull request, push to `main` | compile check on macOS (arm64) and Windows (x64), both running `ctest`, plus `tools/check_publish.py` |
+| tag `v*` | the same, then the full Windows bundle, then both zips attached to that tag's release (created if it does not exist yet) |
+| manual run | the same as a compile check; `-f bundle=true` adds the full Windows bundle without publishing |
+
+The assets are named after the tag: `NarutoLauncher-macOS-arm64-v<version>.zip` holding the
+`.app` plus the notices, and `NarutoLauncher-Windows-x64-v<version>.zip` holding the ~1 GB
+bundle from `launcher/packaging/build-release.ps1`. A lean Windows zip is uploaded as a
+workflow artifact on every run. The tag also names the version: the workflow passes it as
+`NLA_VERSION`, which becomes the bundle's `CFBundleShortVersionString`.
+
+```sh
+gh workflow run build.yml -f bundle=true     # exercise the bundle without a release
+```
+
+Windows has no prebuilt SDL2 for every target, so a launcher build needs a prefix first.
+`launcher/packaging/build-sdl2.ps1` builds one from source into
+`%LOCALAPPDATA%\gcn-recomp\SDL2-<version>-<tag>`, the same prefix gcn-recomp builds and the
+launcher's CMake looks for. It also runs outside Windows (any CMake, Ninja and compiler),
+which is how CI's use of it is checked.
+
+The macOS build is signed ad hoc, exactly like a local one: an unsigned arm64 bundle will
+not start there, and notarisation would need an Apple identity this project does not have.
+So the download still needs right-click → Open the first time.
 
 ## Analysis (optional)
 

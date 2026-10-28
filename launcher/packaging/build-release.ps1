@@ -13,6 +13,7 @@
 .EXAMPLE
     .\build-release.ps1 -Zip
     .\build-release.ps1 -Lean -Output ..\dist
+    .\build-release.ps1 -Zip -Version 1.0.0
 #>
 param(
     [string]$Output = "",
@@ -20,6 +21,7 @@ param(
     [switch]$Zip,
     [switch]$SkipBuild,
     [switch]$Clean,
+    [string]$Version = "",
     [string]$NodtoolVersion = 'v2.0.0-alpha.12'
 )
 
@@ -80,8 +82,11 @@ $env:PATH = ($toolDirs -join ';') + ';' + $env:PATH
 if (-not $SkipBuild) {
     if ($Clean -and (Test-Path $buildDir)) { Remove-Item $buildDir -Recurse -Force }
     Write-Host "`nConfiguring and building the launcher..."
+    # A release names the version the bundle reports; a plain build keeps the default.
+    $versionArg = @()
+    if ($Version) { $versionArg = "-DNLA_VERSION=$Version" }
     & $cmake -S $launcher -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=Release `
-        "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_CXX_COMPILER=$gxx"
+        "-DCMAKE_MAKE_PROGRAM=$ninja" "-DCMAKE_CXX_COMPILER=$gxx" @versionArg
     if ($LASTEXITCODE -ne 0) { throw "cmake configure failed ($LASTEXITCODE)" }
     & $ninja -C $buildDir NarutoLauncher
     if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
@@ -213,7 +218,8 @@ $size = (Get-ChildItem $outDir -Recurse -File | Measure-Object Length -Sum).Sum
 Write-Host ("`nBuilt {0} ({1:N0} MB)" -f $outDir, ($size / 1MB))
 
 if ($Zip) {
-    $zipPath = Join-Path $Output 'NarutoLauncher.zip'
+    $zipName = if ($Version) { "NarutoLauncher-Windows-x64-v$Version.zip" } else { 'NarutoLauncher.zip' }
+    $zipPath = Join-Path $Output $zipName
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Write-Host "compressing to $zipPath (this takes a while)"
     Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zipPath

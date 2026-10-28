@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
-project(NarutoLauncher VERSION 1.0 LANGUAGES CXX)
+
+# A tagged release passes the tag as the version, so the bundle reports it; a plain
+# configure keeps the historical 1.0.
+if(NOT NLA_VERSION)
+  set(NLA_VERSION "1.0")
+endif()
+project(NarutoLauncher VERSION ${NLA_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +26,9 @@ find_package(Threads REQUIRED)
 find_package(SDL2 CONFIG QUIET)
 if(NOT SDL2_FOUND AND WIN32)
   # gcn-recomp builds SDL2 from source once per machine; reuse that copy if it is there.
-  file(GLOB _sdl2_prefixes "$ENV{LOCALAPPDATA}/gcn-recomp/SDL2-*")
+  file(GLOB _sdl2_prefixes LIST_DIRECTORIES true "$ENV{LOCALAPPDATA}/gcn-recomp/SDL2-*")
+  # A prefix is built beside its work directory, which holds no installed files.
+  list(FILTER _sdl2_prefixes EXCLUDE REGEX "-work$")
   foreach(_prefix IN LISTS _sdl2_prefixes)
     if(NOT SDL2_FOUND)
       find_package(SDL2 CONFIG QUIET PATHS "${_prefix}" NO_DEFAULT_PATH)
