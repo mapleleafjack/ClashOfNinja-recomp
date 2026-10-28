@@ -53,6 +53,11 @@ std::vector<PlatThread> plat_threads();
 bool plat_thread_sched(long tid, uint64_t* run_ns, uint64_t* wait_ns, int* cpu);
 
 // ---- time ----
+// Sleep for `ns` nanoseconds. Sub-millisecond requests are honoured; the C++ library's
+// sleep_for is not: on Windows it waits on a timer the system clock quantises to its
+// 15.6 ms tick, so a frame pacer asking for 10 ms got 15.6 back and the game lost a
+// third of the frames its CPU had the headroom for.
+void plat_sleep_ns(int64_t ns);
 // Seconds to add to UTC to get local wall-clock time, including any DST in effect.
 long plat_utc_offset_seconds();
 

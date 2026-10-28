@@ -22,15 +22,15 @@ naruto/build/
 config/GNREDA/
 orig/
 build/
+build-*/
 
 # The memory card and input logs.
 naruto/saves/
 
-# The launcher's generated material.
-launcher/.venv/
+# The launcher's build output.
 launcher/build/
+launcher/build-release/
 launcher/dist/
-launcher/packaging/*
 
 __pycache__/
 *.pyc

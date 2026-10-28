@@ -456,7 +456,7 @@ extern "C" void idle_hint(CPU* c) {
         if (limit != UINT64_MAX && cur < limit) { g_vskipped += limit - cur; g_vcount = limit; }
         else g_vcount = cur + 1;
     } else {
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        plat_sleep_ns(100000);
     }
     irq_poll(c);
 }
@@ -537,7 +537,7 @@ void clock_pace() {
     int64_t ahead = virt_ns - (int64_t)host_ns() - g_pace_offset_ns;
     if (ahead > 300000) {
         if (ahead > 50000000) ahead = 50000000;
-        std::this_thread::sleep_for(std::chrono::nanoseconds(ahead));
+        plat_sleep_ns(ahead);
     } else if (ahead < -kForgiveNs) {
         g_pace_offset_ns += ahead;  // too far behind: re-anchor
     } else if (ahead < -kCatchupNs && g_catchup && !input_replay_active()) {

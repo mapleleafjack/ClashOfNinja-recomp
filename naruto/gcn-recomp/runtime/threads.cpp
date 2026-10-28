@@ -340,7 +340,7 @@ static void ticker_main() {
     while (!g_quit) {
         uint64_t now = now_ticks();
         if (g_next_event_at.load() <= now || g_dec_deadline.load() <= now) irq_request();
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        plat_sleep_ns(200000);
     }
 }
 

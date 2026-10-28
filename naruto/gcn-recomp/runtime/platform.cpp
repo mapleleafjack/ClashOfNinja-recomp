@@ -131,6 +131,34 @@ void plat_thread_exit() {
 }
 
 // ---- time ----
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002  // Windows 10 1803
+#endif
+
+// Neither std::this_thread::sleep_for nor Sleep resolves below the system clock's tick
+// here (measured: 15.6 ms for a request of 1 ms, and timeBeginPeriod made no difference
+// to the former), while a waitable timer created for high resolution returned 1.6 ms for
+// the same request without raising the system-wide timer resolution.
+void plat_sleep_ns(int64_t ns) {
+    if (ns <= 0) return;
+    // One timer per thread: an auto-reset timer takes one waiter at a time, and the pacer
+    // waits on the guest thread while the ticker has one of its own.
+    static thread_local HANDLE timer = CreateWaitableTimerExW(
+        nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (timer) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(ns < 100 ? 1 : ns / 100);  // relative, in 100 ns units
+        if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+            WaitForSingleObject(timer, INFINITE);
+            return;
+        }
+    }
+    // No high-resolution timer (before Windows 10 1803), or the call failed: yield until
+    // the time is up rather than sleep, which would be the 15.6 ms wait this avoids.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::nanoseconds(ns);
+    while (std::chrono::steady_clock::now() < deadline) std::this_thread::yield();
+}
+
 long plat_utc_offset_seconds() {
     time_t t = time(nullptr);
     struct tm lt;
@@ -201,10 +229,12 @@ bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
 // ===========================================================================
 #else  // POSIX
 // ===========================================================================
+#include <cerrno>
 #include <csignal>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/resource.h>
@@ -318,6 +348,16 @@ bool plat_thread_start(void* (*fn)(void*), void* arg, size_t stack_size) {
 void plat_thread_exit() {
     pthread_exit(nullptr);
     for (;;) {}  // not reached
+}
+
+void plat_sleep_ns(int64_t ns) {
+    if (ns <= 0) return;
+    timespec ts;
+    ts.tv_sec = (time_t)(ns / 1000000000);
+    ts.tv_nsec = (long)(ns % 1000000000);
+    // The platform's wait already resolves microseconds; a signal is the only early
+    // return, and it leaves the remainder in ts.
+    while (clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, &ts) == EINTR) {}
 }
 
 long plat_utc_offset_seconds() {

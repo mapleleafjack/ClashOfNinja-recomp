@@ -47,34 +47,18 @@ line; the Khronos `khrplatform.h` is MIT, with the text in the file. The Apache-
 wants a copy of its licence for anyone who receives the sources, which is
 [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
 
-## Qt for Python (PySide6) — LGPL-3.0 — launcher only
+## SDL2 — zlib licence — the launcher's window
 
-`launcher/` is a Qt application and imports PySide6, which is the Qt Company's Qt under
-the LGPL-3.0. Nothing is owed for publishing the launcher's source, or for a user running
-it against their own PySide6 install from `launcher/requirements.txt`.
+`launcher/` links SDL2 for its window, event loop, clipboard and drag and drop, the same
+library the game's runtime uses. It is statically linked, so the executable contains it and
+its notice must travel with any build: [licenses/SDL2.txt](licenses/SDL2.txt).
 
-A bundle built by `launcher/build.py` is a different thing: it contains Qt, so whoever
-receives it must get the LGPL-3.0 (and GPL-3.0, which LGPLv3 incorporates by reference)
-and must be able to replace the Qt libraries with their own build — which is why the
-default one-folder build is the compliant one, and `--onefile`, which unpacks to a
-throwaway directory, is not. Concretely, ship with the bundle:
+## stb_truetype and stb_image — public domain (or MIT) — launcher only
 
-- this file, `licenses/LGPL-3.0.txt` and `licenses/GPL-3.0.txt`;
-- the Qt libraries as separate files, unmodified (`build.py`'s default does this);
-- a note saying where to get a matching PySide6 wheel, so the Qt in the bundle can be
-  swapped.
-
-Qt itself embeds further third-party code (ICU, HarfBuzz, OpenSSL and so on) whose notices
-are in the wheel's `PySide6/Qt/` tree; `qtattributionsscanner` collects them.
-
-## PyInstaller — GPL-2.0-or-later, with the bundling exception — build tool only
-
-`launcher/build.py` drives PyInstaller to produce the launcher bundle. PyInstaller is
-GPL-2.0-or-later, and the exception in its `COPYING` — reproduced verbatim at
-[licenses/PyInstaller-COPYING.txt](licenses/PyInstaller-COPYING.txt) — is what allows it
-to bundle a program that is not GPL. The bootloader it puts into the bundle is PyInstaller
-code, so its notice travels with the bundle too; [licenses/GPL-2.0.txt](licenses/GPL-2.0.txt)
-is the licence text.
+`launcher/src/third_party/` vendors two single-header libraries by Sean Barrett: the glyph
+rasteriser and the PNG reader for the launcher's own logo. Each file states its own terms
+("public domain ... or MIT") at the top, and that statement is the licence that has to
+travel with a build. Nothing else in the project uses them.
 
 ## ANGLE — BSD-2-Clause and others — visionOS target only
 
@@ -82,6 +66,30 @@ is the licence text.
 it is fetched and built by `tools/build-angle-visionos.sh`. Only a visionOS app you build
 and distribute carries it, and that app needs ANGLE's notices (BSD-2-Clause for ANGLE
 itself, plus whatever WebKit's build pulls in). Nothing in this repository does.
+
+## nodtool — MIT OR Apache-2.0 — bundled with Windows releases
+
+`launcher/packaging/build-release.ps1` puts the Windows `nodtool` binary from
+[encounter/nod](https://github.com/encounter/nod) in `tools/nodtool/`, so the launcher can
+convert RVZ, WIA, GCZ, WBFS, TGC and NFS images before extracting them. It is MIT OR
+Apache-2.0; the release carries `tools/nodtool/LICENSE.txt`, and
+[licenses/Apache-2.0.txt](licenses/Apache-2.0.txt) is the same licence text.
+
+## Native launcher toolchain — bundled with Windows releases
+
+A full release folder also carries portable CMake (BSD-3-Clause), Ninja (Apache-2.0),
+MinGW-w64 (GCC Runtime Library Exception) and the Python embeddable runtime (PSF licence)
+in `tools\`. See each project for its licence text; `licenses/Apache-2.0.txt` covers the
+Apache-2.0 parts. The launcher executable itself needs no framework beyond SDL2: it draws
+its own interface and rasterises text from a font the system already has.
+
+## Launcher icon — fan artwork by sadrithmora
+
+The launcher's icon and the leaf symbol in its header come from
+`naruto_themed_windows_icons_by_sadrithmora` by
+[sadrithmora](https://www.deviantart.com/sadrithmora) (leafsymbolD.ico), supplied for
+this project by its author. It is fan artwork: the Naruto name and marks belong to their
+respective owners. If you redistribute the launcher, keep this attribution with it.
 
 ## Not third-party, but worth restating
 

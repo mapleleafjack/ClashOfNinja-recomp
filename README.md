@@ -14,7 +14,7 @@ runtime that implements the GameCube hardware.
 | `tools/setup.sh` | that, then the build |
 | `tools/check_publish.py` | proves nothing derived from the disc is in what would be published |
 | `LICENSE`, `THIRD-PARTY-NOTICES.md` | this project's MIT licence, and the licences of what it is built on |
-| `launcher/` | desktop launcher (PySide6): extract the disc, build, bind controls, play — Windows, macOS and Linux |
+| `launcher/` | desktop launcher for Windows, macOS and Linux: one C++ application — extract the disc, build, play |
 | `naruto/rom/disc/` | the disc, extracted: `sys/main.dol`, `sys/fst.bin`, `files/…` and a `disc.manifest` of disc offsets. Derived from the user's disc; not committed |
 | `config/GNREDA/`, `build/GNREDA/` | dtk project config and split output, when you generate them. Not committed — both come from the disc, see "Analysis" |
 | `naruto/` | the recompilation project (the thing that builds and runs) |
@@ -60,51 +60,87 @@ does putting an `.iso`/`.ciso` in `rom/` instead of the tree.
 
 ## Launcher (Windows, macOS, Linux)
 
-`launcher/` is a desktop app for the steps above: choose your disc image, extract and
-build, bind a controller, play. Python 3.10 or newer.
+`launcher/` is one C++ application that builds on all three. Its window is a single
+**Launch the game** button: it asks for your disc image, extracts and builds as needed, then
+plays. It draws its own interface — no widget toolkit, one executable per platform — and
+needs only SDL2, the same library the game's runtime uses.
 
 ```sh
-# macOS / Linux
-python3 -m venv launcher/.venv
-launcher/.venv/bin/python -m pip install -r launcher/requirements.txt
-launcher/.venv/bin/python launcher/main.py
+# macOS: xcode-select --install, then
+brew install cmake ninja sdl2
+
+# Debian/Ubuntu
+sudo apt install cmake ninja-build g++ libsdl2-dev
+
+# build and run
+cmake -S launcher -B launcher/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+ninja -C launcher/build NarutoLauncher
+launcher/build/NarutoLauncher              # macOS: launcher/build/NarutoLauncher.app
 ```
 
-```bat
-:: Windows
-py -3 -m venv launcher\.venv
-launcher\.venv\Scripts\python -m pip install -r launcher\requirements.txt
-launcher\.venv\Scripts\python launcher\main.py
-```
-
-Package it as a standalone app with PyInstaller — each OS builds its own, there is no
-cross-compiling:
-
-```sh
-python -m pip install pyinstaller
-python launcher/build.py            # --onefile for a single executable
-```
-
-The result is `launcher/dist/Naruto Launcher.app` on macOS; on Windows and Linux it is
-the `Naruto Launcher` folder in `launcher/dist` holding `Naruto Launcher.exe` / `Naruto
-Launcher`. Put it beside the project — it finds the tree itself — or start it anywhere and
-use **File → Locate Project Folder**.
+On Windows, CMake finds the SDL2 that `gcn-recomp` already builds under
+`%LOCALAPPDATA%\gcn-recomp`; pass `-DSDL2_DIR=<the folder holding SDL2Config.cmake>` to
+use another. A release of the launcher is a single executable — SDL2 is linked in
+statically — so nothing else has to be installed for it to start.
 
 What it does:
 
-- **Game disc** — takes any image nodtool reads, runs `tools/extract_disc.py` with its
-  output in the window, then builds with cmake and ninja. It shows the extracted
-  `main.dol`'s SHA-1 against the pinned one, so the wrong image is visible before a build.
-- **Controllers** — binds a GameCube control by pressing it. Controller input comes from
-  the game's own `--list-controls` probe, so the device name, button and axis are what the
-  runtime reads; keyboard bindings are captured from the launcher window. The binding is
-  written to `naruto/controls.txt`, which the launcher passes with `--controls=`.
-  **Reset to Defaults** deletes that file and returns to the built-in mapping.
-- **Play** — window scale, music, input-logging, and Stop. The game runs with `naruto/` as
-  its working directory, so it uses the same `rom/disc` and `saves/` as the command line.
+- **Launch the game** — the window is one call to action. It asks for the disc image when
+  the game data is missing, builds the game when there is no binary yet, and otherwise
+  starts it. While it works, the step and a progress bar replace the button, and Activity
+  shows the output; when the game runs the button becomes Stop.
+- **Game disc** — reads ISO and CISO itself, including the FST offset shift that NKit and
+  rebuilt images use. Other formats (RVZ, WIA, GCZ, WBFS, TGC, NFS) are converted with
+  `nodtool` first. It checks `main.dol`'s SHA-1 before writing anything and puts the new
+  tree in place only when the whole extraction succeeded; the extractor writes the same
+  bytes, and the same `disc.manifest`, as `tools/extract_disc.py`.
+- **Build** — CMake and Ninja with their output streamed into Activity, a progress bar and
+  Cancel. Cancel ends the whole build tree: a job object on Windows, the process group
+  elsewhere, so compilers the build started go too.
+- **Play** — the same `--scale`, `--no-music`, `--no-input-log` and `--controls` arguments
+  as the command line. Stop sends `SIGINT` on macOS and Linux, which the runtime answers by
+  dumping its GX FIFO, then escalates if the game ignores it.
+- **Settings** — everything that is not part of launching the game: the project folder,
+  a replacement disc image, the play defaults (window scale, music, input log), the saves
+  and controls files, the build tools with a Rebuild action, and a Desktop or menu
+  shortcut: a `.lnk` on Windows, a symlink to the `.app` on macOS, a `.desktop` file on
+  Linux.
+- **Tools** — a `tools/` folder beside the executable comes first, then PATH and the
+  platform's usual install locations (winget packages and Program Files on Windows,
+  Homebrew on macOS, `/usr/local` and `~/.cargo/bin` everywhere).
 
-The launcher holds no game data: the extracted tree stays where `tools/extract_disc.py`
-put it, and `launcher/.venv/`, `launcher/build/` and `launcher/dist/` are gitignored.
+Drag a disc image or a project folder onto the window, or use the built-in picker. The
+launcher finds the project beside itself, or remembers the folder you choose. "Show
+details" reveals the Activity log whenever it is hidden.
+
+`ctest --test-dir launcher/build` renders the main window, Settings and the picker to BMP
+files — through `--render <file> [main|settings|picker|confirm|click:x,y|settings-click:x,y]`,
+which needs no window and no desktop. The click modes paint, click that point and paint
+again (the `settings-` form opens Settings first), so the tests cover hit testing and
+activation as well as drawing. A render also needs one usable system font; on a minimal
+Linux install that means `fonts-dejavu` or `fonts-liberation`.
+
+`launcher/tests/extract_test.cpp` runs the extractor from a console so its output can be
+compared with `tools/extract_disc.py`; it is a developer target, not shipped.
+
+### Windows release
+
+The Windows release puts the toolchain beside the launcher, so a player can extract their
+own disc and build the game without installing anything:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Zip
+```
+
+That writes `launcher/dist/NarutoLauncher/` with `NarutoLauncher.exe`, `tools\` (CMake,
+Ninja, MinGW-w64, embedded Python, nodtool, and a built SDL2 prefix when one exists), and
+the notices. `-Lean` skips the tools and leaves the launcher looking on PATH. A full
+release is about 1 GB before compression, almost all of it MinGW-w64. Unzip it to a path
+with no spaces in it (for example `C:\Games\NarutoLauncher`): MinGW-w64 cannot run from a
+path containing spaces, and it is the compiler that builds the game.
+
+The launcher holds no game data: the extracted tree stays where the extractor put it, and
+`launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
 
 ## Analysis (optional)
 
@@ -218,10 +254,9 @@ What it builds on is not all under the same terms, so
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) is the map: gcn-recomp is Ethan
 Nicholas's MIT, whose notice stays at `naruto/gcn-recomp/LICENSE` and is also reproduced
 in the notices file because a built binary contains that code; the glad loaders are
-`(WTFPL OR CC0-1.0) AND Apache-2.0`, and the launcher's PySide6 is LGPL-3.0 with
-PyInstaller GPL-2.0-with-exception — which is what a distributed launcher bundle has to
-carry, and why `build.py`'s default one-folder build is the compliant one and `--onefile`
-is not. The licence texts are in `licenses/`.
+`(WTFPL OR CC0-1.0) AND Apache-2.0`, and the launcher links SDL2 (zlib), which is inside
+every launcher binary, plus two public-domain stb headers it vendors in
+`launcher/src/third_party/`. The licence texts are in `licenses/`.
 
 **Unofficial.** Not affiliated with, endorsed by or licensed by Nintendo, Shueisha, or the
 game's developers and publishers. Naruto and the game are their property; this project
