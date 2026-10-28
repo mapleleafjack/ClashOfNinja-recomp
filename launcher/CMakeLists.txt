@@ -113,8 +113,10 @@ if(WIN32)
   if(MINGW)
     target_compile_options(NarutoLauncher PRIVATE -Wall -Wextra -Wno-unused-parameter
       -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    # SDL2's prefix is built with debug info, which would take the debug sections and
+    # 43k symbols of it into the release: -s keeps them out and halves the exe.
     target_link_options(NarutoLauncher PRIVATE -static -static-libgcc -static-libstdc++
-      -municode)
+      -municode -s)
 
     # MinGW's driver adds lib/default-manifest.o to every link, and the linker refuses
     # a second manifest. Ship ours under that name and let -B prefer it.

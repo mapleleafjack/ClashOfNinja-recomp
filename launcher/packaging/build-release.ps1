@@ -13,7 +13,8 @@
 .EXAMPLE
     .\build-release.ps1 -Zip
     .\build-release.ps1 -Lean -Output ..\dist
-    .\build-release.ps1 -Zip -Version 1.0.0
+    .\build-release.ps1 -Zip -Version 1.0.1
+    .\build-release.ps1 -SkipBuild -Zip -Version 1.1.0
 #>
 param(
     [string]$Output = "",
@@ -125,6 +126,45 @@ if (-not $Lean) {
         if (Test-Path $source) { Copy-Item $source (Join-Path $mingwOut $part) -Recurse }
     }
 
+    # A build of the game reaches the compiler, the linker, the headers and the runtime
+    # libraries. It does not reach the rest of a whole GCC distribution: the Fortran and
+    # Objective-C frontends (113 MB), MinGW's own CMake/ctest/cpack, gdb, doxygen,
+    # lto-dump, cppcheck and the info/locale/man tree are ~380 MB of a 1 GB folder, and
+    # so are the CMake binaries a configure never runs. Their licences are named in
+    # THIRD-PARTY-NOTICES.md whether they are here or not.
+    $pruned = @(
+        'mingw64\libexec\gcc\*\*\f951.exe'
+        'mingw64\libexec\gcc\*\*\cc1obj.exe'
+        'mingw64\libexec\gcc\*\*\cc1objplus.exe'
+        'mingw64\bin\doxygen.exe'
+        'mingw64\bin\lto-dump.exe'
+        'mingw64\bin\gdb.exe'
+        'mingw64\bin\cppcheck.exe'
+        'mingw64\bin\cmake.exe'
+        'mingw64\bin\cmake-gui.exe'
+        'mingw64\bin\ccmake.exe'
+        'mingw64\bin\ctest.exe'
+        'mingw64\bin\cpack.exe'
+        'mingw64\lib\libpython*.a'
+        'mingw64\share\info'
+        'mingw64\share\locale'
+        'mingw64\share\man'
+        'mingw64\share\Cppcheck'
+        'mingw64\share\cmake-*'
+        'mingw64\share\gdb'
+        'cmake\bin\cmake-gui.exe'
+        'cmake\bin\cpack.exe'
+        'cmake\bin\ctest.exe'
+        'cmake\bin\cmcldeps.exe'
+    )
+    $before = (Get-ChildItem $tools -Recurse -File | Measure-Object Length -Sum).Sum
+    foreach ($pattern in $pruned) {
+        Get-ChildItem (Join-Path $tools $pattern) -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $after = (Get-ChildItem $tools -Recurse -File | Measure-Object Length -Sum).Sum
+    Write-Host ("pruned {0:N0} MB the build never reaches" -f (($before - $after) / 1MB))
+
     # Python: the recompiler's code generator needs an interpreter at build time.
     $pythonOut = Join-Path $tools 'python'
     if (-not (Test-Path (Join-Path $pythonOut 'python.exe'))) {
@@ -223,6 +263,29 @@ if ($Zip) {
     $zipPath = Join-Path $Output $zipName
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Write-Host "compressing to $zipPath (this takes a while)"
-    Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zipPath
-    Write-Host ("Zip: {0:N0} MB" -f ((Get-Item $zipPath).Length / 1MB))
+
+    # Compress-Archive was tried on this tree and left a 4 KB archive behind, with no
+    # error, after minutes on 16k files and 1 GB. The tar Windows ships is bsdtar: it
+    # writes the same zip, names at the top level and deflated, in under a minute.
+    $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+    if ($tar) {
+        $entries = Get-ChildItem $outDir -Force | Select-Object -ExpandProperty Name
+        & $tar.Source -a -c -f $zipPath -C $outDir '--options' 'zip:compression=deflate' @entries
+        if ($LASTEXITCODE -ne 0) { throw "tar failed to write $zipPath ($LASTEXITCODE)" }
+    } else {
+        Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zipPath
+    }
+    if (-not (Test-Path $zipPath)) { throw "$zipPath was not written" }
+
+    # A short archive is the failure this replaced, so count what landed in it.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $expected = (Get-ChildItem $outDir -Recurse -File).Count
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    try { $written = @($archive.Entries | Where-Object { $_.Name -ne '' }).Count } finally { $archive.Dispose() }
+    if ($written -ne $expected) {
+        throw "$zipPath holds $written files, expected $expected"
+    }
+
+    Write-Host ("Zip:    {0:N0} MB, {1:N0} files" -f ((Get-Item $zipPath).Length / 1MB), $written)
+    Write-Host ("SHA-256 {0}" -f (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant())
 }

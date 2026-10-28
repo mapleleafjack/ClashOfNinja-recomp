@@ -135,10 +135,19 @@ powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Z
 That writes `launcher/dist/NarutoLauncher/` with `NarutoLauncher.exe`, `tools\` (CMake,
 Ninja, MinGW-w64, embedded Python, nodtool, and a built SDL2 prefix when one exists), and
 the notices; `-Version 1.0.1` names the build and the zip after the release. `-Lean` skips
-the tools and leaves the launcher looking on PATH. A full
-release is about 1 GB before compression, almost all of it MinGW-w64. Unzip it to a path
-with no spaces in it (for example `C:\Games\NarutoLauncher`): MinGW-w64 cannot run from a
-path containing spaces, and it is the compiler that builds the game.
+the tools and leaves the launcher looking on PATH. A full release is about 670 MB before
+compression, almost all of it MinGW-w64: the script drops what a build never reaches — the
+Fortran and Objective-C frontends, gdb, doxygen, MinGW's own CMake, ctest and cpack,
+cppcheck, and the info/locale/man tree — which is a further 370 MB. Unzip it to a path with
+no spaces in it (for example `C:\Games\NarutoLauncher`): MinGW-w64 cannot run from a path
+containing spaces, and it is the compiler that builds the game.
+
+`-Zip` also writes `launcher/dist/NarutoLauncher-Windows-x64-v<Version>.zip` — about 190 MB
+— which is the file to attach to a release; `-Version` is the tag without its `v`. The
+archive is counted against the tree and the script fails if the two disagree, then it
+prints the SHA-256 for the release notes. It is written with the `tar` that ships with
+Windows (bsdtar) rather than `Compress-Archive`, which left a 4 KB archive and no error
+after minutes on this tree.
 
 The launcher holds no game data: the extracted tree stays where the extractor put it, and
 `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.

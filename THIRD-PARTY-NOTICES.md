@@ -79,7 +79,10 @@ Apache-2.0; the release carries `tools/nodtool/LICENSE.txt`, and
 
 A full release folder also carries portable CMake (BSD-3-Clause), Ninja (Apache-2.0),
 MinGW-w64 (GCC Runtime Library Exception) and the Python embeddable runtime (PSF licence)
-in `tools\`. See each project for its licence text; `licenses/Apache-2.0.txt` covers the
+in `tools\`. It is pruned to what a build of the game reaches — MinGW's Fortran and
+Objective-C frontends, gdb, doxygen, ctest, cpack and the documentation tree are left out
+— so a recipient who needs those should install the full distribution from WinLibs
+instead. See each project for its licence text; `licenses/Apache-2.0.txt` covers the
 Apache-2.0 parts. The launcher executable itself needs no framework beyond SDL2: it draws
 its own interface and rasterises text from a font the system already has.
 
