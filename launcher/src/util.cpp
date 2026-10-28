@@ -251,28 +251,62 @@ wstring read_text_file(const fs::path& path) {
 
 bool capture_output(const std::wstring& exe, const std::vector<std::wstring>& args,
                     std::string* output, int* status) {
-    auto command = command_line(exe, args);
 #if defined(_WIN32)
-    FILE* pipe = _wpopen(command.c_str(), L"rb");
+    // Not _wpopen: that runs through cmd.exe, which mangles a quoted path that contains a
+    // space (C:\Program Files\Git\...). A pipe of our own takes the command line as is.
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    HANDLE read = nullptr, write = nullptr;
+    if (!CreatePipe(&read, &write, &attributes, 0)) return false;
+    SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    startup.hStdOutput = write;
+    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+    auto line = command_line(exe, args);
+    std::vector<wchar_t> command(line.begin(), line.end());
+    command.push_back(L'\0');
+    PROCESS_INFORMATION child{};
+    bool started = CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, TRUE,
+                                  CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr,
+                                  nullptr, &startup, &child);
+    CloseHandle(write);
+    if (!started) {
+        CloseHandle(read);
+        return false;
+    }
+    std::string text;
+    char buffer[4096];
+    DWORD got = 0;
+    while (ReadFile(read, buffer, sizeof(buffer), &got, nullptr) && got > 0) {
+        text.append(buffer, got);
+    }
+    WaitForSingleObject(child.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(child.hProcess, &code);
+    CloseHandle(child.hThread);
+    CloseHandle(child.hProcess);
+    CloseHandle(read);
+    if (output) *output = std::move(text);
+    if (status) *status = static_cast<int>(code);
+    return true;
 #else
-    FILE* pipe = popen(narrow(command).c_str(), "r");
-#endif
+    FILE* pipe = popen(narrow(command_line(exe, args)).c_str(), "r");
     if (!pipe) return false;
     std::string text;
     char buffer[4096];
     size_t got = 0;
     while ((got = std::fread(buffer, 1, sizeof(buffer), pipe)) > 0) text.append(buffer, got);
-#if defined(_WIN32)
-    int code = _pclose(pipe);
-    int result = code;
-#else
     // pclose gives the wait status, not the exit code.
     int code = pclose(pipe);
-    int result = code >= 0 && WIFEXITED(code) ? WEXITSTATUS(code) : -1;
-#endif
     if (output) *output = std::move(text);
-    if (status) *status = result;
+    if (status) *status = code >= 0 && WIFEXITED(code) ? WEXITSTATUS(code) : -1;
     return true;
+#endif
 }
 
 bool write_text_file(const fs::path& path, std::string_view bytes) {

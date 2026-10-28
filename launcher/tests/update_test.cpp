@@ -174,9 +174,10 @@ void project() {
     auto other = root / L"other";
 
     auto run = [&](const fs::path& where, const std::vector<std::wstring>& extra) {
+        // autocrlf off: the test compares file contents, which a checkout would rewrite.
         std::vector<std::wstring> args{L"-c", L"user.name=Launcher Test", L"-c",
-                                       L"user.email=test@example.com", L"-C",
-                                       where.wstring()};
+                                       L"user.email=test@example.com", L"-c",
+                                       L"core.autocrlf=false", L"-C", where.wstring()};
         args.insert(args.end(), extra.begin(), extra.end());
         std::string output;
         int status = -1;
@@ -230,13 +231,14 @@ void project() {
     };
 
     check(apply(work) == 0, "an out-of-date clone updates");
-    check(nla::read_text_file(work / L"file.txt") == L"two", "the new source is in place");
+    check(nla::trim(nla::read_text_file(work / L"file.txt")) == L"two",
+          "the new source is in place");
     check(!nla::project_is_older_than(work, newer, 4102444800LL),
           "the updated clone is not older");
 
     nla::write_text_file(work / L"file.txt", nla::narrow(L"local change"));
     check(apply(work) != 0, "a clone with local changes is refused");
-    check(nla::read_text_file(work / L"file.txt") == L"local change",
+    check(nla::trim(nla::read_text_file(work / L"file.txt")) == L"local change",
           "a refused update leaves the local change alone");
     fs::remove_all(root, ec);
 }
