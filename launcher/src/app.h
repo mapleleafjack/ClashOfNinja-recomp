@@ -49,6 +49,7 @@ enum class Id {
     SettingsRebuild,
     SettingsRescan,
     SettingsTools,
+    SettingsFetchTools,
     SettingsDesktopShortcut,
     SettingsStartShortcut,
     Scale,
@@ -130,6 +131,7 @@ class App {
     void start_build(bool then_launch = false);
     std::vector<Task> build_tasks();
     bool check_required_tools();
+    void install_tools(bool then_launch);
     void launch();
     void continue_launch();
     void play();

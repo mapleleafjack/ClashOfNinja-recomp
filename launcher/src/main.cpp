@@ -1,5 +1,7 @@
 #include "app.h"
 #include "tools.h"
+#include "tools_package.h"
+#include "util.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +22,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         LocalFree(argv);
         return code;
     }
+    // The release check fetches the pinned tool archive without a window and reads the log.
+    if (argv && argc >= 3 && wcscmp(argv[1], L"--fetch-tools") == 0) {
+        int code = nla::fetch_tools_to_log(std::filesystem::path(argv[2]));
+        LocalFree(argv);
+        return code;
+    }
     if (argv) LocalFree(argv);
     nla::App app;
     return app.create() ? app.run() : 1;
@@ -31,6 +39,9 @@ int main(int argc, char** argv) {
         nla::App app;
         std::string view = argc >= 4 ? argv[3] : "main";
         return app.render_to(argv[2], 1.0f, view);
+    }
+    if (argc >= 3 && std::strcmp(argv[1], "--fetch-tools") == 0) {
+        return nla::fetch_tools_to_log(std::filesystem::path(argv[2]));
     }
     nla::App app;
     return app.create() ? app.run() : 1;

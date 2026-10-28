@@ -2,6 +2,7 @@
 
 #include "disc.h"
 #include "shortcut.h"
+#include "tools_package.h"
 #include "util.h"
 
 #include <algorithm>
@@ -779,8 +780,10 @@ void App::paint_settings() {
     }
     std::wstring tools_line =
         missing.empty() ? L"All build tools found." : L"Missing " + missing + L".";
-    painter_.text(elide(tools_line, Face::Small, content_w - 360),
-                  RectF(left, y + 7, left + content_w - 360, y + 29), Face::Small,
+    bool offer_tools = !missing.empty() && tools_package_available();
+    float reserve = offer_tools ? 500 : 360;
+    painter_.text(elide(tools_line, Face::Small, content_w - reserve),
+                  RectF(left, y + 7, left + content_w - reserve, y + 29), Face::Small,
                   missing.empty() ? rgb(theme::Ok) : rgb(theme::Warn));
     button(Id::SettingsRebuild, Rect{right - 100, y, 100, 32}, L"Rebuild", false,
            !busy_ && project_.has_value());
@@ -788,6 +791,10 @@ void App::paint_settings() {
            true);
     button(Id::SettingsTools, Rect{right - 100 - 8 - 78 - 8 - 132, y, 132, 32},
            L"Open tools folder", false, true);
+    if (offer_tools) {
+        button(Id::SettingsFetchTools, Rect{right - 100 - 8 - 78 - 8 - 132 - 8 - 150, y, 150, 32},
+               L"Get build tools", false, !busy_);
+    }
     y += 38;
     separator();
 
@@ -991,10 +998,24 @@ bool App::check_required_tools() {
     }
     if (lines.empty()) return true;
     append_log(L"[launcher] missing build tools:\n" + lines + L"\n");
+    if (tools_package_available()) {
+        show_confirm(L"Build tools needed",
+                     L"The build needs these tools, which were not found on PATH or beside "
+                     L"the launcher:\n\n" + lines + L"\n\nThe launcher can download them (" +
+                         tools_package_size() + L") into tools\\ beside itself.",
+                     L"Download", [this] { install_tools(true); });
+        return false;
+    }
     show_message(L"Missing build tools",
                  L"The build needs these tools, which were not found on PATH or beside "
                  L"the launcher:\n\n" + lines);
     return false;
+}
+
+void App::install_tools(bool then_launch) {
+    if (busy_ || !tools_package_available()) return;
+    append_log(L"[launcher] fetching the build tools\n");
+    start_job(tools_package_tasks(), then_launch);
 }
 
 void App::start_job(std::vector<Task> tasks, bool then_launch) {
@@ -1035,6 +1056,8 @@ void App::on_job_done(int code) {
     job_then_launch_ = false;
     if (code == 0) {
         append_log(L"[launcher] done\n");
+        // A job can be the one that installed the tools, so look for them again.
+        tools_ = check_tools();
         // Back to the clean one-button view when there is nothing to read.
         log_visible_ = false;
     } else if (code == 130) {
@@ -1176,6 +1199,10 @@ void App::activate(Id id) {
             case Id::SettingsRebuild:
                 settings_open_ = false;
                 start_build();
+                return;
+            case Id::SettingsFetchTools:
+                settings_open_ = false;
+                install_tools(false);
                 return;
             case Id::SettingsRescan:
                 rescan_environment();

@@ -180,9 +180,10 @@ jobs:
           if-no-files-found: error
 
   windows-bundle:
-    name: Windows (x64, full bundle)
-    # The bundle is about 1 GB before compression, most of it MinGW-w64, so it is only
-    # built for a release; a manual run can ask for it with -f bundle=true.
+    name: Windows (x64, release)
+    # Writes the tool archive the launcher downloads (about 190 MB, most of it MinGW-w64)
+    # and the small launcher that pins it, so it only runs for a release; a manual run can
+    # ask for it with -f bundle=true.
     if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
     runs-on: windows-2022
     steps:
@@ -213,11 +214,33 @@ jobs:
         shell: pwsh
         run: ./launcher/packaging/build-sdl2.ps1
 
-      - name: Build the bundle
+      - name: Build the tools archive
         shell: pwsh
+        run: |
+          ./launcher/packaging/build-release.ps1 -SkipBuild -Zip -Split `
+            -Version "${{ steps.version.outputs.value }}"
+          # The launcher can only fetch the bytes it was built against, so the archive is
+          # written first and its URL, digest and size are baked into the build below.
+          $zip = Get-ChildItem launcher/dist/NarutoLauncher-tools-windows-x64-*.zip |
+            Select-Object -First 1
+          "NLA_TOOLS_URL=https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$($zip.Name)" >> $env:GITHUB_ENV
+          "NLA_TOOLS_SHA256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_ENV
+          "NLA_TOOLS_BYTES=$($zip.Length)" >> $env:GITHUB_ENV
+
+      - name: Configure
         run: >
-          ./launcher/packaging/build-release.ps1 -Zip -Clean
-          -Version "${{ steps.version.outputs.value }}"
+          cmake -S launcher -B launcher/build-release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DNLA_VERSION="${{ steps.version.outputs.value }}"
+          -DNLA_TOOLS_URL="${{ env.NLA_TOOLS_URL }}"
+          -DNLA_TOOLS_SHA256="${{ env.NLA_TOOLS_SHA256 }}"
+          -DNLA_TOOLS_BYTES="${{ env.NLA_TOOLS_BYTES }}"
+
+      - name: Build
+        run: ninja -C launcher/build-release NarutoLauncher
+
+      - name: Test
+        run: ctest --test-dir launcher/build-release --output-on-failure
 
       - name: No dynamic SDL2
         shell: bash
@@ -231,10 +254,33 @@ jobs:
           fi
           echo "SDL2 is linked statically"
 
+      - name: Package the launcher
+        shell: pwsh
+        run: >
+          ./launcher/packaging/build-release.ps1 -Lean -SkipBuild -Zip
+          -Version "${{ steps.version.outputs.value }}"
+
+      - name: The pinned archive downloads and matches its digest
+        shell: pwsh
+        run: |
+          # The launcher's own download path, against the release it will be published to.
+          $dir = Join-Path $env:RUNNER_TEMP 'fetch'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item launcher/build-release/NarutoLauncher.exe $dir
+          $process = Start-Process -FilePath (Join-Path $dir 'NarutoLauncher.exe') `
+            -ArgumentList '--fetch-tools', (Join-Path $dir 'fetch.log') -Wait -PassThru
+          Get-Content (Join-Path $dir 'fetch.log')
+          if ($process.ExitCode -ne 0) { throw "fetching the tools failed ($($process.ExitCode))" }
+          if (-not (Test-Path (Join-Path $dir 'tools/mingw64/bin/g++.exe'))) {
+            throw 'the tools archive did not unpack'
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
-          path: launcher/dist/NarutoLauncher-Windows-x64-*.zip
+          path: |
+            launcher/dist/NarutoLauncher-Windows-x64-*.zip
+            launcher/dist/NarutoLauncher-tools-windows-x64-*.zip
           if-no-files-found: error
 
   publish:

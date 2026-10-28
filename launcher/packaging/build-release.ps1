@@ -15,6 +15,7 @@
     .\build-release.ps1 -Lean -Output ..\dist
     .\build-release.ps1 -Zip -Version 1.0.1
     .\build-release.ps1 -SkipBuild -Zip -Version 1.1.0
+    .\build-release.ps1 -SkipBuild -Zip -Split -Version 1.1.0    # the tools archive
 #>
 param(
     [string]$Output = "",
@@ -23,6 +24,7 @@ param(
     [switch]$SkipBuild,
     [switch]$Clean,
     [string]$Version = "",
+    [switch]$Split,
     [string]$NodtoolVersion = 'v2.0.0-alpha.12'
 )
 
@@ -95,11 +97,14 @@ if (-not $SkipBuild) {
 }
 
 $exe = Join-Path $buildDir 'NarutoLauncher.exe'
-if (-not (Test-Path $exe)) { throw "NarutoLauncher.exe was not built at $exe" }
+# The tools archive holds no launcher, so it can be written without one being built.
+if (-not (Test-Path $exe) -and -not $Split) {
+    throw "NarutoLauncher.exe was not built at $exe"
+}
 
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-Copy-Item $exe (Join-Path $outDir 'NarutoLauncher.exe')
+if (Test-Path $exe) { Copy-Item $exe (Join-Path $outDir 'NarutoLauncher.exe') }
 
 if (-not $Lean) {
     $tools = Join-Path $outDir 'tools'
@@ -234,10 +239,11 @@ First start
     Later starts go straight to Play.
 
 Tools
-    A full release carries cmake, ninja, MinGW-w64, Python and nodtool in tools\; the
-    launcher prefers them over anything installed on the machine. nodtool reads RVZ,
-    WIA, GCZ, WBFS, TGC and NFS images, so any of those can be chosen directly.
-    A -Lean release has no tools and uses PATH or a system install instead.
+    A release built with tools\ carries cmake, ninja, MinGW-w64, Python and nodtool there,
+    and the launcher prefers them over anything installed on the machine. nodtool reads
+    RVZ, WIA, GCZ, WBFS, TGC and NFS images, so any of those can be chosen directly. If
+    tools\ is missing, the launcher offers to download it (about 189 MB) the first time it
+    needs to build. A -Lean release has no tools and uses PATH or a system install instead.
 
 Settings
     The Settings panel remembers the project, the last image, window scale,
@@ -259,33 +265,49 @@ $size = (Get-ChildItem $outDir -Recurse -File | Measure-Object Length -Sum).Sum
 Write-Host ("`nBuilt {0} ({1:N0} MB)" -f $outDir, ($size / 1MB))
 
 if ($Zip) {
-    $zipName = if ($Version) { "NarutoLauncher-Windows-x64-v$Version.zip" } else { 'NarutoLauncher.zip' }
-    $zipPath = Join-Path $Output $zipName
-    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-    Write-Host "compressing to $zipPath (this takes a while)"
-
-    # Compress-Archive was tried on this tree and left a 4 KB archive behind, with no
-    # error, after minutes on 16k files and 1 GB. The tar Windows ships is bsdtar: it
-    # writes the same zip, names at the top level and deflated, in under a minute.
+    # The tar Windows ships is bsdtar: it deflates the tree, names entries at the top
+    # level, and finishes in under a minute where Compress-Archive left a 4 KB archive
+    # and no error after minutes on this tree.
     $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
-    if ($tar) {
-        $entries = Get-ChildItem $outDir -Force | Select-Object -ExpandProperty Name
-        & $tar.Source -a -c -f $zipPath -C $outDir '--options' 'zip:compression=deflate' @entries
-        if ($LASTEXITCODE -ne 0) { throw "tar failed to write $zipPath ($LASTEXITCODE)" }
+    if (-not $tar) { throw 'tar.exe was not found; Windows 10 1803 and later ship it.' }
+
+    function New-Archive([string]$path, [string[]]$names) {
+        if (Test-Path $path) { Remove-Item $path -Force }
+        Write-Host "compressing to $path (this takes a while)"
+        & $tar.Source -a -c -f $path -C $outDir '--options' 'zip:compression=deflate' @names
+        if ($LASTEXITCODE -ne 0) { throw "tar failed to write $path ($LASTEXITCODE)" }
+
+        # A short archive is the failure this replaced, so count what landed in it.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $expected = 0
+        foreach ($name in $names) {
+            $item = Join-Path $outDir $name
+            if (Test-Path $item -PathType Container) {
+                $expected += (Get-ChildItem $item -Recurse -File).Count
+            } else {
+                $expected += 1
+            }
+        }
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($path)
+        try {
+            $written = @($archive.Entries | Where-Object { $_.Name -ne '' }).Count
+        } finally {
+            $archive.Dispose()
+        }
+        if ($written -ne $expected) { throw "$path holds $written files, expected $expected" }
+
+        Write-Host ("Zip:    {0:N0} MB, {1:N0} files" -f ((Get-Item $path).Length / 1MB), $written)
+        Write-Host ("SHA-256 {0}" -f (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant())
+    }
+
+    $suffix = if ($Version) { "-v$Version" } else { '' }
+    if ($Split) {
+        # What the launcher downloads on first use: the toolchain beside the licences that
+        # travel with it, and no second copy of the launcher itself.
+        New-Archive (Join-Path $Output "NarutoLauncher-tools-windows-x64$suffix.zip") `
+            @('tools', 'licenses', 'LICENSE', 'THIRD-PARTY-NOTICES.md')
     } else {
-        Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zipPath
+        New-Archive (Join-Path $Output "NarutoLauncher-Windows-x64$suffix.zip") `
+            @(Get-ChildItem $outDir -Force | Select-Object -ExpandProperty Name)
     }
-    if (-not (Test-Path $zipPath)) { throw "$zipPath was not written" }
-
-    # A short archive is the failure this replaced, so count what landed in it.
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $expected = (Get-ChildItem $outDir -Recurse -File).Count
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-    try { $written = @($archive.Entries | Where-Object { $_.Name -ne '' }).Count } finally { $archive.Dispose() }
-    if ($written -ne $expected) {
-        throw "$zipPath holds $written files, expected $expected"
-    }
-
-    Write-Host ("Zip:    {0:N0} MB, {1:N0} files" -f ((Get-Item $zipPath).Length / 1MB), $written)
-    Write-Host ("SHA-256 {0}" -f (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant())
 }

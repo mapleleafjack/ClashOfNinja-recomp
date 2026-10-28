@@ -72,6 +72,7 @@ set(NLA_SOURCES
   src/settings.cpp
   src/shortcut.cpp
   src/tools.cpp
+  src/tools_package.cpp
   src/util.cpp
   src/window.cpp
 )
@@ -98,6 +99,25 @@ target_include_directories(NarutoLauncher PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+# The tool archive the launcher can fetch for itself (src/tools_package.cpp). A release
+# passes the URL, digest and size that `build-release.ps1 -Split` printed; a plain
+# configure leaves them empty, and then the launcher only ever looks for tools that are
+# already installed.
+set(NLA_TOOLS_URL "" CACHE STRING "URL of the Windows build-tools archive")
+set(NLA_TOOLS_SHA256 "" CACHE STRING "SHA-256 of that archive")
+set(NLA_TOOLS_BYTES 0 CACHE STRING "Size of that archive in bytes")
+if(WIN32)
+  if(NLA_TOOLS_BYTES STREQUAL "")
+    set(_nla_tools_bytes 0)
+  else()
+    set(_nla_tools_bytes ${NLA_TOOLS_BYTES})
+  endif()
+  target_compile_definitions(NarutoLauncher PRIVATE
+    NLA_TOOLS_URL="${NLA_TOOLS_URL}"
+    NLA_TOOLS_SHA256="${NLA_TOOLS_SHA256}"
+    NLA_TOOLS_BYTES=${_nla_tools_bytes})
+endif()
 
 target_compile_definitions(NarutoLauncher PRIVATE SDL_MAIN_HANDLED)
 
@@ -139,6 +159,7 @@ if(WIN32)
   target_link_libraries(NarutoLauncher PRIVATE
     ${NLA_SDL2}
     dwmapi comctl32 shell32 shlwapi ole32 uuid user32 gdi32 advapi32 propsys
+    winhttp bcrypt
   )
 else()
   target_compile_options(NarutoLauncher PRIVATE -Wall -Wextra -Wno-unused-parameter)

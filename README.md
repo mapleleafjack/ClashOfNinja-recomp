@@ -107,7 +107,11 @@ What it does:
   Linux.
 - **Tools** — a `tools/` folder beside the executable comes first, then PATH and the
   platform's usual install locations (winget packages and Program Files on Windows,
-  Homebrew on macOS, `/usr/local` and `~/.cargo/bin` everywhere).
+  Homebrew on macOS, `/usr/local` and `~/.cargo/bin` everywhere). On Windows, when the
+  build tools are nowhere to be found, the launcher offers to fetch them itself: it
+  downloads the archive pinned when it was built, checks it against the pinned SHA-256,
+  and unpacks it into `tools/` — Settings → BUILD → **Get build tools**, or the prompt
+  that appears when a build is asked for without them.
 
 Drag a disc image or a project folder onto the window, or use the built-in picker. The
 launcher finds the project beside itself, or remembers the folder you choose. "Show
@@ -123,31 +127,47 @@ Linux install that means `fonts-dejavu` or `fonts-liberation`.
 `launcher/tests/extract_test.cpp` runs the extractor from a console so its output can be
 compared with `tools/extract_disc.py`; it is a developer target, not shipped.
 
+`--fetch-tools <log>` runs the same download the launcher offers, without a window, and
+writes what its steps report to `log`. A release build uses it to prove the pinned archive
+still downloads and still matches its digest.
+
 ### Windows release
 
-The Windows release puts the toolchain beside the launcher, so a player can extract their
-own disc and build the game without installing anything:
+A Windows release is two files, because the toolchain dwarfs the launcher: the launcher is
+a couple of megabytes, the tools are about 190 MB, and only a player who has to build the
+game needs the second one.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Zip
+# the tool archive the launcher downloads, then the launcher that pins it
+powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -SkipBuild -Zip -Split -Version 1.0.1
+powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Lean -SkipBuild -Zip -Version 1.0.1
 ```
 
-That writes `launcher/dist/NarutoLauncher/` with `NarutoLauncher.exe`, `tools\` (CMake,
-Ninja, MinGW-w64, embedded Python, nodtool, and a built SDL2 prefix when one exists), and
-the notices; `-Version 1.0.1` names the build and the zip after the release. `-Lean` skips
-the tools and leaves the launcher looking on PATH. A full release is about 670 MB before
-compression, almost all of it MinGW-w64: the script drops what a build never reaches — the
-Fortran and Objective-C frontends, gdb, doxygen, MinGW's own CMake, ctest and cpack,
-cppcheck, and the info/locale/man tree — which is a further 370 MB. Unzip it to a path with
-no spaces in it (for example `C:\Games\NarutoLauncher`): MinGW-w64 cannot run from a path
-containing spaces, and it is the compiler that builds the game.
+`-Split` writes `launcher/dist/NarutoLauncher-tools-windows-x64-v<Version>.zip` and prints
+its SHA-256 and size. Pass those three to CMake when the launcher is configured, so the
+build can only ever fetch what it was built against:
 
-`-Zip` also writes `launcher/dist/NarutoLauncher-Windows-x64-v<Version>.zip` — about 190 MB
-— which is the file to attach to a release; `-Version` is the tag without its `v`. The
-archive is counted against the tree and the script fails if the two disagree, then it
-prints the SHA-256 for the release notes. It is written with the `tar` that ships with
-Windows (bsdtar) rather than `Compress-Archive`, which left a 4 KB archive and no error
-after minutes on this tree.
+```powershell
+cmake -S launcher -B launcher/build-release -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DNLA_VERSION=1.0.1 `
+  -DNLA_TOOLS_URL=https://github.com/<owner>/<repo>/releases/download/v1.0.1/NarutoLauncher-tools-windows-x64-v1.0.1.zip `
+  -DNLA_TOOLS_SHA256=<hex> -DNLA_TOOLS_BYTES=<bytes>
+```
+
+`-Zip` without `-Split` still writes the one-folder release,
+`launcher/dist/NarutoLauncher-Windows-x64-v<Version>.zip`, with the tools inside it — that
+is what to hand someone who wants everything at once and no download on first use. That
+folder is about 670 MB before compression, almost all of it MinGW-w64: the script drops
+what a build never reaches — the Fortran and Objective-C frontends, gdb, doxygen, MinGW's
+own CMake, ctest and cpack, cppcheck, and the info/locale/man tree — which is a further
+370 MB. Unzip it to a path with no spaces in it (for example `C:\Games\NarutoLauncher`):
+MinGW-w64 cannot run from a path containing spaces, and it is the compiler that builds the
+game. `-Lean` skips the tools entirely and leaves the launcher looking on PATH.
+
+`-Version` is the tag without its `v`, and it names the archives. Both archives are counted
+against the tree and the script fails if the two disagree, then prints the SHA-256 for the
+release notes. They are written with the `tar` that ships with Windows (bsdtar) rather than
+`Compress-Archive`, which left a 4 KB archive and no error after minutes on this tree.
 
 The launcher holds no game data: the extracted tree stays where the extractor put it, and
 `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
@@ -160,14 +180,16 @@ there — it needs the user's own disc image.
 | Event | What happens |
 | --- | --- |
 | pull request, push to `main` | compile check on macOS (arm64) and Windows (x64), both running `ctest`, plus `tools/check_publish.py` |
-| tag `v*` | the same, then the full Windows bundle, then both zips attached to that tag's release (created if it does not exist yet) |
-| manual run | the same as a compile check; `-f bundle=true` adds the full Windows bundle without publishing |
+| tag `v*` | the same, then the Windows tool archive and the launcher that pins it, then every zip attached to that tag's release (created if it does not exist yet) |
+| manual run | the same as a compile check; `-f bundle=true` adds the Windows release pair without publishing |
 
 The assets are named after the tag: `NarutoLauncher-macOS-arm64-v<version>.zip` holding the
-`.app` plus the notices, and `NarutoLauncher-Windows-x64-v<version>.zip` holding the ~1 GB
-bundle from `launcher/packaging/build-release.ps1`. A lean Windows zip is uploaded as a
-workflow artifact on every run. The tag also names the version: the workflow passes it as
-`NLA_VERSION`, which becomes the bundle's `CFBundleShortVersionString`.
+`.app` plus the notices, `NarutoLauncher-Windows-x64-v<version>.zip` holding the launcher,
+and `NarutoLauncher-tools-windows-x64-v<version>.zip` holding the toolchain it downloads on
+first use. The tag also names the version: the workflow passes it as `NLA_VERSION`, which
+becomes the bundle's `CFBundleShortVersionString`, and the tool archive is written before
+the launcher is configured so its URL, digest and size can be pinned into the build. A
+lean Windows zip is uploaded as a workflow artifact on every run.
 
 ```sh
 gh workflow run build.yml -f bundle=true     # exercise the bundle without a release
