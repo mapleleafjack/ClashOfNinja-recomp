@@ -357,7 +357,12 @@ void plat_sleep_ns(int64_t ns) {
     ts.tv_nsec = (long)(ns % 1000000000);
     // The platform's wait already resolves microseconds; a signal is the only early
     // return, and it leaves the remainder in ts.
+#if defined(__APPLE__)
+    // macOS has no clock_nanosleep.
+    while (nanosleep(&ts, &ts) == -1 && errno == EINTR) {}
+#else
     while (clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, &ts) == EINTR) {}
+#endif
 }
 
 long plat_utc_offset_seconds() {
