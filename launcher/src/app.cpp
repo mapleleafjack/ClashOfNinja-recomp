@@ -85,6 +85,14 @@ bool App::create() {
 
     if (settings_.check_updates) start_update_check(false);
 
+    // Which folder is in use, and why it is that one: a remembered choice looks like the
+    // launcher ignoring the project it shipped with unless it says so.
+    if (project_) {
+        bool remembered = !settings_.project_root.empty() &&
+                          fs::path(settings_.project_root) == project_->root();
+        append_log(format(L"[launcher] project: %ls%ls\n", project_->root().c_str(),
+                          remembered ? L" (remembered)" : L""));
+    }
     if (!project_) {
         append_log(L"[launcher] project folder not located yet; Launch the game asks "
                    L"for it.\n");
@@ -1571,6 +1579,9 @@ void App::choose_path(PickerKind kind, const std::wstring& title, const fs::path
             invalidate();
             return;
         }
+        // The system has a chooser but would not open it. Say so, because the picker that
+        // follows is not what was asked for and would otherwise look like a regression.
+        append_log(L"[launcher] the system chooser did not open; using the launcher's own\n");
     }
     open_picker(kind, title, start, std::move(accept));
 }
