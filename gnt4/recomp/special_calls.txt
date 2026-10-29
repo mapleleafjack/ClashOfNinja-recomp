@@ -1,0 +1,5 @@
+# call sites to these get setjmp treatment (context resume points)
+# (dtk leaves OSSaveContext unnamed; matched to the other games' function by its body.
+# This is the function address, as in the reference projects, not the address of the bl
+# that calls it)
+801671B8 OSSaveContext
