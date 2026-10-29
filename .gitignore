@@ -34,6 +34,11 @@ naruto2/saves/
 /saves/
 /inputs/
 
+# What the launcher's device picker writes for a game: which pad each device takes on this
+# machine, so it is created in the player's own copy rather than shipped.
+naruto/controls.txt
+naruto2/controls.txt
+
 # Cover art the launcher shows for each game. Box art belongs to the publisher, so it
 # stays on the machine that has it; `git add -f` a file you drew yourself.
 naruto/cover.*
