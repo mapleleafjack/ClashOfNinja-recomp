@@ -43,20 +43,6 @@ enum class Id {
     ClearLog,
     OpenSettings,
     SettingsClose,
-    SettingsProject,
-    SettingsOpenProject,
-    SettingsImage,
-    SettingsOpenDisc,
-    SettingsOpenSaves,
-    SettingsOpenControls,
-    SettingsResetControls,
-    SettingsRebuild,
-    SettingsRescan,
-    SettingsTools,
-    SettingsFetchTools,
-    SettingsDesktopShortcut,
-    SettingsStartShortcut,
-    SettingsUpdateProject,
     SettingsToggleUpdates,
     SettingsCheckNow,
     SettingsInstallUpdate,
@@ -66,8 +52,6 @@ enum class Id {
     Scale2,
     Scale3,
     Scale4,
-    ToggleMute,
-    ToggleInputLog,
     SettingsPlayers,
     SettingsRefreshDevices,
     PadRow,                       // a player row in Settings: +0 the keyboard, then the controllers
@@ -95,7 +79,9 @@ class App {
     int run();
     // Renders one frame of the main window into a BMP file, without a window. Used to
     // check the drawing on a machine with no desktop, and by the launcher's own tests.
-    int render_to(const std::string& path, float scale, const std::string& view = "main");
+    // A window size may be given, so the layout can be checked as a large window draws it.
+    int render_to(const std::string& path, float scale, const std::string& view = "main",
+                  int window_width = 0, int window_height = 0);
 
   private:
     struct Hit {
@@ -181,7 +167,6 @@ class App {
     void continue_launch();
     void play();
     void open_path(const std::filesystem::path& path);
-    void reset_controls();
     // The controllers the game would see, and the pads they play as, from the game's
     // --list-devices. Row 0 is the keyboard.
     void open_players();
@@ -209,11 +194,8 @@ class App {
     void close_overlay();
 
     void open_settings();
-    void create_shortcut(bool system_wide);
     void save_settings();
 
-    void refresh_source_status();
-    void update_project();
     void start_update_check(bool manual);
     void on_update_checked(UpdateCheck check, bool manual);
     void show_update_prompt();
@@ -302,13 +284,6 @@ class App {
     ReleaseInfo update_release_;
     std::wstring update_error_;
     std::thread update_thread_;
-
-    // The project folder as a git checkout, and whether its source is older than this
-    // launcher, which would build the game from source the launcher does not expect.
-    bool git_found_ = false;
-    bool project_checkout_ = false;
-    bool project_behind_ = false;
-    std::wstring source_revision_;
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;

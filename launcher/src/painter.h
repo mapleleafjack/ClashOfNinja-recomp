@@ -98,6 +98,8 @@ class Painter {
     void text_clipped(wstring_view text, const RectF& rect, Face face, Color color,
                       TextAlign align = TextAlign::Leading);
     float measure(wstring_view text, Face face, float max_width = 10000.0f);
+    // How tall one line of `face` is, in logical units, for stacking lines of text.
+    float line_height(Face face);
 
     int pixel_width() const { return width_; }
     int pixel_height() const { return height_; }

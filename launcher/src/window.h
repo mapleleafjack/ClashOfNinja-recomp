@@ -28,6 +28,10 @@ class Window {
 
     // Pixels per logical unit, from the display the window is on.
     float scale() const;
+    // How much the interface is zoomed up for a large window, on top of the display's own
+    // scale. Set from the size the window was resized to.
+    void set_ui_zoom(float zoom);
+    float ui_zoom() const { return zoom_; }
     // The factor that turns a pointer position into logical units. SDL reports pointer
     // positions in window coordinates, which are points on macOS and pixels elsewhere.
     float pointer_scale() const;
@@ -60,6 +64,7 @@ class Window {
     bool invalidated_ = true;
     int texture_width_ = 0;
     int texture_height_ = 0;
+    float zoom_ = 1.0f;
 };
 
 // Hands work from the job and game threads to the UI thread through the event queue.

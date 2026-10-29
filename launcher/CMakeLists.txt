@@ -233,6 +233,9 @@ add_test(NAME render-main
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-main.bmp")
 add_test(NAME render-settings
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-settings.bmp" settings)
+# The same panel as a 2560x1417 window draws it: the whole interface zooms with the window.
+add_test(NAME render-settings-large
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-settings-large.bmp" settings 2560x1417)
 add_test(NAME render-picker
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-picker.bmp" picker)
 # The click mode paints once to build the hit list, clicks a point, then paints the
@@ -240,9 +243,7 @@ add_test(NAME render-picker
 add_test(NAME click-settings
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-settings.bmp" click:990,42)
 add_test(NAME click-details
-         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,765)
-add_test(NAME click-choose-image
-         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-choose-image.bmp" settings-click:789,280)
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,665)
 add_test(NAME render-players
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-players.bmp" players)
 # Picks a pad for the second controller on the panel: opens its menu, then takes item 2.

@@ -42,7 +42,8 @@ std::wstring curl_tool();
 bool is_newer_version(const std::wstring& candidate, const std::wstring& current);
 
 // Reads the release out of the API's JSON. `platform` is the asset name part that makes
-// an asset this platform's: "macos", "windows" or "linux".
+// an asset this platform's: "macos", "windows" or "linux". An update replaces the launcher
+// alone, so the tools bundle published beside it is never the asset that is chosen.
 ReleaseInfo parse_release(const std::wstring& json, const std::wstring& platform);
 
 // The path an update replaces: the .app bundle on macOS, the install folder on Windows,

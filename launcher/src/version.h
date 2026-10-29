@@ -8,8 +8,7 @@
 #define NLA_VERSION "1.0"
 #endif
 
-// The commit the launcher was built from, so Settings can tell when the project folder's
-// source is older than the launcher that builds it.
+// The commit the launcher was built from, and when it was made.
 #ifndef NLA_SOURCE
 #define NLA_SOURCE ""
 #endif

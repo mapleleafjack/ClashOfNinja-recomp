@@ -273,6 +273,8 @@ float Painter::measure(wstring_view content, Face face, float) {
     return text_->measure(content, face);
 }
 
+float Painter::line_height(Face face) { return text_->line_height(face); }
+
 void Painter::draw_logo(const RectF& rect) {
     draw_image(rect, logo_.data(), logo_width_, logo_height_);
 }

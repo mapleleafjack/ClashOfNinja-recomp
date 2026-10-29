@@ -168,16 +168,22 @@ ReleaseInfo parse_release(const std::wstring& json, const std::wstring& platform
     release.page_url = json_string(json, L"html_url");
 
     // The asset for this machine: a zip named after the platform, the newest version and
-    // this architecture. The lean Windows zip is never a release, but skip it anyway.
+    // this architecture. The lean Windows zip is never a release, but skip it anyway. The
+    // tools archive sits on the release page beside the launcher's own and holds no
+    // launcher, so an update must never take it however its name compares: the tools a
+    // player already has stay where they are.
     auto version = to_lower(release.version);
+    auto launcher_name = to_lower(fs::path(exe_path()).filename().stem().wstring());
     int best = -1;
     for (const auto& url : json_strings(json, L"browser_download_url")) {
         auto name = file_name_of(url);
         auto folded = to_lower(name);
         if (!ends_with_ci(folded, L".zip")) continue;
         if (folded.find(L"lean") != std::wstring::npos) continue;
+        if (folded.find(L"tools") != std::wstring::npos) continue;
         if (folded.find(platform) == std::wstring::npos) continue;
         int score = 0;
+        if (!launcher_name.empty() && folded.find(launcher_name) != std::wstring::npos) score += 4;
         if (folded.find(version) != std::wstring::npos) score += 2;
 #if defined(__aarch64__) || defined(_M_ARM64)
         if (folded.find(L"arm64") != std::wstring::npos ||

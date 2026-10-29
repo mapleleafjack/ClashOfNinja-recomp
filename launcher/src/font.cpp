@@ -21,18 +21,18 @@ struct FaceSpec {
 
 FaceSpec spec(Face face) {
     switch (face) {
-        case Face::Title: return {26.0f, true, false};
-        case Face::Hero: return {34.0f, true, false};
-        case Face::Subtitle: return {12.5f, false, false};
-        case Face::CardTitle: return {15.0f, true, false};
-        case Face::Body: return {13.0f, false, false};
-        case Face::Small: return {11.5f, false, false};
-        case Face::Tiny: return {10.5f, false, false};
-        case Face::Mono: return {11.0f, false, true};
-        case Face::Button: return {13.0f, true, false};
-        case Face::ButtonLarge: return {17.0f, true, false};
+        case Face::Title: return {30.0f, true, false};
+        case Face::Hero: return {40.0f, true, false};
+        case Face::Subtitle: return {15.0f, false, false};
+        case Face::CardTitle: return {18.0f, true, false};
+        case Face::Body: return {16.0f, false, false};
+        case Face::Small: return {14.0f, false, false};
+        case Face::Tiny: return {12.5f, false, false};
+        case Face::Mono: return {13.0f, false, true};
+        case Face::Button: return {15.0f, true, false};
+        case Face::ButtonLarge: return {20.0f, true, false};
     }
-    return {13.0f, false, false};
+    return {15.0f, false, false};
 }
 
 enum class Kind { Sans, SansBold, Mono };

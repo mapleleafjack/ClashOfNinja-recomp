@@ -48,6 +48,10 @@ const char* kReleaseJson = R"({
       "browser_download_url": "https://github.com/owner/repo/releases/download/v1.1.0/NarutoLauncher-macOS-arm64-v1.1.0.zip"
     },
     {
+      "name": "NarutoLauncher-tools-windows-x64-v1.1.0.zip",
+      "browser_download_url": "https://github.com/owner/repo/releases/download/v1.1.0/NarutoLauncher-tools-windows-x64-v1.1.0.zip"
+    },
+    {
       "name": "NarutoLauncher-Windows-x64-v1.1.0.zip",
       "browser_download_url": "https://github.com/owner/repo/releases/download/v1.1.0/NarutoLauncher-Windows-x64-v1.1.0.zip"
     },
@@ -86,6 +90,18 @@ void releases() {
     auto windows = nla::parse_release(json, L"windows");
     check_text(windows.asset_name, L"NarutoLauncher-Windows-x64-v1.1.0.zip",
                "Windows picks the full zip, not the lean one");
+    check(windows.asset_url.find(L"-tools-") == std::wstring::npos,
+          "Windows never downloads the tools archive as an update");
+
+    // A release that carries only the tools bundle has nothing this copy can become, so
+    // the launcher offers its release page instead of downloading 160 MB and failing.
+    const std::wstring tools_name = L"NarutoLauncher-tools-windows-x64-v1.1.0.zip";
+    auto tools_only = nla::parse_release(
+        L"{\"tag_name\":\"v1.1.0\",\"assets\":[{\"name\":\"" + tools_name +
+            L"\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/"
+            L"v1.1.0/" + tools_name + L"\"}]}",
+        L"windows");
+    check(tools_only.asset_url.empty(), "a tools-only release has no download for Windows");
 
     auto linux = nla::parse_release(json, L"linux");
     check(linux.version == L"1.1.0", "a release without this platform still names its version");

@@ -111,12 +111,14 @@ float Window::scale() const {
 #endif
 }
 
+void Window::set_ui_zoom(float zoom) { zoom_ = zoom > 0.05f ? zoom : 1.0f; }
+
 float Window::pointer_scale() const {
 #if defined(__APPLE__)
-    // macOS reports pointer positions in points, which is what the layout uses.
-    return 1.0f;
+    // macOS reports pointer positions in points, which the layout divides by the zoom.
+    return zoom_;
 #else
-    return scale();
+    return scale() * zoom_;
 #endif
 }
 

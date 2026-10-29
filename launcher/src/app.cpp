@@ -2,9 +2,7 @@
 
 #include "dialog.h"
 #include "disc.h"
-#include "git.h"
 #include "image.h"
-#include "shortcut.h"
 #include "tools_package.h"
 #include "util.h"
 
@@ -23,6 +21,24 @@ namespace {
 
 constexpr wchar_t kTitle[] = L"Naruto: Clash of Ninja";
 constexpr wchar_t kSubtitle[] = L"GameCube static recompilation";
+
+// The window the layout is drawn for. A bigger window zooms the whole interface rather
+// than leaving the text at this size in the corner of a large screen.
+constexpr float kDesignWidth = 1060.0f;
+constexpr float kDesignHeight = 820.0f;
+// Enough to make the text comfortable on a 1440p or larger display, and no more.
+constexpr float kMaxZoom = 2.0f;
+
+// A window bigger than the one the layout was drawn for zooms the whole interface up, so
+// text and buttons keep their size against everything else on the page rather than sitting
+// tiny in the corner of a large screen. Never below 1: a small window keeps the layout as
+// drawn, down to the minimum size the window allows.
+float ui_zoom_for(int pixel_width, int pixel_height, float dpi) {
+    if (dpi <= 0.01f) return 1.0f;
+    float zoom = std::min(static_cast<float>(pixel_width) / dpi / kDesignWidth,
+                          static_cast<float>(pixel_height) / dpi / kDesignHeight);
+    return std::clamp(zoom, 1.0f, kMaxZoom);
+}
 
 std::wstring scale_label(int factor) {
     return format(L"%d×   %d × %d", factor, 640 * factor, 480 * factor);
@@ -54,6 +70,10 @@ std::wstring box_art_url(const std::wstring& folder) {
         name = L"Naruto%20-%20Clash%20of%20Ninja%20(USA).png";
     } else if (folder == L"naruto2") {
         name = L"Naruto%20-%20Clash%20of%20Ninja%202%20(USA).png";
+    } else if (folder == L"gnt3") {
+        name = L"Naruto%20-%20Gekitou%20Ninja%20Taisen!%203%20(Japan).png";
+    } else if (folder == L"gnt4") {
+        name = L"Naruto%20-%20Gekitou%20Ninja%20Taisen!%204%20(Japan).png";
     }
     if (name.empty()) return {};
     return kBoxArtBase + name;
@@ -167,7 +187,10 @@ int App::run() {
 void App::resize_surface() {
     int pixel_width = 0, pixel_height = 0;
     window_.pixel_size(&pixel_width, &pixel_height);
-    float scale = window_.scale();
+    float dpi = window_.scale();
+    window_.set_ui_zoom(ui_zoom_for(pixel_width, pixel_height, dpi));
+
+    float scale = dpi * window_.ui_zoom();
     painter_.resize(pixel_width, pixel_height, scale);
     width_ = static_cast<float>(pixel_width) / scale;
     height_ = static_cast<float>(pixel_height) / scale;
@@ -430,7 +453,8 @@ bool write_bmp(const std::string& path, const std::uint32_t* pixels, int width, 
 
 }  // namespace
 
-int App::render_to(const std::string& path, float scale, const std::string& view) {
+int App::render_to(const std::string& path, float scale, const std::string& view,
+                   int window_width, int window_height) {
     rendering_ = true;
     headless_ = true;
     settings_ = Settings::load();
@@ -446,10 +470,15 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         return 1;
     }
     float factor = scale > 0.1f ? scale : 1.0f;
-    width_ = 1060;
-    height_ = 820;
-    painter_.resize(static_cast<int>(width_ * factor), static_cast<int>(height_ * factor),
-                    factor);
+    // The view stands in for a window of this many pixels at 1×, zoom and all, so the
+    // layout can be checked at any window size; `factor` supersamples the whole render.
+    int view_w = window_width > 0 ? window_width : static_cast<int>(kDesignWidth);
+    int view_h = window_height > 0 ? window_height : static_cast<int>(kDesignHeight);
+    float zoom = ui_zoom_for(view_w, view_h, 1.0f);
+    painter_.resize(static_cast<int>(std::lround(view_w * factor)),
+                    static_cast<int>(std::lround(view_h * factor)), zoom * factor);
+    width_ = static_cast<float>(view_w) / zoom;
+    height_ = static_cast<float>(view_h) / zoom;
 
     // Exercises hit testing and the click path without a window: paint once to build the
     // hit list, click the point, then paint the result.
@@ -861,7 +890,7 @@ void App::paint_activity(float top) {
                                       log_area.y + 28),
                           Face::Mono, rgb(0x646d7d));
         } else {
-            const float line_height = 16.0f;
+            const float line_height = painter_.line_height(Face::Mono);
             int visible = static_cast<int>((log_area.h - 16) / line_height);
             visible = std::max(1, visible);
             int total = static_cast<int>(log_.size());
@@ -923,7 +952,7 @@ void App::paint_activity(float top) {
 void App::paint_settings() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
     float panel_w = std::min(720.0f, width_ - 48);
-    float panel_h = std::min(640.0f, height_ - 40);
+    float panel_h = std::min(360.0f, height_ - 40);
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
@@ -950,116 +979,19 @@ void App::paint_settings() {
         y += 10;
     };
 
-    section(L"PROJECT");
-    std::wstring root_text = project_ ? elide(project_->root().wstring(), Face::Small,
-                                              content_w - 220)
-                                      : L"not located";
-    painter_.text(root_text, RectF(left, y + 7, left + content_w - 220, y + 29),
-                  Face::Small, project_ ? rgb(theme::Text) : rgb(theme::Warn));
-    button(Id::SettingsProject, Rect{right - 110, y, 110, 32}, L"Change…", false, !busy_);
-    button(Id::SettingsOpenProject, Rect{right - 110 - 8 - 84, y, 84, 32}, L"Open", false,
-           project_.has_value());
-    y += 36;
-
-    std::wstring source_text;
-    Color source_color = rgb(theme::Muted);
-    if (!project_) {
-        source_text = L"Game source: no project folder yet";
-    } else if (!git_found_) {
-        source_text = L"Game source: git was not found";
-    } else if (!project_checkout_) {
-        source_text = L"Game source: this folder is not a git checkout";
-    } else if (source_revision_.empty()) {
-        source_text = L"Game source: git could not read this folder";
-    } else if (project_behind_) {
-        source_text = L"Game source " + source_revision_ +
-                      L" is older than this launcher — update it, then Rebuild";
-        source_color = rgb(theme::Warn);
-    } else {
-        source_text = L"Game source: " + source_revision_;
-    }
-    painter_.text(elide(source_text, Face::Small, content_w - 170),
-                  RectF(left, y + 7, left + content_w - 170, y + 29), Face::Small,
-                  source_color);
-    button(Id::SettingsUpdateProject, Rect{right - 150, y, 150, 32}, L"Update project", false,
-           !busy_ && git_found_ && project_checkout_);
+    section(L"CONTROLLERS");
+    painter_.text(elide(L"Which controller plays as which player.", Face::Small,
+                        content_w - 130),
+                  RectF(left, y + 7, left + content_w - 130, y + 29), Face::Small,
+                  rgb(theme::Muted));
+    button(Id::SettingsPlayers, Rect{right - 110, y, 110, 32}, L"Players…", false, !busy_);
     y += 36;
     separator();
 
-    section(L"DISC IMAGE");
-    std::wstring image_text = settings_.last_image.empty()
-                                  ? L"no image chosen yet"
-                                  : elide(settings_.last_image, Face::Small, content_w - 320);
-    painter_.text(image_text, RectF(left, y + 7, left + content_w - 320, y + 29),
-                  Face::Small, rgb(theme::Muted));
-    button(Id::SettingsImage, Rect{right - 150, y, 150, 32}, L"Choose Image…", false,
-           !busy_ && project_.has_value());
-    button(Id::SettingsOpenDisc, Rect{right - 150 - 8 - 104, y, 104, 32}, L"Disc folder",
-           false, !busy_ && project_.has_value());
-    y += 36;
-    separator();
-
-    section(L"PLAY");
+    section(L"RESOLUTION");
     painter_.text(L"Window scale", RectF(left, y + 8, left + 96, y + 28), Face::Small,
                   rgb(theme::Muted));
     scale_combo(Id::Scale, Rect{left + 96, y, 180, 32}, !busy_);
-    checkbox(Id::ToggleMute, left + 300, y + 7, L"Mute music", settings_.mute_music, !busy_);
-    checkbox(Id::ToggleInputLog, left + 408, y + 7, L"Input log", settings_.input_log,
-             !busy_);
-    // Who plays as whom, in its own panel: the console's four pads and one row each.
-    button(Id::SettingsPlayers, Rect{right - 110, y, 110, 32}, L"Players…", false,
-           !busy_);
-    y += 36;
-    separator();
-
-    section(L"GAME FILES");
-    button(Id::SettingsOpenSaves, Rect{left, y, 120, 32}, L"Saves folder", false, !busy_);
-    button(Id::SettingsOpenControls, Rect{left + 128, y, 120, 32}, L"controls.txt", false,
-           !busy_);
-    button(Id::SettingsResetControls, Rect{left + 256, y, 128, 32}, L"Reset controls", false,
-           !busy_, true);
-    y += 36;
-    separator();
-
-    section(L"BUILD");
-    std::wstring missing;
-    for (const auto& tool : tools_) {
-        if (tool.required && !tool.found()) {
-            if (!missing.empty()) missing += L", ";
-            missing += tool.name;
-        }
-    }
-    std::wstring tools_line =
-        missing.empty() ? L"All build tools found." : L"Missing " + missing + L".";
-    bool offer_tools = !missing.empty() && tools_package_available();
-    bool offer_apple_tools = false;
-#if defined(__APPLE__)
-    // The release carries cmake, ninja and nodtool, so anything missing here is Apple's.
-    offer_apple_tools = !missing.empty() && !command_line_tools_installed();
-#endif
-    bool offer_install = offer_tools || offer_apple_tools;
-    float reserve = offer_install ? 500 : 360;
-    painter_.text(elide(tools_line, Face::Small, content_w - reserve),
-                  RectF(left, y + 7, left + content_w - reserve, y + 29), Face::Small,
-                  missing.empty() ? rgb(theme::Ok) : rgb(theme::Warn));
-    button(Id::SettingsRebuild, Rect{right - 100, y, 100, 32}, L"Rebuild", false,
-           !busy_ && project_.has_value());
-    button(Id::SettingsRescan, Rect{right - 100 - 8 - 78, y, 78, 32}, L"Rescan", false,
-           true);
-    button(Id::SettingsTools, Rect{right - 100 - 8 - 78 - 8 - 132, y, 132, 32},
-           L"Open tools folder", false, true);
-    if (offer_install) {
-        button(Id::SettingsFetchTools, Rect{right - 100 - 8 - 78 - 8 - 132 - 8 - 150, y, 150, 32},
-               offer_tools ? L"Get build tools" : L"Install Apple's tools", false, !busy_);
-    }
-    y += 36;
-    separator();
-
-    section(L"SHORTCUTS");
-    button(Id::SettingsDesktopShortcut, Rect{left, y, 168, 32}, L"Desktop shortcut", false,
-           true);
-    button(Id::SettingsStartShortcut, Rect{left + 176, y, 190, 32},
-           shortcut_folder_label(), false, true);
     y += 36;
     separator();
 
@@ -1112,7 +1044,7 @@ void App::paint_overlay() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
     float panel_w = overlay_players_ ? 660.0f : 620.0f;
     float panel_h = overlay_players_ ? 168.0f + 34.0f * static_cast<float>(1 + devices_.size())
-                                     : 300.0f;
+                                     : 336.0f;
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
@@ -1153,7 +1085,7 @@ void App::paint_overlay() {
         }
     } else {
         painter_.text(overlay_text_, RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
-                                                 panel.y + 200),
+                                                 panel.y + panel.h - 66),
                       Face::Body, rgb(theme::Muted));
     }
 
@@ -1432,7 +1364,7 @@ std::vector<Task> App::apple_tools_tasks() {
                              std::this_thread::sleep_for(std::chrono::seconds(2));
                          }
                          job.log(L"[launcher] Apple's installer has not finished; when it "
-                                 L"does, press Rebuild\n");
+                                 L"does, start the game again\n");
                          return 1;
                      }});
 #endif
@@ -1654,57 +1586,6 @@ void App::activate(Id id) {
                 settings_open_ = false;
                 refresh();
                 break;
-            case Id::SettingsProject:
-                settings_open_ = false;
-                locate_project();
-                return;
-            case Id::SettingsOpenProject:
-                if (project_) open_path(project_->root());
-                return;
-            case Id::SettingsImage:
-                settings_open_ = false;
-                choose_image();
-                return;
-            case Id::SettingsOpenDisc:
-                if (project_) open_path(project_->disc());
-                return;
-            case Id::SettingsOpenSaves:
-                if (project_) open_path(project_->saves());
-                return;
-            case Id::SettingsOpenControls:
-                if (project_) {
-                    std::error_code ec;
-                    bool present = fs::exists(project_->controls(), ec);
-                    open_path(present ? project_->controls() : project_->game_dir());
-                }
-                return;
-            case Id::SettingsResetControls: reset_controls(); return;
-            case Id::SettingsRebuild:
-                settings_open_ = false;
-                start_build();
-                return;
-            case Id::SettingsFetchTools:
-                settings_open_ = false;
-                install_tools(false);
-                return;
-            case Id::SettingsRescan:
-                rescan_environment();
-                tools_ = check_tools();
-                // Covers the user dropped in since the launcher started.
-                covers_.clear();
-                fetch_covers();
-                settings_note_ = L"Tools rescanned.";
-                break;
-            case Id::SettingsTools: {
-                fs::path dir = launcher_tools_dir();
-                std::error_code ec;
-                fs::create_directories(dir, ec);
-                open_path(dir);
-                return;
-            }
-            case Id::SettingsUpdateProject:
-                update_project();
-                return;
             case Id::SettingsToggleUpdates:
                 settings_.check_updates = !settings_.check_updates;
                 save_settings();
@@ -1716,8 +1597,6 @@ void App::activate(Id id) {
                 settings_open_ = false;
                 begin_update();
                 return;
-            case Id::SettingsDesktopShortcut: create_shortcut(false); break;
-            case Id::SettingsStartShortcut: create_shortcut(true); break;
             case Id::Scale:
                 scale_open_ = !scale_open_;
                 if (scale_open_) anchor_scale();
@@ -1728,14 +1607,6 @@ void App::activate(Id id) {
             case Id::Scale4:
                 settings_.scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
                 scale_open_ = false;
-                save_settings();
-                break;
-            case Id::ToggleMute:
-                settings_.mute_music = !settings_.mute_music;
-                save_settings();
-                break;
-            case Id::ToggleInputLog:
-                settings_.input_log = !settings_.input_log;
                 save_settings();
                 break;
             case Id::SettingsPlayers:
@@ -1781,14 +1652,6 @@ void App::activate(Id id) {
         case Id::Scale:
             scale_open_ = !scale_open_;
             if (scale_open_) anchor_scale();
-            break;
-        case Id::ToggleMute:
-            settings_.mute_music = !settings_.mute_music;
-            save_settings();
-            break;
-        case Id::ToggleInputLog:
-            settings_.input_log = !settings_.input_log;
-            save_settings();
             break;
         default: {
             // A cover on the main page: it stands for that game and starts it.
@@ -2570,25 +2433,6 @@ void App::write_pad_pins() {
     invalidate();
 }
 
-void App::reset_controls() {
-    if (!project_) return;
-    std::error_code ec;
-    if (!fs::exists(project_->controls(), ec)) {
-        show_message(L"Controls", L"There is no controls.txt; the game uses its built-in "
-                                  L"mapping.");
-        return;
-    }
-    show_confirm(L"Reset controls?",
-                 L"Delete controls.txt and go back to the game's built-in keyboard and "
-                 L"gamepad mapping?",
-                 L"Reset", [this] {
-                     std::error_code remove_ec;
-                     fs::remove(project_->controls(), remove_ec);
-                     append_log(L"[launcher] controls.txt removed\n");
-                     refresh();
-                 });
-}
-
 void App::show_message(const std::wstring& title, const std::wstring& text,
                        const std::wstring& action) {
     settings_open_ = false;
@@ -2627,59 +2471,6 @@ void App::close_overlay() {
     pad_menu_row_ = -1;
     overlay_callback_ = nullptr;
     invalidate();
-}
-
-void App::refresh_source_status() {
-    git_found_ = !git_tool().empty();
-    project_checkout_ = false;
-    project_behind_ = false;
-    source_revision_.clear();
-    if (!project_) return;
-    project_checkout_ = project_is_checkout(project_->root());
-    if (!project_checkout_) return;
-    source_revision_ = project_revision(project_->root());
-    project_behind_ =
-        git_found_ && project_is_older_than(project_->root(), launcher_source(),
-                                            launcher_source_time());
-}
-
-void App::update_project() {
-    if (!project_ || busy_) return;
-    if (git_tool().empty()) {
-        show_message(L"git was not found",
-                     L"Updating the game source needs git, and it is not installed. Get the "
-                     L"newest source yourself, then press Rebuild.");
-        return;
-    }
-    if (!project_checkout_) {
-        show_message(L"Not a git checkout",
-                     L"This project folder is not a git checkout, so the launcher cannot "
-                     L"update it. Download the newest source and point Settings at that "
-                     L"folder.");
-        return;
-    }
-    std::wstring reason;
-    if (!project_is_clean(project_->root(), &reason)) {
-        show_message(L"Cannot update the project", reason);
-        return;
-    }
-    settings_open_ = false;
-    start_job(source_tasks(project_->root()), false, false, [this](int code) {
-        refresh_source_status();
-        refresh();
-        if (code != 0) return;
-        settings_note_ = L"Game source updated.";
-        if (status_.built) {
-            // The binary on disk was built from the source that just changed.
-            show_confirm(L"Game source updated",
-                         L"The project is now at " + project_revision(project_->root()) +
-                             L". Rebuild the game with the new source?",
-                         L"Rebuild", [this] { start_build(); });
-        } else {
-            show_message(L"Game source updated",
-                         L"Launch the game builds it with the new source.");
-        }
-    });
 }
 
 void App::start_update_check(bool manual) {
@@ -2794,27 +2585,6 @@ void App::open_settings() {
     scale_open_ = false;
     pad_menu_row_ = -1;
     settings_note_.clear();
-    tools_ = check_tools();
-    refresh_source_status();
-    refresh_devices();
-    invalidate();
-}
-
-void App::create_shortcut(bool system_wide) {
-    fs::path folder = system_wide ? applications_folder() : desktop_folder();
-    if (folder.empty()) {
-        show_message(L"Shortcut", L"This system did not report a shortcut folder.");
-        return;
-    }
-    fs::path link = folder / shortcut_name();
-    std::wstring error;
-    if (nla::create_shortcut(link, fs::path(exe_path()), fs::path(exe_dir()),
-                             L"Naruto: Clash of Ninja launcher", &error)) {
-        settings_note_ = L"Created " + path_display(link);
-        append_log(L"[launcher] " + settings_note_ + L"\n");
-    } else {
-        show_message(L"Shortcut", error);
-    }
     invalidate();
 }
 
