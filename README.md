@@ -1,17 +1,32 @@
-# Naruto: Clash of Ninja (GNREDA) and Clash of Ninja 2 (GNUEDA) — static recompilation for macOS
+# Naruto: Clash of Ninja (GNREDA) and Clash of Ninja 2 (GNUEDA) — static recompilation
 
-Native Apple Silicon builds of the two GameCube games via
+Native builds of the two GameCube games — Apple Silicon and Windows x64 — via
 [gcn-recomp](https://github.com/ethannicholas/gcn-recomp), using
 [decomp-toolkit](https://github.com/encounter/decomp-toolkit) for analysis and function
 boundaries. Not an emulator: the PowerPC code is translated to C and linked against a
 runtime that implements the GameCube hardware.
+
+## Releases: what you have to install
+
+The game is compiled from your own disc, so a release carries the sources and as much of
+the toolchain as may be redistributed — and no game data.
+
+| Target | To install | Release |
+| --- | --- | --- |
+| **Windows 10/11 x64** — the target for a player | **nothing.** The launcher brings, or fetches once, its own compiler | ~4 MB launcher, 189 MB of tools on the first build |
+| **macOS 14+ (Apple Silicon)** — bring a compiler | a C++ compiler: Apple's Command Line Tools (`xcode-select --install`, free, no account) or Xcode. The launcher offers to start Apple's installer and waits for it | ~14 MB, with the sources, CMake, Ninja, SDL2 and nodtool inside |
+| **Linux** — build from source | `cmake ninja-build g++ libsdl2-dev python3` | none published |
+
+Windows is the only target that asks for nothing: Apple's toolchain is the one thing a
+macOS release cannot carry, because the SDK it needs is licensed with Xcode and may not be
+redistributed.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `tools/extract_disc.py` | one-time extraction of the user's own disc image into `<game>/rom/disc` |
-| `tools/setup.sh` | that, then the build; the game folder is an optional second argument |
+| `tools/setup.sh` | that, then the build — `--run` starts the game, and the game folder is an optional second argument (see "Without the launcher") |
 | `tools/check_publish.py` | proves nothing derived from the disc is in what would be published |
 | `LICENSE`, `THIRD-PARTY-NOTICES.md` | this project's MIT licence, and the licences of what it is built on |
 | `launcher/` | desktop launcher for Windows, macOS and Linux: one C++ application — extract the disc, build, play |
@@ -50,6 +65,14 @@ each extracted file came from, and the runtime serves the console's DVD reads fr
 
 ## Build and run
 
+`tools/setup.sh` does the whole job, and `--run` starts the game when the build succeeds:
+
+```sh
+tools/setup.sh --run "/path/to/your disc image"
+```
+
+Step by step, which is all the launcher itself does:
+
 ```sh
 cd naruto
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -62,6 +85,46 @@ it shares the runtime and recompiler in `naruto/gcn-recomp/` rather than copying
 
 `cmake` picks up `rom/disc` on its own; `-DGAME_ISO=/path/to/image.iso` still works, as
 does putting an `.iso`/`.ciso` in `rom/` instead of the tree.
+
+### Without the launcher, from a release
+
+The launcher is a convenience over exactly those commands, so a release can be driven from
+a terminal. On macOS everything lives in the app:
+
+```sh
+"/Applications/Naruto Launcher.app/Contents/Resources/project/tools/setup.sh" \
+    --run "/path/to/your disc image"
+```
+
+That copies the sources out of the bundle to `~/Naruto` (a signed bundle must not be
+written into), extracts the disc there, and builds with the CMake, Ninja, SDL2 and nodtool
+the app carries — no Homebrew, no `pkg-config`. The only thing still needed is the
+compiler from Apple's command line tools. Afterwards the game starts with
+`~/Naruto/naruto/build/naruto`, and `tools/setup.sh` in the copy can be re-run at any time.
+Set `NARUTO_HOME` to put the copy elsewhere, or `NARUTO_TOOLS` to use another tool folder.
+
+On Windows the release folder is already a checkout without the disc, and the same thing
+was done by hand:
+
+```powershell
+$env:PATH = "$PWD\tools\mingw64\bin;$PWD\tools\cmake\bin;$PWD\tools\ninja;$PWD\tools\python;$env:PATH"
+.\tools\python\python.exe .\tools\extract_disc.py "D:\your disc image.iso"
+.\tools\cmake\bin\cmake.exe -S naruto -B naruto\build -G Ninja `
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGCN_SDL2_PREFIX="$PWD\tools\sdl2" -DGCN_OPENXR=OFF
+.\tools\ninja\ninja.exe -C naruto\build
+.\naruto\build\naruto.exe
+```
+
+And playing never needs the launcher either, whenever the build already exists — from the
+copy the launcher made on macOS:
+
+```sh
+cd "$HOME/Library/Application Support/NarutoLauncher/project/naruto"
+./build/naruto --scale=2
+```
+
+So the launcher can be skipped entirely; it adds the disc chooser, the progress UI and
+Play/Stop, and on macOS it is what seeds the sources in the first place.
 
 Under MinGW-w64 the game is linked with `-static -static-libgcc -static-libstdc++`, so the
 built `naruto.exe` carries the C++ runtime: it starts on its own, with no toolchain DLLs
@@ -154,22 +217,35 @@ What it does:
   commit it was built from; when the checkout is older than that, Settings says so instead
   of letting an unmatched pair fail later in the build.
 - **Settings** — everything that is not part of launching the game: the project folder,
+- **Settings** — everything that is not part of launching the game: the project folder,
   a replacement disc image, the play defaults (window scale, music, input log, who plays
   as which player), the saves and controls files, the build tools with a Rebuild action,
   and a Desktop or menu shortcut: a `.lnk` on Windows, a symlink to the `.app` on macOS,
   a `.desktop` file on Linux.
-- **Tools** — a `tools/` folder beside the executable comes first, then PATH and the
-  platform's usual install locations (winget packages and Program Files on Windows,
-  Homebrew on macOS, `/usr/local` and `~/.cargo/bin` everywhere). On Windows, when the
-  build tools are nowhere to be found, the launcher offers to fetch them itself: it
-  downloads the archive pinned when it was built, checks it against the pinned SHA-256,
-  and unpacks it into `tools/` — Settings → BUILD → **Get build tools**, or the prompt
-  that appears when a build is asked for without them.
+- **Choosing a folder or an image** — the platform's own chooser: `IFileOpenDialog` with
+  `FOS_PICKFOLDERS` on Windows, `NSOpenPanel` on macOS, `zenity` or `kdialog` on Linux.
+  Only a Linux machine with neither of those falls back to the picker the launcher draws
+  itself.
+- **Tools** — a `tools/` folder beside the executable comes first (inside a macOS bundle
+  it is `Contents/Resources/tools`), then PATH and the platform's usual install locations
+  (winget packages and Program Files on Windows, Homebrew on macOS, `/usr/local` and
+  `~/.cargo/bin` everywhere). On Windows, when the build tools are nowhere to be found,
+  the launcher offers to fetch them itself: it downloads the archive pinned when it was
+  built, checks it against the pinned SHA-256, and unpacks it into `tools/` — Settings →
+  BUILD → **Get build tools**, or the prompt that appears when a build is asked for
+  without them.
 
-Drag a disc image or a project folder onto the window, or use the built-in picker. The
-launcher finds the project beside itself, or remembers the folder you choose. "Show
-details" reveals the Activity log whenever it is hidden; the covers stay, smaller, beside
-it. Settings → **Rescan** also picks up cover art added while the launcher is running.
+Drag a disc image or a project folder onto the window, or choose it with the system's
+folder chooser. Each game is a box-art cover on the main page: click one to build and
+start that game, and drop a `cover.png` next to the game folder to give it art. A release
+carries the game's sources next to the launcher — or, on macOS, inside it — so the only
+thing a player supplies is their own disc (and, on macOS, a compiler they already have or
+install with one click, see "Releases"). A release always uses the sources it came with,
+whatever folder an earlier copy was pointed at; a development build uses the project it
+finds above the executable, or the folder you choose, and if it finds neither the first
+**Launch the game** asks for it. "Show details" reveals the Activity log whenever it is
+hidden; the covers stay, smaller, beside it. Settings → **Rescan** also picks up cover art
+added while the launcher is running.
 
 `ctest --test-dir launcher/build` renders the main window, Settings, the Players panel,
 the picker and the update prompt to BMP files, through
@@ -194,15 +270,26 @@ still downloads and still matches its digest.
 
 ### Windows release
 
+This is the release that asks the player for nothing: everything needed to compile the
+game from their own disc is either inside it or fetched once from the project's own
+release.
+
 A Windows release is two files, because the toolchain dwarfs the launcher: the launcher is
-a couple of megabytes, the tools are about 190 MB, and only a player who has to build the
-game needs the second one.
+a few megabytes, the tools are about 190 MB, and only a player who has to build the game
+needs the second one.
 
 ```powershell
 # the tool archive the launcher downloads, then the launcher that pins it
 powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -SkipBuild -Zip -Split -Version 1.0.1
 powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Lean -SkipBuild -Zip -Version 1.0.1
 ```
+
+Both forms carry the game's sources: the release folder is `naruto\` (sources, minus the
+extracted disc, the build and the saves), `tools\extract_disc.py`, the launcher, and the
+notices. That is the project layout the launcher looks for, so it finds the project
+without being told and a player only ever supplies a disc image. `-Lean` ships that and no
+toolchain; a full release adds `tools\cmake`, `tools\ninja`, `tools\mingw64`,
+`tools\python`, `tools\sdl2` and `tools\nodtool`.
 
 `-Split` writes `launcher/dist/NarutoLauncher-tools-windows-x64-v<Version>.zip` and prints
 its SHA-256 and size. Pass those three to CMake when the launcher is configured, so the
@@ -223,15 +310,17 @@ what a build never reaches — the Fortran and Objective-C frontends, gdb, doxyg
 own CMake, ctest and cpack, cppcheck, and the info/locale/man tree — which is a further
 370 MB. Unzip it to a path with no spaces in it (for example `C:\Games\NarutoLauncher`):
 MinGW-w64 cannot run from a path containing spaces, and it is the compiler that builds the
-game. `-Lean` skips the tools entirely and leaves the launcher looking on PATH.
+game. `-Lean` leaves the launcher looking on PATH instead, or offering the download.
 
 `-Version` is the tag without its `v`, and it names the archives. Both archives are counted
 against the tree and the script fails if the two disagree, then prints the SHA-256 for the
 release notes. They are written with the `tar` that ships with Windows (bsdtar) rather than
 `Compress-Archive`, which left a 4 KB archive and no error after minutes on this tree.
 
-The launcher holds no game data: the extracted tree stays where the extractor put it, and
-`launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
+The launcher ships no game data: the extracted tree is created inside the release folder
+on first use, and `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are
+gitignored — `.github/workflows/build.yml` fails the build if the release ever carries
+`naruto/rom`, `naruto/build` or `naruto/saves`.
 
 ## Automated builds
 
@@ -249,15 +338,17 @@ so the archive and the pin are extra steps in the same job rather than a second 
 SDL2, the launcher and the tests.
 
 The assets are named after the tag: `NarutoLauncher-macOS-arm64-v<version>.zip` holding the
-`.app` plus the notices, `NarutoLauncher-Windows-x64-v<version>.zip` holding the launcher,
-and `NarutoLauncher-tools-windows-x64-v<version>.zip` holding the toolchain it downloads on
+`.app` — with the game's sources and build tools inside it — plus the notices,
+`NarutoLauncher-Windows-x64-v<version>.zip` holding the launcher and the sources, and
+`NarutoLauncher-tools-windows-x64-v<version>.zip` holding the toolchain it downloads on
 first use. A lean Windows zip is uploaded as a workflow artifact on every run. The tag also
 names the version: the workflow passes it as `NLA_VERSION`, which becomes the bundle's
-`CFBundleShortVersionString` and, compiled into the launcher, the version it compares
-against the newest release. A build from a branch says `0.0.0` and never offers to update
-itself. The tool archive is written before the launcher is configured, so its URL, digest
-and size are pinned into the build, and the configure step also records the commit and its
-date, which is how Settings knows the project folder is older than the launcher.
+`CFBundleShortVersionString`, marks the copy of the sources a macOS bundle lays down, and,
+compiled into the launcher, is the version it compares against the newest release. A build
+from a branch says `0.0.0` and never offers to update itself. The tool archive is written
+before the launcher is configured, so its URL, digest and size are pinned into the build,
+and the configure step also records the commit and its date, which is how Settings knows
+the project folder is older than the launcher.
 
 ```sh
 gh workflow run build.yml -f bundle=true     # exercise the bundle without a release
@@ -269,9 +360,37 @@ Windows has no prebuilt SDL2 for every target, so a launcher build needs a prefi
 launcher's CMake looks for. It also runs outside Windows (any CMake, Ninja and compiler),
 which is how CI's use of it is checked.
 
-The macOS build is signed ad hoc, exactly like a local one: an unsigned arm64 bundle will
-not start there, and notarisation would need an Apple identity this project does not have.
-So the download still needs right-click → Open the first time.
+### macOS release
+
+A macOS release needs a compiler on the machine — that is the one thing it cannot carry,
+because the SDK it needs is licensed with Xcode and may not be redistributed. Apple's
+Command Line Tools provide it (`xcode-select --install`: free, no account, one click, about
+2 GB), and the launcher offers to start Apple's own installer, then waits for the compiler
+and carries on by itself. An Xcode installation — including a beta — brings the same
+compiler and SDK and counts as well; nothing else has to be installed — no Homebrew, no
+`pkg-config`, no checkout, because the game's CMake prefers the bundled SDL2's CMake
+package over `pkg-config`.
+
+`NarutoLauncher-macOS-arm64-v<version>.zip` is otherwise the whole game's worth of
+software: the `.app` carries the launcher (SDL2 linked statically), the game's sources in
+`Contents/Resources/project`, and the tools that build it in `Contents/Resources/tools` —
+CMake, Ninja, the static SDL2 the game links, and nodtool. `Contents/Resources` is read
+only in practice, and a signed bundle must not be written into, so the launcher copies the
+sources to `~/Library/Application Support/NarutoLauncher/project` on first use and builds
+there; a version marker means an updated launcher replaces its own sources and leaves the
+extracted disc, the build and the saves alone.
+
+What is inside is kept small: CMake ships as the single `cmake` binary thinned to arm64
+plus its module tree, about 18 MB where the full Kitware `.app` is 180 MB, and the whole
+zip is about 14 MB.
+
+Two caveats of packaging without an Apple identity: the bundle is arm64 only, and it is
+signed ad hoc, exactly like a local build — an unsigned arm64 bundle will not start, and
+notarisation would need an identity this project does not have — so the download needs
+right-click → Open the first time.
+
+The sources are the same tree the repository publishes: `rom/`, `build/` and `saves/` are
+excluded when the bundle is staged, so the app never carries anything derived from a disc.
 
 ## Analysis (optional)
 

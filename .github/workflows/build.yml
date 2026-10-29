@@ -86,14 +86,74 @@ jobs:
           fi
           echo "SDL2 is linked statically"
 
+      - name: Bundle the sources and the build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="launcher/build-ci/NarutoLauncher.app"
+          res="$app/Contents/Resources"
+
+          # The game's sources, so a player needs no checkout and no download. What the
+          # disc supplies and the build writes (rom, build, saves) is left out: the
+          # launcher copies this tree to the player's own folder before it builds.
+          mkdir -p "$res/project/tools"
+          rsync -a --exclude rom --exclude build --exclude saves naruto "$res/project/"
+          # setup.sh is the terminal path to the same thing the launcher does, so it
+          # travels too and works with the tools beside it.
+          cp tools/extract_disc.py tools/setup.sh "$res/project/tools/"
+
+          # CMake from the standalone tarball Kitware publishes. Only the `cmake` binary
+          # and its module tree are copied: cpack, ctest, ccmake and the Qt GUI are 68 MB a
+          # configure never runs, and everything else in the .app is the GUI's frameworks
+          # and documentation. The bundle is arm64 only, so the universal binary is thinned
+          # to the half that is used.
+          cmake_version=3.30.5
+          curl -fsSL -o "$RUNNER_TEMP/cmake.tar.gz" \
+            "https://github.com/Kitware/CMake/releases/download/v${cmake_version}/cmake-${cmake_version}-macos-universal.tar.gz"
+          tar -xzf "$RUNNER_TEMP/cmake.tar.gz" -C "$RUNNER_TEMP"
+          cmake_app="$RUNNER_TEMP/cmake-${cmake_version}-macos-universal/CMake.app/Contents"
+          mkdir -p "$res/tools/cmake/bin"
+          lipo -thin arm64 "$cmake_app/bin/cmake" -output "$res/tools/cmake/bin/cmake"
+          cp -R "$cmake_app/share" "$res/tools/cmake/share"
+
+          # Ninja, and the same static SDL2 the launcher links, built above: with both in
+          # place the game builds without Homebrew and without pkg-config.
+          curl -fsSL -o "$RUNNER_TEMP/ninja.zip" \
+            https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip
+          mkdir -p "$res/tools/ninja"
+          ditto -x -k "$RUNNER_TEMP/ninja.zip" "$res/tools/ninja"
+          lipo -thin arm64 "$res/tools/ninja/ninja" -output "$RUNNER_TEMP/ninja-arm64"
+          mv "$RUNNER_TEMP/ninja-arm64" "$res/tools/ninja/ninja"
+          chmod +x "$res/tools/ninja/ninja"
+          cp -R "$RUNNER_TEMP/sdl2" "$res/tools/sdl2"
+
+          # nodtool, for the image formats the launcher does not read itself.
+          mkdir -p "$res/tools/nodtool"
+          curl -fsSL -o "$res/tools/nodtool/nodtool" \
+            https://github.com/encounter/nod/releases/download/v2.0.0-alpha.12/nodtool-macos-arm64
+          chmod +x "$res/tools/nodtool/nodtool"
+
+      - name: The bundled tools run
+        shell: bash
+        run: |
+          set -euo pipefail
+          res="launcher/build-ci/NarutoLauncher.app/Contents/Resources"
+          "$res/tools/cmake/bin/cmake" --version | head -1
+          "$res/tools/ninja/ninja" --version
+          test -f "$res/project/naruto/CMakeLists.txt"
+          test -f "$res/project/tools/extract_disc.py"
+          test -x "$res/project/tools/setup.sh"
+          test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
+
       - name: Sign ad hoc and package
         shell: bash
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.value }}"
           app="launcher/build-ci/NarutoLauncher.app"
-          # Ad hoc, exactly like a local build: an unsigned arm64 bundle will not start,
-          # and notarisation needs an Apple identity this project does not have.
+          # Ad hoc, exactly like a local build, and after the sources and tools are in
+          # place: the seal covers them, and on Apple silicon every executable inside the
+          # bundle needs a signature of its own to run.
           codesign --force --deep --sign - "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
 
@@ -101,6 +161,7 @@ jobs:
           mkdir -p "$stage"
           ditto "$app" "$stage/Naruto Launcher.app"
           cp LICENSE THIRD-PARTY-NOTICES.md "$stage/"
+          cp launcher/packaging/readme-macos.txt "$stage/README.txt"
           ditto licenses "$stage/licenses"
 
           zip="launcher/build-ci/NarutoLauncher-macOS-arm64-v${version}.zip"
@@ -256,6 +317,19 @@ jobs:
         run: >
           ./launcher/packaging/build-release.ps1 -Lean -SkipBuild -Zip
           -Version "${{ steps.version.outputs.value }}"
+
+      - name: The release carries the sources and nothing from the disc
+        shell: pwsh
+        run: |
+          # The player gets the game's sources with the launcher, and never its data.
+          $out = Join-Path 'launcher/dist' 'NarutoLauncher'
+          foreach ($path in 'naruto/CMakeLists.txt', 'naruto/gcn-recomp/CMakeLists.txt',
+                            'naruto/recomp', 'tools/extract_disc.py') {
+            if (-not (Test-Path (Join-Path $out $path))) { throw "the release is missing $path" }
+          }
+          foreach ($path in 'naruto/rom', 'naruto/build', 'naruto/saves') {
+            if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
+          }
 
       - uses: actions/upload-artifact@v4
         with:

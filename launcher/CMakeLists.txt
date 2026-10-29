@@ -64,6 +64,7 @@ endif()
 set(NLA_SOURCES
   src/main.cpp
   src/app.cpp
+  src/dialog.cpp
   src/disc.cpp
   src/font.cpp
   src/git.cpp
@@ -79,6 +80,17 @@ set(NLA_SOURCES
   src/util.cpp
   src/window.cpp
 )
+
+if(APPLE)
+  # The folder and image chooser is NSOpenPanel, which needs AppKit and so one
+  # Objective-C++ source in an otherwise C++ application.
+  set(CMAKE_OBJCXX_STANDARD 20)
+  set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+  set(CMAKE_OBJCXX_EXTENSIONS OFF)
+  enable_language(OBJCXX)
+  list(APPEND NLA_SOURCES src/dialog_mac.mm)
+  find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
+endif()
 
 if(WIN32)
   add_executable(NarutoLauncher WIN32 ${NLA_SOURCES})
@@ -148,6 +160,8 @@ if(GIT_FOUND)
   endif()
 endif()
 
+# NLA_VERSION is the version of the copy of the game's sources a macOS bundle lays down,
+# so an updated launcher replaces its own sources and nothing else.
 target_compile_definitions(NarutoLauncher PRIVATE
   SDL_MAIN_HANDLED NLA_VERSION="${PROJECT_VERSION}" NLA_SOURCE="${NLA_SOURCE}"
   NLA_SOURCE_TIME=${NLA_SOURCE_TIME})
@@ -195,6 +209,9 @@ if(WIN32)
 else()
   target_compile_options(NarutoLauncher PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_link_libraries(NarutoLauncher PRIVATE ${NLA_SDL2} Threads::Threads)
+  if(APPLE)
+    target_link_libraries(NarutoLauncher PRIVATE ${COCOA_FRAMEWORK})
+  endif()
 endif()
 
 if(APPLE)

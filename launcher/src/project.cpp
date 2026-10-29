@@ -1,6 +1,7 @@
 #include "project.h"
 
 #include "util.h"
+#include "version.h"
 
 #include <regex>
 
@@ -36,6 +37,63 @@ bool looks_like_project(const fs::path& root) {
         if (has_game(root, game.folder)) return true;
     }
     return false;
+}
+
+// What the disc supplied, what the build writes, and what the player changed: a newer
+// launcher's copy of the sources must leave all of it alone.
+bool is_runtime_path(std::wstring_view relative) {
+    if (relative == L"naruto/controls.txt") return true;
+    for (const wchar_t* name : {L"naruto/rom", L"naruto/build", L"naruto/saves"}) {
+        std::wstring_view prefix(name);
+        if (relative == prefix) return true;
+        if (relative.size() > prefix.size() && relative.compare(0, prefix.size(), prefix) == 0 &&
+            relative[prefix.size()] == L'/') {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A macOS release carries the game's sources in Contents/Resources/project, and a signed
+// bundle must not be written into, so they are copied where a build can write: beside the
+// launcher's settings. The marker holds the launcher's version, so an updated launcher
+// lays down its own sources once without disturbing the disc, the build or the saves.
+std::optional<fs::path> seed_bundled_project() {
+    fs::path resources = bundle_resources_dir();
+    if (resources.empty()) return std::nullopt;
+    fs::path source = resources / L"project";
+    if (!looks_like_project(source)) return std::nullopt;
+
+    fs::path data = user_data_dir();
+    if (data.empty()) return std::nullopt;
+    fs::path destination = data / L"project";
+    fs::path marker = data / L"project.version";
+
+    if (read_text_file(marker) != launcher_version() ||
+        !looks_like_project(destination)) {
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(
+                 source, fs::directory_options::skip_permission_denied, ec),
+             end;
+             !ec && it != end; it.increment(ec)) {
+            auto relative = fs::relative(it->path(), source, ec);
+            if (ec) break;
+            if (is_runtime_path(relative.generic_wstring())) {
+                if (it->is_directory(ec)) it.disable_recursion_pending();
+                continue;
+            }
+            if (!it->is_regular_file(ec)) continue;
+            fs::path target = destination / relative;
+            fs::create_directories(target.parent_path(), ec);
+            if (ec) break;
+            fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing, ec);
+            if (ec) break;
+        }
+        if (ec) return std::nullopt;
+        write_text_file(marker, narrow(launcher_version()));
+    }
+    if (looks_like_project(destination)) return destination;
+    return std::nullopt;
 }
 
 }  // namespace
@@ -119,16 +177,24 @@ ProjectStatus Project::status() const {
 }
 
 std::optional<fs::path> Project::locate(const std::wstring& saved) {
+    // A release ships the game's sources and was built to use them. A folder remembered
+    // from another copy of the launcher used to win, which made a fresh release build a
+    // checkout elsewhere and look as if it had brought nothing with it.
+    std::error_code ec;
+    fs::path app(exe_dir());
+    if (looks_like_project(app)) return app;
+    // The macOS bundle keeps its copy in Resources and builds from the one it laid down.
+    if (auto shipped = seed_bundled_project()) return shipped;
+
     std::vector<fs::path> starts;
     if (!saved.empty()) {
         fs::path path(saved);
         if (looks_like_project(path)) return path;
     }
 
-    std::error_code ec;
-    fs::path app(exe_dir());
+    std::error_code walk_ec;
     starts.push_back(app);
-    starts.push_back(fs::current_path(ec));
+    starts.push_back(fs::current_path(walk_ec));
 
     for (const auto& start : starts) {
         for (fs::path candidate = start; !candidate.empty();) {

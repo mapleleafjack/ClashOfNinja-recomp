@@ -352,6 +352,20 @@ wstring exe_dir() {
     return fs::path(exe_path()).parent_path().wstring();
 }
 
+fs::path bundle_resources_dir() {
+#if defined(__APPLE__)
+    // A bundled executable sits in Contents/MacOS; anything else, such as the plain
+    // binary a developer runs from the build folder, has no resources of its own.
+    fs::path contents = fs::path(exe_dir()).parent_path();
+    std::error_code ec;
+    if (to_lower(contents.filename().wstring()) == L"contents" &&
+        fs::is_directory(contents / L"Resources", ec)) {
+        return contents / L"Resources";
+    }
+#endif
+    return {};
+}
+
 fs::path home_dir() {
 #if defined(_WIN32)
     auto profile = environment(L"USERPROFILE");

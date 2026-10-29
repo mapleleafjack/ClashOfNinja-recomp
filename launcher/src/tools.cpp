@@ -148,13 +148,24 @@ bool is_executable(const fs::path& path) {
 
 }  // namespace
 
-fs::path launcher_tools_dir() { return fs::path(exe_dir()) / L"tools"; }
+fs::path launcher_tools_dir() {
+    // A macOS release keeps its tools inside the bundle, where they travel with the
+    // .app the player drags into place; every other release keeps them in tools beside
+    // the executable.
+    fs::path resources = bundle_resources_dir();
+    if (!resources.empty()) {
+        std::error_code ec;
+        fs::path bundled = resources / L"tools";
+        if (fs::is_directory(bundled, ec)) return bundled;
+    }
+    return fs::path(exe_dir()) / L"tools";
+}
 
 fs::path bundled_sdl2_prefix() {
-#if defined(_WIN32)
     std::vector<fs::path> candidates;
     candidates.push_back(launcher_tools_dir() / L"sdl2");
 
+#if defined(_WIN32)
     // A development build can borrow the copy gcn-recomp builds once per machine.
     fs::path root = fs::path(environment(L"LOCALAPPDATA")) / L"gcn-recomp";
     std::error_code ec;
@@ -166,6 +177,8 @@ fs::path bundled_sdl2_prefix() {
                 candidates.push_back(entry.path());
         }
     }
+#endif
+
     for (const auto& candidate : candidates) {
         std::error_code check_ec;
         if (fs::is_regular_file(candidate / L"SDL2Config.cmake", check_ec) ||
@@ -174,9 +187,6 @@ fs::path bundled_sdl2_prefix() {
             return candidate;
         }
     }
-#else
-    // macOS and Linux use the system SDL2 that find_package locates.
-#endif
     return {};
 }
 
@@ -217,6 +227,31 @@ std::wstring find_tool_from(const std::vector<std::wstring>& known,
     return find_tool(name);
 }
 
+#if defined(__APPLE__)
+bool command_line_tools_installed() {
+    std::error_code ec;
+    if (fs::is_regular_file(fs::path(L"/Library/Developer/CommandLineTools/usr/bin/clang"),
+                            ec))
+        return true;
+    // Xcode brings the same SDK; it is installed from the App Store, and a beta keeps its
+    // own name there.
+    for (const auto& entry :
+         fs::directory_iterator(fs::path(L"/Applications"),
+                                fs::directory_options::skip_permission_denied, ec)) {
+        auto name = to_lower(entry.path().filename().wstring());
+        if (name.rfind(L"xcode", 0) != 0) continue;
+        if (fs::is_regular_file(entry.path() / L"Contents" / L"Developer" / L"usr" / L"bin" /
+                                    L"clang",
+                                ec))
+            return true;
+    }
+    // Then whatever xcode-select points at, since Xcode can live anywhere.
+    auto configured = environment(L"DEVELOPER_DIR");
+    return !configured.empty() &&
+           fs::is_regular_file(fs::path(configured) / L"usr" / L"bin" / L"clang", ec);
+}
+#endif
+
 std::vector<ToolInfo> check_tools() {
     std::vector<ToolInfo> tools;
 #if defined(_WIN32)
@@ -242,14 +277,22 @@ std::vector<ToolInfo> check_tools() {
     tools.push_back({L"cmake", find_tool(L"cmake"), L"brew install cmake", true});
     tools.push_back({L"ninja", find_tool(L"ninja"), L"brew install ninja", true});
 
+    // /usr/bin/c++ and /usr/bin/python3 are shims until Apple's tools are installed: they
+    // open the installer instead of running. A compiler is only usable with the SDK those
+    // tools bring, so no developer folder means no compiler, wherever it came from; a
+    // python3 from Homebrew is a real interpreter and counts as it is.
+    bool apple = command_line_tools_installed();
     wstring compiler = find_tool(L"c++");
     if (compiler.empty()) compiler = find_tool(L"clang++");
     if (compiler.empty()) compiler = find_tool(L"g++");
-    tools.push_back({L"compiler", compiler, L"xcode-select --install", true});
+    if (!apple) compiler.clear();
+    tools.push_back({L"compiler", compiler, L"Apple's command line tools", true});
 
     auto python = find_tool(L"python3");
     if (python.empty()) python = find_tool(L"python");
-    tools.push_back({L"python", python, L"brew install python", true});
+    if (!apple && python.rfind(L"/usr/bin/", 0) == 0) python.clear();
+    tools.push_back({L"python", python, L"Apple's command line tools, or brew install python",
+                     true});
 
     tools.push_back({L"nodtool", find_tool(L"nodtool"),
                      L"cargo install --locked nodtool (only for RVZ/WIA/GCZ images)", false});

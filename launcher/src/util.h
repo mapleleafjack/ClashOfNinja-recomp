@@ -39,6 +39,9 @@ uint64_t file_size(const fs::path& path);
 wstring exe_path();
 wstring exe_dir();
 unsigned long process_id();
+// The Resources folder of the macOS bundle the launcher runs from; empty elsewhere, and
+// for an executable that is not inside one.
+fs::path bundle_resources_dir();
 fs::path home_dir();
 fs::path user_data_dir();
 fs::path temp_dir();
