@@ -459,12 +459,23 @@ function(gcn_add_game)
     target_compile_definitions(shader_keys PRIVATE ${GCN_GL_DEFS})
   endif()
 
-  # SDL2: pkg-config where it exists; on Windows there are no prebuilt ARM64 binaries,
-  # so it is built from source, once for all projects (_gcn_sdl2_shared).
+  # SDL2: a prefix the launcher ships with the release comes first, so the game can be
+  # built on a machine with no package manager and no pkg-config; then pkg-config, which
+  # is where a development machine keeps it; and on Windows there are no prebuilt ARM64
+  # binaries, so it is built from source, once for all projects (_gcn_sdl2_shared).
   if(GCN_BENCH_ONLY OR GCN_VISIONOS)
     set(GCN_SDL_TARGET "")
   elseif(WIN32)
     _gcn_sdl2_shared(GCN_SDL_TARGET)
+  elseif(GCN_SDL2_PREFIX AND
+         EXISTS "${GCN_SDL2_PREFIX}/lib/cmake/SDL2/SDL2Config.cmake")
+    find_package(SDL2 CONFIG REQUIRED PATHS "${GCN_SDL2_PREFIX}/lib/cmake/SDL2"
+                 NO_DEFAULT_PATH)
+    if(TARGET SDL2::SDL2-static)
+      set(GCN_SDL_TARGET SDL2::SDL2-static)
+    else()
+      set(GCN_SDL_TARGET SDL2::SDL2)
+    endif()
   else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)

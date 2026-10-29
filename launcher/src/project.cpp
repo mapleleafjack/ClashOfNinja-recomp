@@ -1,6 +1,7 @@
 #include "project.h"
 
 #include "util.h"
+#include "version.h"
 
 #include <regex>
 
@@ -14,6 +15,63 @@ bool looks_like_project(const fs::path& root) {
     std::error_code ec;
     return fs::is_regular_file(root / L"naruto" / L"CMakeLists.txt", ec) &&
            fs::is_regular_file(root / L"tools" / L"extract_disc.py", ec);
+}
+
+// What the disc supplied, what the build writes, and what the player changed: a newer
+// launcher's copy of the sources must leave all of it alone.
+bool is_runtime_path(std::wstring_view relative) {
+    if (relative == L"naruto/controls.txt") return true;
+    for (const wchar_t* name : {L"naruto/rom", L"naruto/build", L"naruto/saves"}) {
+        std::wstring_view prefix(name);
+        if (relative == prefix) return true;
+        if (relative.size() > prefix.size() && relative.compare(0, prefix.size(), prefix) == 0 &&
+            relative[prefix.size()] == L'/') {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A macOS release carries the game's sources in Contents/Resources/project, and a signed
+// bundle must not be written into, so they are copied where a build can write: beside the
+// launcher's settings. The marker holds the launcher's version, so an updated launcher
+// lays down its own sources once without disturbing the disc, the build or the saves.
+std::optional<fs::path> seed_bundled_project() {
+    fs::path resources = bundle_resources_dir();
+    if (resources.empty()) return std::nullopt;
+    fs::path source = resources / L"project";
+    if (!looks_like_project(source)) return std::nullopt;
+
+    fs::path data = user_data_dir();
+    if (data.empty()) return std::nullopt;
+    fs::path destination = data / L"project";
+    fs::path marker = data / L"project.version";
+
+    if (read_text_file(marker) != launcher_version() ||
+        !looks_like_project(destination)) {
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(
+                 source, fs::directory_options::skip_permission_denied, ec),
+             end;
+             !ec && it != end; it.increment(ec)) {
+            auto relative = fs::relative(it->path(), source, ec);
+            if (ec) break;
+            if (is_runtime_path(relative.generic_wstring())) {
+                if (it->is_directory(ec)) it.disable_recursion_pending();
+                continue;
+            }
+            if (!it->is_regular_file(ec)) continue;
+            fs::path target = destination / relative;
+            fs::create_directories(target.parent_path(), ec);
+            if (ec) break;
+            fs::copy_file(it->path(), target, fs::copy_options::overwrite_existing, ec);
+            if (ec) break;
+        }
+        if (ec) return std::nullopt;
+        write_text_file(marker, narrow(launcher_version()));
+    }
+    if (looks_like_project(destination)) return destination;
+    return std::nullopt;
 }
 
 }  // namespace
@@ -92,7 +150,8 @@ std::optional<fs::path> Project::locate(const std::wstring& saved) {
             candidate = parent;
         }
     }
-    return std::nullopt;
+    // Nothing on disk yet: a bundle that carries the sources supplies them.
+    return seed_bundled_project();
 }
 
 }  // namespace nla

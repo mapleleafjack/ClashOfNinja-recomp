@@ -30,7 +30,14 @@ std::wstring find_tool_from(const std::vector<std::wstring>& known, const std::w
 
 std::vector<ToolInfo> check_tools();
 
-// Tools that shipped beside the launcher, if any.
+#if defined(__APPLE__)
+// True when Apple's command line tools are installed. They are where a Mac gets its C++
+// compiler and python3, and /usr/bin's copies are shims that open Apple's installer
+// until they are.
+bool command_line_tools_installed();
+#endif
+
+// Tools that shipped with the launcher, if any: beside it, or inside a macOS bundle.
 fs::path launcher_tools_dir();
 fs::path bundled_sdl2_prefix();
 

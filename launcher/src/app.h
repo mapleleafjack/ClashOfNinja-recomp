@@ -141,6 +141,9 @@ class App {
     std::vector<Task> build_tasks();
     bool check_required_tools();
     void install_tools(bool then_launch);
+    // macOS: opens Apple's installer for the command line tools, then waits for the
+    // compiler it brings, because that is the one thing a release cannot carry.
+    std::vector<Task> apple_tools_tasks();
     void launch();
     void continue_launch();
     void play();
@@ -179,7 +182,11 @@ class App {
     void begin_update();
     void open_update_page();
 
-    // The in-app replacements for the platform's folder and file pickers.
+    // Asks for a folder or a disc image: the platform's own chooser where there is one,
+    // and the launcher's picker where there is not.
+    void choose_path(PickerKind kind, const std::wstring& title, const fs::path& start,
+                     std::function<void(const fs::path&)> accept);
+    // The launcher's own picker, the fallback on systems with no native chooser.
     void open_picker(PickerKind kind, const std::wstring& title, const fs::path& start,
                      std::function<void(const fs::path&)> accept);
     void close_picker();
@@ -243,6 +250,9 @@ class App {
     bool project_checkout_ = false;
     bool project_behind_ = false;
     std::wstring source_revision_;
+
+    // Set by render_to(), where there is no window: nothing may open a native dialog.
+    bool headless_ = false;
 
     PickerKind picker_ = PickerKind::None;
     std::wstring picker_title_;

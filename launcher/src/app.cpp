@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include "dialog.h"
 #include "disc.h"
 #include "git.h"
 #include "shortcut.h"
@@ -8,11 +9,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <thread>
+#include <utility>
 
 namespace nla {
 namespace {
@@ -386,6 +389,7 @@ bool write_bmp(const std::string& path, const std::uint32_t* pixels, int width, 
 }  // namespace
 
 int App::render_to(const std::string& path, float scale, const std::string& view) {
+    headless_ = true;
     settings_ = Settings::load();
     tools_ = check_tools();
     if (auto root = Project::locate(settings_.project_root)) project_.emplace(*root);
@@ -845,7 +849,13 @@ void App::paint_settings() {
     std::wstring tools_line =
         missing.empty() ? L"All build tools found." : L"Missing " + missing + L".";
     bool offer_tools = !missing.empty() && tools_package_available();
-    float reserve = offer_tools ? 500 : 360;
+    bool offer_apple_tools = false;
+#if defined(__APPLE__)
+    // The release carries cmake, ninja and nodtool, so anything missing here is Apple's.
+    offer_apple_tools = !missing.empty() && !command_line_tools_installed();
+#endif
+    bool offer_install = offer_tools || offer_apple_tools;
+    float reserve = offer_install ? 500 : 360;
     painter_.text(elide(tools_line, Face::Small, content_w - reserve),
                   RectF(left, y + 7, left + content_w - reserve, y + 29), Face::Small,
                   missing.empty() ? rgb(theme::Ok) : rgb(theme::Warn));
@@ -855,9 +865,9 @@ void App::paint_settings() {
            true);
     button(Id::SettingsTools, Rect{right - 100 - 8 - 78 - 8 - 132, y, 132, 32},
            L"Open tools folder", false, true);
-    if (offer_tools) {
+    if (offer_install) {
         button(Id::SettingsFetchTools, Rect{right - 100 - 8 - 78 - 8 - 132 - 8 - 150, y, 150, 32},
-               L"Get build tools", false, !busy_);
+               offer_tools ? L"Get build tools" : L"Install Apple's tools", false, !busy_);
     }
     y += 36;
     separator();
@@ -1099,6 +1109,20 @@ bool App::check_required_tools() {
     }
     if (lines.empty()) return true;
     append_log(L"[launcher] missing build tools:\n" + lines + L"\n");
+#if defined(__APPLE__)
+    // The compiler and python3 are the only things the release does not carry, and Apple
+    // installs both with one command that needs no account.
+    if (!command_line_tools_installed()) {
+        show_confirm(
+            L"Apple's command line tools are needed",
+            L"The game is compiled from your own disc, so it needs a C++ compiler, and on a "
+            L"Mac that comes from Apple's command line tools.\n\n"
+            L"They are free, need no Apple account, and the launcher starts Apple's own "
+            L"installer and waits for it to finish (about 2 GB).",
+            L"Install", [this] { start_job(apple_tools_tasks(), true); });
+        return false;
+    }
+#endif
     if (tools_package_available()) {
         show_confirm(L"Build tools needed",
                      L"The build needs these tools, which were not found on PATH or beside "
@@ -1114,9 +1138,51 @@ bool App::check_required_tools() {
 }
 
 void App::install_tools(bool then_launch) {
-    if (busy_ || !tools_package_available()) return;
-    append_log(L"[launcher] fetching the build tools\n");
-    start_job(tools_package_tasks(), then_launch);
+    if (busy_) return;
+    if (tools_package_available()) {
+        append_log(L"[launcher] fetching the build tools\n");
+        start_job(tools_package_tasks(), then_launch);
+        return;
+    }
+#if defined(__APPLE__)
+    start_job(apple_tools_tasks(), then_launch);
+#endif
+}
+
+std::vector<Task> App::apple_tools_tasks() {
+    std::vector<Task> tasks;
+#if defined(__APPLE__)
+    if (command_line_tools_installed()) return tasks;
+    tasks.push_back({L"Opening Apple's installer…", [](Job& job) -> int {
+                         job.log(L"$ xcode-select --install\n");
+                         // Apple's command hands the download to its own process and
+                         // returns, so the wait below is what sees it finish.
+                         job.run_process(L"/usr/bin/xcode-select", {L"--install"}, home_dir());
+                         job.log(L"[launcher] Apple's installer is open; it downloads about "
+                                 L"2 GB\n");
+                         return 0;
+                     }});
+    tasks.push_back({L"Waiting for the compiler…", [](Job& job) -> int {
+                         for (int waited = 0; waited < 1800; waited += 2) {
+                             if (job.cancel_flag().load()) {
+                                 job.log(L"[launcher] stopped waiting; Apple's installer "
+                                         L"carries on by itself\n");
+                                 return 130;
+                             }
+                             for (const auto& tool : check_tools()) {
+                                 if (tool.name == L"compiler" && tool.found()) {
+                                     job.log(L"[launcher] the compiler is in place\n");
+                                     return 0;
+                                 }
+                             }
+                             std::this_thread::sleep_for(std::chrono::seconds(2));
+                         }
+                         job.log(L"[launcher] Apple's installer has not finished; when it "
+                                 L"does, press Rebuild\n");
+                         return 1;
+                     }});
+#endif
+    return tasks;
 }
 
 void App::start_job(std::vector<Task> tasks, bool then_launch, bool exits,
@@ -1459,7 +1525,7 @@ void App::continue_launch() {
 
 void App::locate_project() {
     fs::path start = project_ ? project_->root() : home_dir();
-    open_picker(PickerKind::Folder, L"Choose the folder that holds naruto/ and tools/", start,
+    choose_path(PickerKind::Folder, L"Choose the folder that holds naruto/ and tools/", start,
                 [this](const fs::path& chosen) {
                     Project candidate(chosen);
                     auto text = chosen.wstring();
@@ -1488,11 +1554,26 @@ void App::choose_image() {
     if (!project_) return;
     fs::path start =
         settings_.last_image.empty() ? project_->root() : fs::path(settings_.last_image);
-    open_picker(PickerKind::Image, L"Choose your own disc image", start,
+    choose_path(PickerKind::Image, L"Choose your own disc image", start,
                 [this](const fs::path& chosen) { start_setup(chosen); });
 }
 
-// -- the picker ------------------------------------------------------------
+// -- choosing a folder or an image -----------------------------------------
+
+void App::choose_path(PickerKind kind, const std::wstring& title, const fs::path& start,
+                      std::function<void(const fs::path&)> accept) {
+    if (!headless_) {
+        auto answer = show_native_dialog(
+            kind == PickerKind::Folder ? DialogKind::Folder : DialogKind::Image,
+            window_.handle(), title, start);
+        if (answer.shown) {
+            if (answer.path && accept) accept(*answer.path);
+            invalidate();
+            return;
+        }
+    }
+    open_picker(kind, title, start, std::move(accept));
+}
 
 void App::open_picker(PickerKind kind, const std::wstring& title, const fs::path& start,
                       std::function<void(const fs::path&)> accept) {
@@ -1571,7 +1652,9 @@ void App::accept_picker() {
                  picker_entries_[static_cast<size_t>(picker_selected_)].name;
     } else if (!picker_path_.empty()) {
         chosen = fs::path(picker_path_);
-        if (fs::is_directory(chosen, ec)) {
+        // A folder is somewhere to look in the image picker, and the answer in the
+        // folder picker — descending there is what made "Use This Folder" do nothing.
+        if (picker_ == PickerKind::Image && fs::is_directory(chosen, ec)) {
             picker_folder_ = chosen.wstring();
             picker_path_ = picker_folder_;
             picker_editing_ = false;

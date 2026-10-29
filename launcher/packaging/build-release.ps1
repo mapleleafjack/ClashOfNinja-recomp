@@ -10,6 +10,9 @@
     a toolchain. That is a large folder (about 1 GB unzipped, mostly MinGW); pass
     -Lean for a small launcher that uses an installed toolchain instead.
 
+    Either way the release also carries the game's sources in naruto\ and tools\, so
+    nothing has to be checked out or downloaded: unzip it, choose a disc image, play.
+
 .EXAMPLE
     .\build-release.ps1 -Zip
     .\build-release.ps1 -Lean -Output ..\dist
@@ -222,6 +225,23 @@ if (-not $Lean) {
     }
 }
 
+# The game's sources travel with the launcher, so a player who has only their own disc
+# image can extract, build and play without a checkout or a download. What the disc
+# supplies and the build writes is not shipped: rom\, build\, saves\ and controls.txt are
+# created in the player's copy, exactly as they would be in a checkout. The tools archive
+# holds the toolchain alone, so it gets none of this.
+if (-not $Split) {
+    Write-Host 'copying the game sources'
+    $sources = Join-Path $outDir 'naruto'
+    New-Item -ItemType Directory -Force -Path $sources | Out-Null
+    $runtime = @('rom', 'build', 'saves')
+    Get-ChildItem (Join-Path $project 'naruto') -Force |
+        Where-Object { $_.Name -ne '.git' -and $runtime -notcontains $_.Name } |
+        ForEach-Object { Copy-Item $_.FullName (Join-Path $sources $_.Name) -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'tools') | Out-Null
+    Copy-Item (Join-Path $project 'tools\extract_disc.py') (Join-Path $outDir 'tools\extract_disc.py')
+}
+
 $readme = @'
 Naruto: Clash of Ninja - launcher
 =================================
@@ -230,13 +250,13 @@ NarutoLauncher.exe extracts your own disc image, builds the recompilation and
 starts the game. Nothing from the game is included here.
 
 First start
-    Put this folder beside the project (the folder holding naruto\ and tools\),
-    or use "Locate project folder" to point at it once. Keep the folder path
-    free of spaces: the bundled MinGW-w64 compiler cannot run from one.
-
     Choose Disc Image... and pick your own USA copy of the game. The launcher
-    extracts it, then configures and compiles the game with the tools in tools\.
-    Later starts go straight to Play.
+    extracts it, then configures and compiles the game and starts it. Later
+    starts go straight to Play.
+
+    The game's sources are already here, in naruto\ and tools\, so nothing has
+    to be downloaded or checked out. Keep the folder path free of spaces: the
+    bundled MinGW-w64 compiler cannot run from one.
 
 Tools
     A release built with tools\ carries cmake, ninja, MinGW-w64, Python and nodtool there,
@@ -249,8 +269,9 @@ Settings
     The Settings panel remembers the project, the last image, window scale,
     controller input logging, and can create Desktop or Start menu shortcuts.
 
-This launcher writes nothing into the game: the extracted disc stays in
-naruto\rom\disc, saves in naruto\saves, and controls in naruto\controls.txt.
+The extracted disc stays in naruto\rom\disc, the build in naruto\build, saves in
+naruto\saves, and controls in naruto\controls.txt - all inside this folder, so the
+whole game can be moved or deleted as one.
 '@
 Set-Content -Path (Join-Path $outDir 'README.txt') -Value $readme -Encoding UTF8
 
