@@ -655,10 +655,12 @@ bool start_detached(const std::wstring& exe, const std::vector<std::wstring>& ar
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION info{};
-    // DETACHED_PROCESS: no console of its own and nothing inherited from the launcher,
-    // so the helper is still there after this process exits.
+    // CREATE_NO_WINDOW: a console of its own but no window on screen, so the helper is
+    // still there after this process exits and a console program it starts has somewhere
+    // to run. Not DETACHED_PROCESS: given no console at all, powershell.exe exits before
+    // it runs the script, so an update closes the launcher and nothing else happens.
     if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE,
-                        DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr,
+                        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr,
                         &startup, &info)) {
         if (error) *error = format(L"cannot start %ls: %ls", exe.c_str(), last_error().c_str());
         return false;

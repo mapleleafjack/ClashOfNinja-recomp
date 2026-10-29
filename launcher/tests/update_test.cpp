@@ -3,6 +3,7 @@
 // that swaps a downloaded version into place. Run by ctest; `--live` also asks GitHub.
 
 #include "git.h"
+#include "tools.h"
 #include "update.h"
 #include "util.h"
 
@@ -152,11 +153,38 @@ void swap() {
     }
 
 #if defined(_WIN32)
-    // Nothing here can start the helper the way Windows does and wait for it, so only the
-    // script's text is checked.
+    // Started the way the launcher starts it, with a pid that is certainly gone so there
+    // is nothing to wait for, and checked by what it writes. Started with DETACHED_PROCESS
+    // instead, powershell exits before it copies anything, which an update cannot recover
+    // from: the launcher has already closed.
     auto text = nla::read_text_file(root / L"apply-update.ps1");
     check(text.find(L"Copy-Item") != std::wstring::npos, "the helper copies over the install");
     check(text.find(L"Start-Process") != std::wstring::npos, "the helper starts the launcher");
+    auto powershell = nla::find_tool_from(
+        {L"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"},
+        L"powershell.exe");
+    check(!powershell.empty(), "powershell is installed");
+    auto relaunch = root / L"relaunch.cmd";
+    written = nla::write_text_file(relaunch, "@echo off\r\n") && written;
+    std::wstring started_error;
+    bool started =
+        !powershell.empty() &&
+        nla::start_detached(powershell,
+                            {L"-NoProfile", L"-ExecutionPolicy", L"Bypass", L"-WindowStyle",
+                             L"Hidden", L"-File", script.wstring(), L"-LauncherPid",
+                             L"2147483647", L"-Target", target.wstring(), L"-Staged",
+                             staged.wstring(), L"-Work", work.wstring(), L"-Relaunch",
+                             relaunch.wstring()},
+                            &started_error);
+    check(started, "the helper starts without a window of its own");
+    if (!started) std::printf("     %s\n", nla::narrow(started_error).c_str());
+    // The helper removes itself as its last step, so that is when to look at the install.
+    for (int tick = 0; tick < 200 && fs::exists(script, ec); ++tick) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    check(fs::exists(target / L"new.txt", ec), "the new copy is in place after the swap");
+    check(!fs::exists(work, ec), "the helper removes what it downloaded");
+    check(!fs::exists(script, ec), "the helper removes itself");
 #else
     // A pid that is certainly gone, so the helper does not wait for anything.
     std::wstring gone = L"2147483647";
