@@ -71,7 +71,9 @@ The game project provides:
   `cpu.cpp`, `threads.cpp` and `hle_os.cpp` are the CPU and OS; `hw/` the hardware
   registers; `gx/` the graphics pipeline; `main.cpp` the SDL frontend and `bench_main.cpp`
   the benchmark. A controller takes the first of the console's four pads that is free, so a
-  second one plugged in is player 2; `--players=N` caps how many pads a controller may take,
+  second one plugged in is player 2; its D-pad moves the stick on whichever axis the stick is
+  resting, so a game played either way answers both, and the keyboard's arrows move it always;
+  `--players=N` caps how many pads a controller may take,
   and `input_map.*` binds any joystick or key to a pad from a `controls.txt`
   (wheels, pedals, button boxes), including `pad = "<device>" 2` and `keyboard_pad = 2` for
   who plays as whom; its `--list-controls` prints what to write for each, and

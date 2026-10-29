@@ -37,7 +37,8 @@
 // take the largest, and a whole stick axis is the sum of its bindings, so stick_left and
 // stick_right on two buttons cancel. A stick or trigger the file leaves at rest is left to
 // the default keyboard and gamepad mapping, which stays on except for a device the file
-// names.
+// names; that mapping also moves the stick from a gamepad's D-pad while the stick itself
+// rests, so either works, and the stick takes the axis back the moment it is pushed.
 //
 // Players. The console has four pads; a game controller takes the first that is free, and
 // its lines here follow it. Two lines move a device or the keyboard to another pad, as the

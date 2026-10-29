@@ -201,7 +201,16 @@ static void merge_controller(int pad, PadState& p) {
         if (b(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) p.buttons |= PAD_RIGHT;
         int lx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX);
         int ly = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY);
-        if (abs(lx) > 4000 || abs(ly) > 4000) { p.stick_x = axis_to_u8(lx, false); p.stick_y = axis_to_u8(ly, true); }
+        // Each axis is the stick's while the stick is off centre on that axis, and the
+        // D-pad's otherwise: both move the pad as they do on the console's own, at full
+        // deflection from the D-pad as the keyboard's arrows are, and the stick takes an
+        // axis back the moment it is pushed -- one axis drifting stops only its own D-pad.
+        const int dx = (b(SDL_CONTROLLER_BUTTON_DPAD_RIGHT) ? 100 : 0) - (b(SDL_CONTROLLER_BUTTON_DPAD_LEFT) ? 100 : 0);
+        const int dy = (b(SDL_CONTROLLER_BUTTON_DPAD_UP) ? 100 : 0) - (b(SDL_CONTROLLER_BUTTON_DPAD_DOWN) ? 100 : 0);
+        if (abs(lx) > 4000) p.stick_x = axis_to_u8(lx, false);
+        else if (dx) p.stick_x = (uint8_t)(128 + dx);
+        if (abs(ly) > 4000) p.stick_y = axis_to_u8(ly, true);
+        else if (dy) p.stick_y = (uint8_t)(128 + dy);
         int rx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX);
         int ry = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY);
         if (abs(rx) > 1000 || abs(ry) > 1000) { p.cstick_x = axis_to_u8(rx, false); p.cstick_y = axis_to_u8(ry, true); }
