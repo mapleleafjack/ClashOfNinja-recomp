@@ -131,16 +131,24 @@ ProjectStatus Project::status() const {
 }
 
 std::optional<fs::path> Project::locate(const std::wstring& saved) {
+    // A release ships the game's sources and was built to use them. A folder remembered
+    // from another copy of the launcher used to win, which made a fresh release build a
+    // checkout elsewhere and look as if it had brought nothing with it.
+    std::error_code ec;
+    fs::path app(exe_dir());
+    if (looks_like_project(app)) return app;
+    // The macOS bundle keeps its copy in Resources and builds from the one it laid down.
+    if (auto shipped = seed_bundled_project()) return shipped;
+
     std::vector<fs::path> starts;
     if (!saved.empty()) {
         fs::path path(saved);
         if (looks_like_project(path)) return path;
     }
 
-    std::error_code ec;
-    fs::path app(exe_dir());
+    std::error_code walk_ec;
     starts.push_back(app);
-    starts.push_back(fs::current_path(ec));
+    starts.push_back(fs::current_path(walk_ec));
 
     for (const auto& start : starts) {
         for (fs::path candidate = start; !candidate.empty();) {
@@ -150,8 +158,7 @@ std::optional<fs::path> Project::locate(const std::wstring& saved) {
             candidate = parent;
         }
     }
-    // Nothing on disk yet: a bundle that carries the sources supplies them.
-    return seed_bundled_project();
+    return std::nullopt;
 }
 
 }  // namespace nla

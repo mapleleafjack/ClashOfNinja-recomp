@@ -206,10 +206,11 @@ What it does:
 Drag a disc image or a project folder onto the window, or choose it with the system's
 folder chooser. A release carries the game's sources next to the launcher — or, on macOS,
 inside it — so the only thing a player supplies is their own disc (and, on macOS, a
-compiler they already have or install with one click, see "Releases"). A development build
-finds the project beside itself, or remembers the folder you choose, and if it finds
-neither the first **Launch the game** asks for it. "Show details" reveals the Activity log
-whenever it is hidden.
+compiler they already have or install with one click, see "Releases"). A release always
+uses the sources it came with, whatever folder an earlier copy was pointed at; a
+development build uses the project it finds above the executable, or the folder you
+choose, and if it finds neither the first **Launch the game** asks for it. "Show details"
+reveals the Activity log whenever it is hidden.
 
 `ctest --test-dir launcher/build` renders the main window, Settings, the picker and the
 update prompt to BMP files, through
