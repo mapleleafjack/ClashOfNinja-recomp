@@ -114,78 +114,12 @@ jobs:
           if-no-files-found: error
 
   windows:
-    name: Windows (x64, lean)
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Version from the tag
-        id: version
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: msys2/setup-msys2@v2
-        id: msys2
-        with:
-          msystem: MINGW64
-          update: false
-          install: mingw-w64-x86_64-gcc
-
-      - name: Put MinGW-w64 on PATH
-        shell: bash
-        run: echo "${{ steps.msys2.outputs.msys2-location }}/mingw64/bin" >> "$GITHUB_PATH"
-
-      - name: Build SDL2 for MinGW-w64
-        shell: pwsh
-        run: ./launcher/packaging/build-sdl2.ps1
-
-      - name: Configure
-        run: >
-          cmake -S launcher -B launcher/build-release -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DNLA_VERSION="${{ steps.version.outputs.value }}"
-
-      - name: Build
-        run: ninja -C launcher/build-release NarutoLauncher update_test
-
-      - name: Test
-        run: ctest --test-dir launcher/build-release --output-on-failure
-
-      - name: No dynamic SDL2
-        shell: bash
-        run: |
-          set -euo pipefail
-          exe=launcher/build-release/NarutoLauncher.exe
-          if objdump -p "$exe" | grep -qi 'DLL Name:.*SDL'; then
-            echo "::error::the launcher links SDL2 dynamically, so it would need SDL2 beside it"
-            objdump -p "$exe" | grep -i 'DLL Name:.*SDL'
-            exit 1
-          fi
-          echo "SDL2 is linked statically"
-
-      - name: Package lean
-        shell: pwsh
-        run: >
-          ./launcher/packaging/build-release.ps1 -Lean -SkipBuild -Zip
-          -Output launcher/build-ci/out -Version "${{ steps.version.outputs.value }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64-lean
-          path: launcher/build-ci/out/*.zip
-          if-no-files-found: error
-
-  windows-bundle:
-    name: Windows (x64, release)
-    # Writes the tool archive the launcher downloads (about 190 MB, most of it MinGW-w64)
-    # and the small launcher that pins it, so it only runs for a release; a manual run can
-    # ask for it with -f bundle=true, and then builds a launcher without the pin.
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
+    name: Windows (x64)
+    # One job for both shapes, because a release run needs everything a compile check does:
+    # every run configures, builds, tests and packages the launcher, and a release run also
+    # writes the tool archive it downloads (about 190 MB, most of it MinGW-w64), checks that
+    # download path against a server on the runner, and pins the published URL before
+    # packaging. Two jobs used to build SDL2, the launcher and the tests separately.
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -216,6 +150,7 @@ jobs:
         run: ./launcher/packaging/build-sdl2.ps1
 
       - name: Build the tools archive
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
         shell: pwsh
         run: |
           ./launcher/packaging/build-release.ps1 -SkipBuild -Zip -Split `
@@ -225,7 +160,7 @@ jobs:
         # The launcher can only fetch the bytes it was built against, so the archive is
         # written first and its name, digest, size and published URL are recorded here.
         # A manual run has no release to point at and builds without the pin.
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
         shell: pwsh
         run: |
           $zip = Get-ChildItem launcher/dist/NarutoLauncher-tools-windows-x64-*.zip |
@@ -239,7 +174,7 @@ jobs:
         # The release that will hold this archive is written by the publish job, which runs
         # after this one, so the check below downloads it from the runner instead. The
         # shipped launcher is then built again with the published URL pinned.
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
         shell: pwsh
         run: |
           # $env:GITHUB_ENV only reaches later steps, so the probe uses this variable.
@@ -273,7 +208,7 @@ jobs:
         run: ctest --test-dir launcher/build-release --output-on-failure
 
       - name: The pinned archive downloads and matches its digest
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
         shell: pwsh
         run: |
           # The launcher's own download path - WinHTTP, then the digest, then unpacking.
@@ -325,15 +260,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
-          path: |
-            launcher/dist/NarutoLauncher-Windows-x64-*.zip
-            launcher/dist/NarutoLauncher-tools-windows-x64-*.zip
+          path: launcher/dist/NarutoLauncher-Windows-x64-*.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
+        with:
+          name: windows-tools
+          path: launcher/dist/NarutoLauncher-tools-windows-x64-*.zip
           if-no-files-found: error
 
   publish:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [gate, macos, windows-bundle]
+    needs: [gate, macos, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
