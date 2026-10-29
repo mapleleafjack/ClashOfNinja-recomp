@@ -9,9 +9,9 @@ the `licenses/` directory with the binary.
 
 ## gcn-recomp — MIT (Ethan Nicholas)
 
-`naruto/gcn-recomp/` is [gcn-recomp](https://github.com/ethannicholas/gcn-recomp)'s
+`gcn-recomp/` is [gcn-recomp](https://github.com/ethannicholas/gcn-recomp)'s
 PowerPC-to-C recompiler and GameCube runtime. The whole thing is MIT licensed, and the
-verbatim text lives at [naruto/gcn-recomp/LICENSE](naruto/gcn-recomp/LICENSE). It is
+verbatim text lives at [gcn-recomp/LICENSE](gcn-recomp/LICENSE). It is
 reproduced here because a built `naruto` binary contains a substantial portion of it and
 MIT asks for the notice in the distribution, not just the source tree:
 
@@ -41,7 +41,7 @@ SOFTWARE.
 
 ## glad — (WTFPL OR CC0-1.0) AND Apache-2.0
 
-`naruto/gcn-recomp/runtime/gx/glad/` and `.../glad_es/` are GL and GLES loaders generated
+`gcn-recomp/runtime/gx/glad/` and `.../glad_es/` are GL and GLES loaders generated
 by glad 2.0.8 from the Khronos specifications. Each generated file carries its own SPDX
 line; the Khronos `khrplatform.h` is MIT, with the text in the file. The Apache-2.0 half
 wants a copy of its licence for anyone who receives the sources, which is
@@ -62,7 +62,7 @@ travel with a build. Nothing else in the project uses them.
 
 ## font8x8 — public domain — the game's IPL font stand-in
 
-`naruto/gcn-recomp/runtime/ipl_font.cpp` embeds an 8x8 bitmap set for `0x20`-`0x7E` from
+`gcn-recomp/runtime/ipl_font.cpp` embeds an 8x8 bitmap set for `0x20`-`0x7E` from
 Daniel Hepper's [font8x8](https://github.com/dhepper/font8x8), after Marcel Sondaar's and
 the IBM VGA fonts' 8x8 sets, which are public domain. It stands in for the Windows-1252
 font the console's IPL ROM holds at `0x1FCF00`, which the runtime has no ROM to read; none
@@ -70,7 +70,7 @@ of Nintendo's IPL is included. The glyph data is compiled into every `naruto` bi
 
 ## ANGLE — BSD-2-Clause and others — visionOS target only
 
-`naruto/gcn-recomp/visionos/angle.h` loads ANGLE at runtime; ANGLE is not vendored here,
+`gcn-recomp/visionos/angle.h` loads ANGLE at runtime; ANGLE is not vendored here,
 it is fetched and built by `tools/build-angle-visionos.sh`. Only a visionOS app you build
 and distribute carries it, and that app needs ANGLE's notices (BSD-2-Clause for ANGLE
 itself, plus whatever WebKit's build pulls in). Nothing in this repository does.
@@ -106,8 +106,9 @@ respective owners. If you redistribute the launcher, keep this attribution with 
 
 ## Not third-party, but worth restating
 
-Each game project's `analysis/symbols.txt` is a symbol map — addresses, sizes and names
-recovered from the user's own disc, which is the same class of artefact every
-decompilation project publishes. Each `recomp/*.txt` is a steering table of addresses.
-None of them contains any of the games' code or content, and none is a licensed
-third-party work.
+The game projects are not part of this repository. Each game's `analysis/symbols.txt` — a
+symbol map of addresses, sizes and names recovered from that player's own disc — and its
+`recomp/*.txt` steering tables live only in the checkout of the machine that has the disc,
+and are gitignored here. What this repository publishes is the recompiler in `gcn-recomp/`,
+the launcher in `launcher/` and the tooling in `tools/`, none of which contains any of the
+games' code or content.

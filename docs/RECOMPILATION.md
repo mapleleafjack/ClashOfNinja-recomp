@@ -44,10 +44,10 @@ reference: `FAULT: host address 0x8`, `lr=800E94FC`, host thread stopped inside
 
 The dtk outputs are not needed to build or run, only to work on the recompilation. They are
 derived from the disc, so they are not committed. `dtk` fetches itself with
-`naruto/gcn-recomp/tools/fetch_dtk.sh`; run from the project root:
+`gcn-recomp/tools/fetch_dtk.sh`; run from the project root:
 
 ```sh
-DTK=naruto/gcn-recomp/tools/dtk
+DTK=gcn-recomp/tools/dtk
 $DTK dol config naruto/rom/disc/sys/main.dol -o config/GNREDA/config.yml    # once, per game
 $DTK dol config naruto2/rom/disc/sys/main.dol -o config/GNUEDA/config.yml
 $DTK dol config gnt3/rom/disc/sys/main.dol -o config/G3NJDA/config.yml
@@ -141,9 +141,10 @@ What is not done yet:
 | `tools/setup.sh` | that, then the build; `--run` starts the game, and the game folder is an optional second argument |
 | `tools/check_publish.py` | proves nothing derived from the disc is in what would be published |
 | `launcher/` | the desktop launcher: one C++ application — extract the disc, build, play |
-| `naruto/`, `naruto2/`, `gnt3/`, `gnt4/` | the recompilation projects, the things that build and run |
-| each project's `analysis/symbols.txt` | dtk symbols, with the SDK functions dtk missed named by hand |
-| each project's `recomp/*.txt` | steering tables: which functions to replace at runtime, and so on |
+| `gcn-recomp/` | the vendored recompiler and GameCube runtime the projects link against |
+| `naruto/`, `naruto2/`, `gnt3/`, `gnt4/` | the recompilation projects, the things that build and run. Yours, kept locally: not committed |
+| each project's `analysis/symbols.txt` | dtk symbols, with the SDK functions dtk missed named by hand. Recovered from the disc; not committed |
+| each project's `recomp/*.txt` | steering tables: which functions to replace at runtime, and so on. Not committed |
 | each project's `rom/disc/` | the extracted disc. Derived from the user's disc; not committed |
 | `covers/` | box art, one file per game. Belongs to the publisher; not committed |
 | `config/<disc ID>/`, `build/<disc ID>/` | dtk project config and split output, when you generate them. Not committed |

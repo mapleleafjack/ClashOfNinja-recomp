@@ -5,7 +5,10 @@
 
 ## Setup (once, per game)
 
-Each game needs its own disc image, and none may be committed or shipped. Any format
+Each game needs its own disc image, and none may be committed or shipped. The game folder
+has to exist first — `<game>/CMakeLists.txt`, its `analysis/symbols.txt` and its
+`recomp/*.txt`, which are yours to keep locally and are not in this repository; `setup.sh`
+stops with `error: no game project at …` without it. Any format
 [nodtool](https://github.com/encounter/nod) reads works:
 
 `ISO` · `CISO` · `RVZ` · `WIA` · `GCZ` · `WBFS` · `TGC` · `NFS`
@@ -52,7 +55,7 @@ ninja -C build
 ```
 
 `naruto2/`, `gnt3/` and `gnt4/` build the same way, each producing `./build/<game>` and
-`./build/<game>_bench`. All four share the runtime and recompiler in `naruto/gcn-recomp/`
+`./build/<game>_bench`. All four share the runtime and recompiler in `gcn-recomp/`
 rather than copying them.
 
 `cmake` picks up `rom/disc` on its own. `-DGAME_ISO=/path/to/image.iso` also works, as does
@@ -61,30 +64,29 @@ putting an `.iso`/`.ciso` in `rom/` instead of the extracted tree.
 ### Without the launcher, from a release
 
 A release can be driven from a terminal. Download one from the
-[releases page](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest). On macOS
-everything lives in the app:
+[releases page](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest). It has no
+game project in it, so it is pointed at yours: `NARUTO_TOOLS` names the release's `tools/`
+folder, and `tools/setup.sh` in your checkout does the rest.
 
 ```sh
-"/Applications/Naruto Launcher.app/Contents/Resources/project/tools/setup.sh" \
-    --run "/path/to/your disc image"
+NARUTO_TOOLS="/Applications/Naruto Launcher.app/Contents/Resources/tools" \
+    tools/setup.sh --run "/path/to/your disc image"
 ```
 
-That copies the sources out of the bundle to `~/Naruto` (a signed bundle must not be written
-into), extracts the disc there, and builds with the CMake, Ninja, SDL2 and nodtool the app
-carries — no Homebrew, no `pkg-config`. The only thing still needed is the compiler from
-Apple's command line tools. Afterwards the game starts with `~/Naruto/naruto/build/naruto`,
-and `tools/setup.sh` in the copy can be re-run at any time. Set `NARUTO_HOME` to put the copy
-elsewhere, or `NARUTO_TOOLS` to use another tool folder.
+That extracts the disc into your game folder and builds with the CMake, Ninja, SDL2 and nodtool
+the app carries — no Homebrew, no `pkg-config`. The only thing still needed is the compiler
+from Apple's command line tools.
 
-On Windows the release folder is already a checkout without the disc, so the same thing is
-done by hand:
+On Windows the release carries the same toolchain, and the same thing is done by hand from your
+checkout:
 
 ```powershell
-$env:PATH = "$PWD\tools\mingw64\bin;$PWD\tools\cmake\bin;$PWD\tools\ninja;$PWD\tools\python;$env:PATH"
-.\tools\python\python.exe .\tools\extract_disc.py "D:\your disc image.iso"
-.\tools\cmake\bin\cmake.exe -S naruto -B naruto\build -G Ninja `
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGCN_SDL2_PREFIX="$PWD\tools\sdl2" -DGCN_OPENXR=OFF
-.\tools\ninja\ninja.exe -C naruto\build
+$tools = 'C:\path\to\NarutoLauncher\tools'      # the release's toolchain
+$env:PATH = "$tools\mingw64\bin;$tools\cmake\bin;$tools\ninja;$tools\python;$env:PATH"
+"$tools\python\python.exe" .\tools\extract_disc.py "D:\your disc image.iso"
+& "$tools\cmake\bin\cmake.exe" -S naruto -B naruto\build -G Ninja `
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGCN_SDL2_PREFIX="$tools\sdl2" -DGCN_OPENXR=OFF
+& "$tools\ninja\ninja.exe" -C naruto\build
 .\naruto\build\naruto.exe
 ```
 

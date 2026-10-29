@@ -15,8 +15,9 @@ file over 2 MiB is refused, and so is one with NUL bytes in it, since nothing he
 either. Publishable artwork is the launcher's own, so images are exempt - but covers/ is
 the games' box art, which the launcher fetches rather than ships, and is refused.
 
-Each game's `analysis/symbols.txt` is meant to be published: it is addresses, sizes and
-names, not the game's contents.
+The game projects are gitignored, so they are never in the set: a game's symbol map and
+steering tables are recovered from the player's own disc. The directory rules below still
+name them, so a file force-added with `git add -f` is refused as well.
 """
 import hashlib
 import os
@@ -29,18 +30,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 
 DENIED_DIRS = (
-    'naruto/rom/',
-    'naruto/build/',
-    'naruto/saves/',
-    'naruto2/rom/',
-    'naruto2/build/',
-    'naruto2/saves/',
-    'gnt3/rom/',
-    'gnt3/build/',
-    'gnt3/saves/',
-    'gnt4/rom/',
-    'gnt4/build/',
-    'gnt4/saves/',
+    # A game project comes off the disc: its symbols, steering tables, extracted tree,
+    # build and memory card all belong to the machine that has the disc.
+    'naruto/',
+    'naruto2/',
+    'gnt3/',
+    'gnt4/',
     'config/GNREDA/',
     'config/GNUEDA/',
     'config/G3NJDA/',

@@ -13,11 +13,10 @@
 #
 # The image may be any format nodtool reads (ISO, RVZ, WIA, GCZ, WBFS, CISO, TGC, NFS).
 #
-# A macOS release keeps the sources, CMake, Ninja, nodtool and SDL2 inside the .app. Run
-# this from the copy in the bundle: the sources are copied out of it first, because a
-# signed bundle must not be written into, and the bundled tools are then used - so a
-# terminal build needs no Homebrew. Set NARUTO_TOOLS to point at another tool folder, or
-# NARUTO_HOME to copy the sources somewhere other than ~/Naruto.
+# The game folders are local: this repository ships the launcher, the recompiler in
+# gcn-recomp/ and the tools, and each game's project lives beside them on the machine that
+# has the disc. A release carries CMake, Ninja, nodtool and SDL2 in tools/; set
+# NARUTO_TOOLS to point at another tool folder.
 set -eu
 
 run=0
@@ -30,24 +29,10 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project=$(dirname -- "$here")
 tools=${NARUTO_TOOLS-}
 
-case "$project" in
-*/Contents/Resources/project)
-    bundle=$(dirname -- "$project")
-    target=${NARUTO_HOME:-$HOME/Naruto}
-    if [ ! -f "$target/naruto/CMakeLists.txt" ]; then
-        echo "copying the game's sources out of the app to $target"
-        mkdir -p "$target"
-        cp -R "$project/." "$target/"
-    fi
-    project=$target
-    tools=$bundle/tools
-    ;;
-esac
-
-# Tools shipped with a release come first, wherever they are: tools/ beside the project in
-# a checkout, or Contents/Resources/tools above it in a bundle.
-if [ -z "$tools" ] && [ -d "$(dirname -- "$project")/tools" ]; then
-    tools=$(dirname -- "$project")/tools
+# Tools shipped with a release come first: a release puts cmake, ninja and nodtool in
+# tools/, and a checkout has no such folder.
+if [ -z "$tools" ] && [ -d "$project/tools/cmake/bin" ]; then
+    tools=$project/tools
 fi
 if [ -n "$tools" ] && [ -d "$tools" ]; then
     PATH="$tools/cmake/bin:$tools/ninja:$tools/nodtool:$PATH"

@@ -56,10 +56,11 @@ bool is_runtime_path(std::wstring_view relative) {
     return false;
 }
 
-// A macOS release carries the game's sources in Contents/Resources/project, and a signed
-// bundle must not be written into, so they are copied where a build can write: beside the
-// launcher's settings. The marker holds the launcher's version, so an updated launcher
-// lays down its own sources once without disturbing the disc, the build or the saves.
+// A bundle may carry a project in Contents/Resources/project — a released one does not, but
+// an assembled one can — and a signed bundle must not be written into, so it is copied
+// where a build can write: beside the launcher's settings. The marker holds the launcher's
+// version, so an updated launcher lays its copy down once without disturbing the disc, the
+// build or the saves.
 std::optional<fs::path> seed_bundled_project() {
     fs::path resources = bundle_resources_dir();
     if (resources.empty()) return std::nullopt;

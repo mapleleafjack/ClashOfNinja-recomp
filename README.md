@@ -12,6 +12,11 @@ hardware, so this is not an emulator: it is an ordinary executable that runs the
 | Gekitou Ninja Taisen! 3 | `G3NJDA` |
 | Gekitou Ninja Taisen! 4 | `G4NJDA` |
 
+The game projects are not in this repository: each one's symbol map and steering tables are
+recovered from the disc, so they stay on the machine that has it. A release ships the launcher
+and the tools and is pointed at your own checkout — [Building and running](docs/BUILDING.md)
+covers making one.
+
 ![The launcher with all four games](docs/screenshots/launcher.png)
 
 *Box art is fetched on first run, never shipped.*
@@ -25,14 +30,14 @@ v1.4.0).
 | Platform | Download | Also needs |
 | --- | --- | --- |
 | Windows 10/11 x64 | `NarutoLauncher-Windows-x64-v<version>.zip` (~4 MB) | nothing |
-| macOS 14+, Apple Silicon | `NarutoLauncher-macOS-arm64-v<version>.zip` (~14 MB, sources and tools inside) | a C++ compiler: `xcode-select --install` (free) or Xcode |
+| macOS 14+, Apple Silicon | `NarutoLauncher-macOS-arm64-v<version>.zip` (~13 MB, tools inside) | a C++ compiler: `xcode-select --install` (free) or Xcode |
 | Linux | none — build from source, see [BUILDING.md](docs/BUILDING.md) | `cmake ninja-build g++ libsdl2-dev python3` |
 
 1. **Unzip it.** On Windows use a path with no spaces in it, for example
    `C:\Games\NarutoLauncher` — MinGW-w64 will not run from one. Windows may also warn that the
    publisher is unknown, as the launcher is not code-signed yet: *More info → Run anyway*. On
    macOS, right-click → Open the app the first time (it is signed ad hoc, not notarised).
-2. **Start the launcher.** The four games appear as covers.
+2. **Start the launcher.** It lists the game projects in your checkout, one cover each.
 3. **Click a cover and choose your disc image.** The first click extracts the disc and builds
    the game, which takes a few minutes; on Windows it first fetches about 190 MB of build
    tools, with a progress bar.

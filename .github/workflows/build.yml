@@ -86,28 +86,16 @@ jobs:
           fi
           echo "SDL2 is linked statically"
 
-      - name: Bundle the sources and the build tools
+      - name: Bundle the build tools
         shell: bash
         run: |
           set -euo pipefail
           app="launcher/build-ci/NarutoLauncher.app"
           res="$app/Contents/Resources"
 
-          # The games' sources, so a player needs no checkout and no download. What the
-          # disc supplies and the build writes (rom, build, saves) is left out: the
-          # launcher copies this tree to the player's own folder before it builds.
-          mkdir -p "$res/project/tools"
-          for game in naruto naruto2 gnt3 gnt4; do
-            rsync -a --exclude rom --exclude build --exclude saves "$game" "$res/project/"
-          done
-          # Box art the machine that built this copy already had. The launcher fetches the
-          # rest itself, so an empty covers/ is fine and a checkout usually has none.
-          if [ -d covers ]; then
-            rsync -a covers "$res/project/"
-          fi
-          # setup.sh is the terminal path to the same thing the launcher does, so it
-          # travels too and works with the tools beside it.
-          cp tools/extract_disc.py tools/setup.sh "$res/project/tools/"
+          # No game project is bundled: its symbol maps come off the disc, so a release
+          # carries the launcher and the tools, and the player's own checkout is what the
+          # launcher is pointed at.
 
           # CMake from the standalone tarball Kitware publishes. Only the `cmake` binary
           # and its module tree are copied: cpack, ctest, ccmake and the Qt GUI are 68 MB a
@@ -147,13 +135,8 @@ jobs:
           res="launcher/build-ci/NarutoLauncher.app/Contents/Resources"
           "$res/tools/cmake/bin/cmake" --version | head -1
           "$res/tools/ninja/ninja" --version
-          test -f "$res/project/naruto/CMakeLists.txt"
-          test -f "$res/project/naruto2/CMakeLists.txt"
-          test -f "$res/project/gnt3/CMakeLists.txt"
-          test -f "$res/project/gnt4/CMakeLists.txt"
-          test -f "$res/project/tools/extract_disc.py"
-          test -x "$res/project/tools/setup.sh"
           test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
+          test ! -e "$res/project"
 
       - name: Sign ad hoc and package
         shell: bash
@@ -328,22 +311,17 @@ jobs:
           ./launcher/packaging/build-release.ps1 -Lean -SkipBuild -Zip
           -Version "${{ steps.version.outputs.value }}"
 
-      - name: The release carries the sources and nothing from the disc
+      - name: The release carries nothing from the disc
         shell: pwsh
         run: |
-          # The player gets the game's sources with the launcher, and never its data.
+          # The launcher and its tools ship; no game project and nothing derived from a
+          # disc does, because a game folder's symbol maps come off the player's own copy.
           $out = Join-Path 'launcher/dist' 'NarutoLauncher'
-          foreach ($path in 'naruto/CMakeLists.txt', 'naruto/gcn-recomp/CMakeLists.txt',
-                            'naruto/recomp', 'naruto2/CMakeLists.txt', 'naruto2/recomp',
-                            'gnt3/CMakeLists.txt', 'gnt3/recomp',
-                            'gnt4/CMakeLists.txt', 'gnt4/recomp', 'tools/extract_disc.py') {
-            if (-not (Test-Path (Join-Path $out $path))) { throw "the release is missing $path" }
+          if (-not (Test-Path (Join-Path $out 'NarutoLauncher.exe'))) {
+            throw 'the release is missing NarutoLauncher.exe'
           }
-          foreach ($game in 'naruto', 'naruto2', 'gnt3', 'gnt4') {
-            foreach ($part in 'rom', 'build', 'saves') {
-              $path = "$game/$part"
-              if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
-            }
+          foreach ($path in 'naruto', 'naruto2', 'gnt3', 'gnt4', 'config', 'covers') {
+            if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
           }
 
       - uses: actions/upload-artifact@v4

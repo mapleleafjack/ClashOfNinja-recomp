@@ -90,8 +90,8 @@ nothing else has to be installed for it to start.
   from box art.
 - **Game source.** An update replaces the launcher only; the game is compiled from the project
   folder the launcher found or was given. The launcher does not update those sources: it
-  builds whatever is there, so a release uses the sources it came with, and newer sources are
-  something to put in place yourself.
+  builds whatever is there. Nothing is shipped with the launcher, so the project folder is
+  always one you supplied, and newer sources are something to put in place yourself.
 - **Settings.** Three things, and nothing else: **Players…** (which controller and keyboard
   play as which pad), the window scale a game opens at, and the update check. Everything else
   the launcher works out on its own — the project folder and the disc image are asked for from
@@ -107,12 +107,10 @@ nothing else has to be installed for it to start.
   the pinned SHA-256, and unpacks it into `tools/` — the prompt that appears when a build is
   asked for without them.
 
-Drag a disc image or a project folder onto the window, or choose one. A release carries the
-game's sources next to the launcher — or, on macOS, inside it — so the only thing a player
-supplies is their own disc. A release always uses the sources it came with, whatever folder an
-earlier copy was pointed at; a development build uses the project it finds above the
-executable, or the folder you choose, and if it finds neither, the first **Launch the game**
-asks for it. *Show details* reveals the Activity log whenever it is hidden; the covers stay,
+Drag a disc image or a project folder onto the window, or choose one. A release carries no
+game project, so what a player supplies is their own checkout and their own disc. The launcher
+uses the project it finds above the executable, or the folder you choose, and if it finds
+neither, the first **Launch the game** asks for it. *Show details* reveals the Activity log whenever it is hidden; the covers stay,
 smaller, beside it. Cover art added while the launcher is running is picked up the next time
 it starts.
 

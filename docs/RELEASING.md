@@ -3,8 +3,8 @@
 [README](../README.md) · [Building and running](BUILDING.md) · [The launcher](LAUNCHER.md) ·
 [Recompilation notes](RECOMPILATION.md)
 
-A release carries the sources, the launcher and as much of the toolchain as may be
-redistributed — and no game data. `.github/workflows/build.yml` builds it; the game itself is
+A release carries the launcher and as much of the toolchain as may be redistributed — and no
+game data. It carries no game project either: their symbol maps come off the disc. `.github/workflows/build.yml` builds it; the game itself is
 never built there, because it needs the user's own disc.
 
 | Event | What happens |
@@ -25,13 +25,13 @@ gh workflow run build.yml -f bundle=true     # exercise the bundle without a rel
 
 | Asset | Holds |
 | --- | --- |
-| `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the game's sources and build tools inside, plus the notices |
-| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher and the sources |
+| `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the build tools inside, plus the notices |
+| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, and no game project |
 | `NarutoLauncher-tools-windows-x64-v<version>.zip` | the toolchain the launcher downloads on first use |
 
 The tag also names the version: the workflow passes it as `NLA_VERSION`, which becomes the
-bundle's `CFBundleShortVersionString`, marks the copy of the sources a macOS bundle lays down,
-and, compiled into the launcher, is the version it compares against the newest release. A build
+bundle's `CFBundleShortVersionString` and, compiled into the launcher, is the version it
+compares against the newest release. A build
 from a branch says `0.0.0` and never offers to update itself. The tool archive is written
 before the launcher is configured, so its URL, digest and size are pinned into the build, and
 the configure step also records the commit and its date alongside it. A lean Windows zip is
@@ -103,14 +103,10 @@ installation — including a beta — brings the same compiler and SDK and count
 else has to be installed: no Homebrew, no `pkg-config`, no checkout, because the game's CMake
 prefers the bundled SDL2's CMake package over `pkg-config`.
 
-`NarutoLauncher-macOS-arm64-v<version>.zip` is otherwise the whole game's worth of software: the
-`.app` carries the launcher (SDL2 linked statically), the game's sources in
-`Contents/Resources/project`, and the tools that build it in `Contents/Resources/tools` — CMake,
-Ninja, the static SDL2 the game links, and nodtool. `Contents/Resources` is read only in
-practice, and a signed bundle must not be written into, so the launcher copies the sources to
-`~/Library/Application Support/NarutoLauncher/project` on first use and builds there; a version
-marker means an updated launcher replaces its own sources and leaves the extracted disc, the
-build and the saves alone.
+`NarutoLauncher-macOS-arm64-v<version>.zip` carries the launcher (SDL2 linked statically) and
+the tools that build the game in `Contents/Resources/tools` — CMake, Ninja, the static SDL2 the
+game links, and nodtool — and no game project. The launcher is pointed at your own checkout and
+builds there with those tools.
 
 What is inside is kept small: CMake ships as the single `cmake` binary thinned to arm64 plus its
 module tree, about 18 MB where the full Kitware `.app` is 180 MB, and the whole zip is about
@@ -121,16 +117,15 @@ ad hoc, exactly like a local build — an unsigned arm64 bundle will not start, 
 would need an identity this project does not have — so the download needs right-click → Open the
 first time.
 
-The sources are the same tree the repository publishes: `rom/`, `build/` and `saves/` are
-excluded when the bundle is staged, so the app never carries anything derived from a disc.
+Nothing derived from a disc is in the bundle: there is no game project in it at all.
 
 ## Publishing
 
-What ships is the project's own work: the recompilation project, the steering tables, the
-launcher and the tools, plus each game's `analysis/symbols.txt` — addresses, sizes and names,
-which is a map and not the game's contents. No `main.dol`, no disc file, no image and no build
-output is published, and neither is any game's `saves/` folder (a memory card) or `covers/` (the
-publisher's box art). A binary built from this additionally carries
+What ships is the project's own work: the recompiler in `gcn-recomp/`, the launcher and the
+tools. The game projects are not published at all — their symbol maps and steering tables come
+off the disc, so they stay in the checkout of the machine that has it. No `main.dol`, no disc
+file, no image and no build output is published, and neither is any game's `saves/` folder (a
+memory card) or `covers/` (the publisher's box art). A binary built from this additionally carries
 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) and `licenses/`, which is a licence
 obligation, not an option.
 

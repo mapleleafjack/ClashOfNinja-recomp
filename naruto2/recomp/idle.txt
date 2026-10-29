@@ -1,5 +1,0 @@
-# Backward branches where the guest is only waiting for an interrupt, so the runtime may
-# skip guest time to the next event instead of iterating.
-# SelectThread starts at 800FA2E0; this is the two-instruction idle spin inside it, at the
-# same offset as 800E954C in SelectThread of the first game.
-800FA434 SelectThread

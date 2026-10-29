@@ -10,9 +10,9 @@
     a toolchain. That is a large folder (about 1 GB unzipped, mostly MinGW); pass
     -Lean for a small launcher that uses an installed toolchain instead.
 
-    Either way the release also carries the games' sources in naruto\, naruto2\, gnt3\
-    and gnt4\, and tools\, so nothing has to be checked out or downloaded: unzip it,
-    choose a disc image, play.
+    Either way what ships is the launcher and, unless -Lean, the toolchain. The game
+    projects are not in a release: their symbol maps come off the disc, so they live in
+    the player's own checkout, which the launcher is pointed at.
 
 .EXAMPLE
     .\build-release.ps1 -Zip
@@ -226,32 +226,6 @@ if (-not $Lean) {
     }
 }
 
-# The games' sources travel with the launcher, so a player who has only their own disc
-# image can extract, build and play without a checkout or a download. What the disc
-# supplies and the build writes is not shipped: rom\, build\, saves\ and controls.txt are
-# created in the player's copy, exactly as they would be in a checkout. The tools archive
-# holds the toolchain alone, so it gets none of this.
-if (-not $Split) {
-    Write-Host 'copying the game sources'
-    $runtime = @('rom', 'build', 'saves')
-    foreach ($game in @('naruto', 'naruto2', 'gnt3', 'gnt4')) {
-        $sources = Join-Path $outDir $game
-        New-Item -ItemType Directory -Force -Path $sources | Out-Null
-        Get-ChildItem (Join-Path $project $game) -Force |
-            Where-Object { $_.Name -ne '.git' -and $runtime -notcontains $_.Name } |
-            ForEach-Object { Copy-Item $_.FullName (Join-Path $sources $_.Name) -Recurse -Force }
-    }
-    New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'tools') | Out-Null
-    Copy-Item (Join-Path $project 'tools\extract_disc.py') (Join-Path $outDir 'tools\extract_disc.py')
-    # Box art this machine already had. The launcher fetches the rest itself, so a
-    # checkout with no covers\ is fine.
-    $covers = Join-Path $project 'covers'
-    if (Test-Path $covers) {
-        New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'covers') | Out-Null
-        Get-ChildItem $covers -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $outDir 'covers') }
-    }
-}
-
 $readme = @'
 Naruto: Clash of Ninja - launcher
 =================================
@@ -264,8 +238,10 @@ First start
     extracts it, then configures and compiles the game and starts it. Later
     starts go straight to Play.
 
-    The game's sources are already here, in naruto\ and tools\, so nothing has
-    to be downloaded or checked out. Keep the folder path free of spaces: the
+    The launcher builds the game from the project folder it was started in, or
+    the one chosen in Settings: that is your own checkout, holding the game
+    folders beside the recompiler - the symbol maps come off the disc, so they
+    are not part of a release. Keep the folder path free of spaces: the
     bundled MinGW-w64 compiler cannot run from one.
 
 Tools
@@ -280,9 +256,9 @@ Settings
     the update check. Everything else keeps its default: music on, input log on, and a
     build whenever a cover is clicked without one.
 
-The extracted disc stays in naruto\rom\disc, the build in naruto\build, saves in
-naruto\saves, and controls in naruto\controls.txt - all inside this folder, so the
-whole game can be moved or deleted as one.
+The extracted disc stays in <game>\rom\disc, the build in <game>\build, saves in
+<game>\saves, and controls in <game>\controls.txt - all inside the project folder,
+so the whole game can be moved or deleted as one.
 '@
 Set-Content -Path (Join-Path $outDir 'README.txt') -Value $readme -Encoding UTF8
 
