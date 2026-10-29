@@ -5,6 +5,8 @@
 # The extracted disc, and any disc image in any format nodtool reads.
 naruto/rom/
 naruto2/rom/
+gnt3/rom/
+gnt4/rom/
 *.iso
 *.ciso
 *.rvz
@@ -21,8 +23,12 @@ naruto2/rom/
 # Build output, dtk output, and the disc-derived dtk project config.
 naruto/build/
 naruto2/build/
+gnt3/build/
+gnt4/build/
 config/GNREDA/
 config/GNUEDA/
+config/G3NJDA/
+config/G4NJDA/
 orig/
 build/
 build-*/
@@ -31,6 +37,8 @@ build-*/
 # directory, so a run started from the project root leaves one there too.
 naruto/saves/
 naruto2/saves/
+gnt3/saves/
+gnt4/saves/
 /saves/
 /inputs/
 
@@ -38,6 +46,8 @@ naruto2/saves/
 # machine, so it is created in the player's own copy rather than shipped.
 naruto/controls.txt
 naruto2/controls.txt
+gnt3/controls.txt
+gnt4/controls.txt
 
 # Cover art the launcher shows, one file per game, named after its folder. The launcher
 # fetches box art into covers/ the first time it needs it; box art belongs to the
@@ -47,6 +57,8 @@ covers/
 # A cover.png beside a game, which is where art lived before covers/ and is still read.
 naruto/cover.*
 naruto2/cover.*
+gnt3/cover.*
+gnt4/cover.*
 
 # Local-only work trees for discs this repository does not carry, and the dtk output that
 # comes from them. They stay on the machine that has them, like the disc they need.

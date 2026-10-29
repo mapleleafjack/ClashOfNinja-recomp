@@ -14,6 +14,8 @@ constexpr wchar_t kFallbackDiscId[] = L"GNREDA";
 const std::vector<GameInfo> kGames = {
     {L"naruto", L"Naruto: Clash of Ninja", L"Clash of Ninja"},
     {L"naruto2", L"Naruto: Clash of Ninja 2", L"Clash of Ninja 2"},
+    {L"gnt3", L"Naruto: Gekitou Ninja Taisen! 3", L"Ninja Taisen 3"},
+    {L"gnt4", L"Naruto: Gekitou Ninja Taisen! 4", L"Ninja Taisen 4"},
 };
 
 bool has_game(const fs::path& root, const std::wstring& folder) {
@@ -178,22 +180,19 @@ ProjectStatus Project::status() const {
 }
 
 std::optional<fs::path> Project::locate(const std::wstring& saved) {
-    // A release ships the game's sources and was built to use them. A folder remembered
-    // from another copy of the launcher used to win, which made a fresh release build a
-    // checkout elsewhere and look as if it had brought nothing with it.
+    // A release ships the game's sources and was built to use them, so the folder beside
+    // or above the launcher wins: a folder remembered from another copy used to come first,
+    // which made a fresh release build a checkout elsewhere and look as if it had brought
+    // nothing with it. A remembered folder still counts when the launcher sits nowhere near
+    // a project.
     std::error_code ec;
     fs::path app(exe_dir());
     if (looks_like_project(app)) return app;
     // The macOS bundle keeps its copy in Resources and builds from the one it laid down.
     if (auto shipped = seed_bundled_project()) return shipped;
 
-    std::vector<fs::path> starts;
-    if (!saved.empty()) {
-        fs::path path(saved);
-        if (looks_like_project(path)) return path;
-    }
-
     std::error_code walk_ec;
+    std::vector<fs::path> starts;
     starts.push_back(app);
     starts.push_back(fs::current_path(walk_ec));
 
@@ -204,6 +203,11 @@ std::optional<fs::path> Project::locate(const std::wstring& saved) {
             if (parent == candidate) break;
             candidate = parent;
         }
+    }
+
+    if (!saved.empty()) {
+        fs::path path(saved);
+        if (looks_like_project(path)) return path;
     }
     return std::nullopt;
 }

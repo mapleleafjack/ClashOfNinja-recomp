@@ -6,7 +6,7 @@ namespace nla {
 
 struct Settings {
     std::wstring project_root;
-    // The game folder under the project root: "naruto" or "naruto2".
+    // The game folder under the project root: "naruto", "naruto2", "gnt3" or "gnt4".
     std::wstring game;
     std::wstring last_image;
     int scale = 2;

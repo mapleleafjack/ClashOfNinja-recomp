@@ -10,9 +10,9 @@
     a toolchain. That is a large folder (about 1 GB unzipped, mostly MinGW); pass
     -Lean for a small launcher that uses an installed toolchain instead.
 
-    Either way the release also carries the games' sources in naruto\ and naruto2\,
-    and tools\, so nothing has to be checked out or downloaded: unzip it, choose a
-    disc image, play.
+    Either way the release also carries the games' sources in naruto\, naruto2\, gnt3\
+    and gnt4\, and tools\, so nothing has to be checked out or downloaded: unzip it,
+    choose a disc image, play.
 
 .EXAMPLE
     .\build-release.ps1 -Zip
@@ -234,7 +234,7 @@ if (-not $Lean) {
 if (-not $Split) {
     Write-Host 'copying the game sources'
     $runtime = @('rom', 'build', 'saves')
-    foreach ($game in @('naruto', 'naruto2')) {
+    foreach ($game in @('naruto', 'naruto2', 'gnt3', 'gnt4')) {
         $sources = Join-Path $outDir $game
         New-Item -ItemType Directory -Force -Path $sources | Out-Null
         Get-ChildItem (Join-Path $project $game) -Force |
@@ -276,8 +276,9 @@ Tools
     needs to build. A -Lean release has no tools and uses PATH or a system install instead.
 
 Settings
-    The Settings panel remembers the project, the last image, window scale,
-    controller input logging, and can create Desktop or Start menu shortcuts.
+    The Settings panel holds the window scale, which controller plays as which pad, and
+    the update check. Everything else keeps its default: music on, input log on, and a
+    build whenever a cover is clicked without one.
 
 The extracted disc stays in naruto\rom\disc, the build in naruto\build, saves in
 naruto\saves, and controls in naruto\controls.txt - all inside this folder, so the

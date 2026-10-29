@@ -97,7 +97,7 @@ jobs:
           # disc supplies and the build writes (rom, build, saves) is left out: the
           # launcher copies this tree to the player's own folder before it builds.
           mkdir -p "$res/project/tools"
-          for game in naruto naruto2; do
+          for game in naruto naruto2 gnt3 gnt4; do
             rsync -a --exclude rom --exclude build --exclude saves "$game" "$res/project/"
           done
           # Box art the machine that built this copy already had. The launcher fetches the
@@ -149,6 +149,8 @@ jobs:
           "$res/tools/ninja/ninja" --version
           test -f "$res/project/naruto/CMakeLists.txt"
           test -f "$res/project/naruto2/CMakeLists.txt"
+          test -f "$res/project/gnt3/CMakeLists.txt"
+          test -f "$res/project/gnt4/CMakeLists.txt"
           test -f "$res/project/tools/extract_disc.py"
           test -x "$res/project/tools/setup.sh"
           test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
@@ -333,10 +335,11 @@ jobs:
           $out = Join-Path 'launcher/dist' 'NarutoLauncher'
           foreach ($path in 'naruto/CMakeLists.txt', 'naruto/gcn-recomp/CMakeLists.txt',
                             'naruto/recomp', 'naruto2/CMakeLists.txt', 'naruto2/recomp',
-                            'tools/extract_disc.py') {
+                            'gnt3/CMakeLists.txt', 'gnt3/recomp',
+                            'gnt4/CMakeLists.txt', 'gnt4/recomp', 'tools/extract_disc.py') {
             if (-not (Test-Path (Join-Path $out $path))) { throw "the release is missing $path" }
           }
-          foreach ($game in 'naruto', 'naruto2') {
+          foreach ($game in 'naruto', 'naruto2', 'gnt3', 'gnt4') {
             foreach ($part in 'rom', 'build', 'saves') {
               $path = "$game/$part"
               if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }

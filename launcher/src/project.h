@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 // One of the games the project builds: its own folder under the project root, holding a
 // CMakeLists.txt that names the game and the disc it is checked against.
 struct GameInfo {
-    std::wstring folder;       // "naruto" or "naruto2"
+    std::wstring folder;       // "naruto", "naruto2", "gnt3", "gnt4"
     std::wstring title;        // the game's name, as the build calls it
     std::wstring short_title;  // what the launcher's game switch has room for
 };

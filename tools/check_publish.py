@@ -35,8 +35,16 @@ DENIED_DIRS = (
     'naruto2/rom/',
     'naruto2/build/',
     'naruto2/saves/',
+    'gnt3/rom/',
+    'gnt3/build/',
+    'gnt3/saves/',
+    'gnt4/rom/',
+    'gnt4/build/',
+    'gnt4/saves/',
     'config/GNREDA/',
     'config/GNUEDA/',
+    'config/G3NJDA/',
+    'config/G4NJDA/',
     'launcher/build/',
     'launcher/build-release/',
     'launcher/dist/',
@@ -54,6 +62,8 @@ MAX_BYTES = 2 << 20
 DOL_SHA1S = frozenset((
     '19251f7f15f8b6f7e0cd1c753409151ec49d9af2',  # Naruto: Clash of Ninja (GNREDA)
     '2440b77fad91e1892d1769ff8650852244e64415',  # Naruto: Clash of Ninja 2 (GNUEDA)
+    'e8e0a27f6a4a075a11ef322cf6a182c0b87c8d51',  # Gekitou Ninja Taisen! 3 (G3NJDA)
+    '0eb4cc3bd4c7363f8cb7baff79de7a964cbdeadb',  # Gekitou Ninja Taisen! 4 (G4NJDA)
 ))
 
 

@@ -5,8 +5,9 @@
 #   tools/setup.sh "/path/to/your/disc image.iso"      # extract and build
 #   tools/setup.sh --run "/path/to/image.iso"          # ...then start the game
 #
-# `game` is the folder the game is built in: naruto (Clash of Ninja, the default) or
-# naruto2 (Clash of Ninja 2), given after the image:
+# `game` is the folder the game is built in: naruto (Clash of Ninja, the default),
+# naruto2 (Clash of Ninja 2), gnt3 or gnt4 (Gekitou Ninja Taisen! 3 and 4, the Japanese
+# discs), given after the image:
 #
 #   tools/setup.sh --run "/path/to/image.iso" naruto2
 #
@@ -57,7 +58,8 @@ fi
 
 if [ $# -lt 1 ]; then
     echo "usage: $0 [--run] <your disc image> [game]" >&2
-    echo "  game: naruto (Clash of Ninja, default) or naruto2 (Clash of Ninja 2)" >&2
+    echo "  game: naruto (Clash of Ninja, default), naruto2 (Clash of Ninja 2)," >&2
+    echo "        gnt3 or gnt4 (Gekitou Ninja Taisen! 3 and 4)" >&2
     echo "  extracts it to $project/<game>/rom/disc, then builds the game" >&2
     echo "  the image can then be deleted" >&2
     exit 2
