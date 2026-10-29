@@ -372,6 +372,11 @@ contains none of their code or content and needs the user's own disc to do anyth
 - `--record=out.mp4` needs ffmpeg with an encoder it can open; Homebrew's ffmpeg failed all
   three trial encoders here, so use `--dump-dir` instead.
 - Scripted input: `GCN_INPUT="frame:BUTTON:duration,..."`, e.g. `"900:START:20,1200:A:10"`.
+- Some text on screen is the SDK's, not the game's: the memory card prompts read their font
+  from the IPL ROM at `0x1FCF00`, which a runtime with no ROM does not have. The built-in
+  replacement is a public-domain 8x8 set, so those prompts have words. `GCN_IPL_FONT=FILE`
+  serves a blob of your own from that address instead — the Yay0 font the ROM holds, the
+  same shape as Dolphin's bundled fonts.
 - Nothing from the disc is redistributable. `naruto/rom/`, `naruto/build/`,
   `config/GNREDA/` and `naruto/saves/` are all derived from it and are gitignored; see
   "Publishing". The extracted tree can be rebuilt from the user's own disc at any time

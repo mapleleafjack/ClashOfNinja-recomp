@@ -60,6 +60,14 @@ rasteriser and the PNG reader for the launcher's own logo. Each file states its 
 ("public domain ... or MIT") at the top, and that statement is the licence that has to
 travel with a build. Nothing else in the project uses them.
 
+## font8x8 — public domain — the game's IPL font stand-in
+
+`naruto/gcn-recomp/runtime/ipl_font.cpp` embeds an 8x8 bitmap set for `0x20`-`0x7E` from
+Daniel Hepper's [font8x8](https://github.com/dhepper/font8x8), after Marcel Sondaar's and
+the IBM VGA fonts' 8x8 sets, which are public domain. It stands in for the Windows-1252
+font the console's IPL ROM holds at `0x1FCF00`, which the runtime has no ROM to read; none
+of Nintendo's IPL is included. The glyph data is compiled into every `naruto` binary.
+
 ## ANGLE — BSD-2-Clause and others — visionOS target only
 
 `naruto/gcn-recomp/visionos/angle.h` loads ANGLE at runtime; ANGLE is not vendored here,

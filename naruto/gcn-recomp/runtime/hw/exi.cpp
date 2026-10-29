@@ -1,8 +1,11 @@
-// External Interface: IPL device (SRAM / RTC / UART). Memory cards: not present (yet).
+// External Interface: IPL device (SRAM / RTC / UART / ROM font), and the memory card in
+// slot A.
 #include "../runtime.h"
 #include "../platform.h"
+#include "../ipl_font.h"
 #include <ctime>
 #include <memory>
+#include <vector>
 #include "memcard.h"
 
 static std::unique_ptr<MemCard> g_card_a;
@@ -13,6 +16,36 @@ struct ExiChannel {
 static ExiChannel g_exi[3];
 
 // ---- IPL device (channel 0, CS1) ----
+// Where the ROM keeps the Windows-1252 font the SDK's system text is read from, and the
+// font itself: built from scratch (ipl_font.h), or the blob GCN_IPL_FONT names, which is
+// what an IPL dump holds there and what Dolphin's bundled replacement fonts are.
+static constexpr uint32_t kRomFontBase = 0x1FCF00;
+
+static const std::vector<uint8_t>& ipl_rom_font() {
+    static const std::vector<uint8_t> font = [] {
+        if (const char* p = getenv("GCN_IPL_FONT")) {
+            if (FILE* f = fopen(p, "rb")) {
+                std::vector<uint8_t> blob;
+                fseek(f, 0, SEEK_END);
+                const long n = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (n > 0) {
+                    blob.resize((size_t)n);
+                    if (fread(blob.data(), 1, (size_t)n, f) != (size_t)n) blob.clear();
+                }
+                fclose(f);
+                if (!blob.empty()) {
+                    LOG(LOG_EXI, "IPL font from %s (%ld bytes)", p, n);
+                    return blob;
+                }
+                LOG(LOG_EXI, "IPL font: cannot read %s", p);
+            }
+        }
+        return ipl_font_western();
+    }();
+    return font;
+}
+
 static uint8_t g_sram[64];
 static uint32_t g_ipl_addr;
 static bool g_ipl_have_cmd;
@@ -73,9 +106,13 @@ static uint8_t ipl_transfer_byte(uint8_t in) {
                 g_uart_line.clear();
             } else if (in) g_uart_line.push_back((char)in);
         }
-    } else {
-        // ROM (font etc.) - not provided
-        if (g_ipl_pos == 0) LOG(LOG_EXI, "IPL ROM read at %08X (unsupported)", addr >> 6);
+    } else {  // the ROM: its font, and nothing else (ipl_font.h)
+        if (!write) {
+            const std::vector<uint8_t>& font = ipl_rom_font();
+            const uint32_t off = (addr >> 6) + g_ipl_pos;
+            if (off >= kRomFontBase && off - kRomFontBase < font.size())
+                out = font[off - kRomFontBase];
+        }
     }
     g_ipl_pos++;
     return out;
