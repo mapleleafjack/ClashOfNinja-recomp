@@ -93,11 +93,18 @@ jobs:
           app="launcher/build-ci/NarutoLauncher.app"
           res="$app/Contents/Resources"
 
-          # The game's sources, so a player needs no checkout and no download. What the
+          # The games' sources, so a player needs no checkout and no download. What the
           # disc supplies and the build writes (rom, build, saves) is left out: the
           # launcher copies this tree to the player's own folder before it builds.
           mkdir -p "$res/project/tools"
-          rsync -a --exclude rom --exclude build --exclude saves naruto "$res/project/"
+          for game in naruto naruto2; do
+            rsync -a --exclude rom --exclude build --exclude saves "$game" "$res/project/"
+          done
+          # Box art the machine that built this copy already had. The launcher fetches the
+          # rest itself, so an empty covers/ is fine and a checkout usually has none.
+          if [ -d covers ]; then
+            rsync -a covers "$res/project/"
+          fi
           # setup.sh is the terminal path to the same thing the launcher does, so it
           # travels too and works with the tools beside it.
           cp tools/extract_disc.py tools/setup.sh "$res/project/tools/"
@@ -141,6 +148,7 @@ jobs:
           "$res/tools/cmake/bin/cmake" --version | head -1
           "$res/tools/ninja/ninja" --version
           test -f "$res/project/naruto/CMakeLists.txt"
+          test -f "$res/project/naruto2/CMakeLists.txt"
           test -f "$res/project/tools/extract_disc.py"
           test -x "$res/project/tools/setup.sh"
           test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
@@ -324,11 +332,15 @@ jobs:
           # The player gets the game's sources with the launcher, and never its data.
           $out = Join-Path 'launcher/dist' 'NarutoLauncher'
           foreach ($path in 'naruto/CMakeLists.txt', 'naruto/gcn-recomp/CMakeLists.txt',
-                            'naruto/recomp', 'tools/extract_disc.py') {
+                            'naruto/recomp', 'naruto2/CMakeLists.txt', 'naruto2/recomp',
+                            'tools/extract_disc.py') {
             if (-not (Test-Path (Join-Path $out $path))) { throw "the release is missing $path" }
           }
-          foreach ($path in 'naruto/rom', 'naruto/build', 'naruto/saves') {
-            if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
+          foreach ($game in 'naruto', 'naruto2') {
+            foreach ($part in 'rom', 'build', 'saves') {
+              $path = "$game/$part"
+              if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
+            }
           }
 
       - uses: actions/upload-artifact@v4

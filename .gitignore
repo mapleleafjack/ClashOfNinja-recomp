@@ -39,8 +39,12 @@ naruto2/saves/
 naruto/controls.txt
 naruto2/controls.txt
 
-# Cover art the launcher shows for each game. Box art belongs to the publisher, so it
-# stays on the machine that has it; `git add -f` a file you drew yourself.
+# Cover art the launcher shows, one file per game, named after its folder. The launcher
+# fetches box art into covers/ the first time it needs it; box art belongs to the
+# publisher, so it stays on the machine that has it. `git add -f` a file you drew yourself.
+covers/
+
+# A cover.png beside a game, which is where art lived before covers/ and is still read.
 naruto/cover.*
 naruto2/cover.*
 

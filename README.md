@@ -166,11 +166,13 @@ What it does:
   when there is no binary yet, and otherwise starts it. While it works, the step and a
   progress bar replace the status line, and Activity shows the output; when the game runs
   a Stop button appears beside the covers.
-- **Covers** — a game's cover is the `cover.png` (or `cover.jpg`/`cover.jpeg`) in its own
-  folder: `naruto/cover.png` and `naruto2/cover.png`. It is fitted into a 3:4 tile with
+- **Covers** — a game's cover is `covers/<game>.png` (`covers/naruto.png` and
+  `covers/naruto2.png`; `.jpg` and `.jpeg` work too). It is fitted into a 3:4 tile with
   its corners rounded, so any size works, and nothing is derived from the disc. Box art
-  belongs to the publisher, so it stays out of the repository — put your own files there.
-  Without one, the tile names the game and says where the file goes.
+  belongs to the publisher, so it stays out of the repository: the launcher fetches it into
+  `covers/` the first time it needs it, and a file you put there wins over anything it
+  fetched. A `cover.png` beside the game still works, so art an earlier copy was given
+  keeps being used. Without one, the tile names the game and says where the file goes.
 - **Games** — the cover that is outlined is the game the launcher works on: *Clash of
   Ninja* or *Clash of Ninja 2*. Each has its own disc, build and saves under its own
   folder, and the launcher remembers the last choice; the title and the window name follow
@@ -237,7 +239,8 @@ What it does:
 
 Drag a disc image or a project folder onto the window, or choose it with the system's
 folder chooser. Each game is a box-art cover on the main page: click one to build and
-start that game, and drop a `cover.png` next to the game folder to give it art. A release
+start that game, and drop `covers/<game>.png` in the project to give it art of your own —
+the launcher fetches box art into `covers/` for the games that have none. A release
 carries the game's sources next to the launcher — or, on macOS, inside it — so the only
 thing a player supplies is their own disc (and, on macOS, a compiler they already have or
 install with one click, see "Releases"). A release always uses the sources it came with,

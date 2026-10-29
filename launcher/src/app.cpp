@@ -40,12 +40,34 @@ std::wstring picker_join(const std::wstring& folder, const std::wstring& name) {
     return (fs::path(folder) / name).wstring();
 }
 
+// The box art collection libretro-thumbnails keeps: one file per disc, named after the
+// disc's title. Art belongs to the publisher, so the launcher fetches it on the player's
+// machine instead of shipping it, and the player can drop a file of their own in its
+// place.
+constexpr wchar_t kBoxArtBase[] =
+    L"https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_GameCube/master/"
+    L"Named_Boxarts/";
+
+std::wstring box_art_url(const std::wstring& folder) {
+    std::wstring name;
+    if (folder == L"naruto") {
+        name = L"Naruto%20-%20Clash%20of%20Ninja%20(USA).png";
+    } else if (folder == L"naruto2") {
+        name = L"Naruto%20-%20Clash%20of%20Ninja%202%20(USA).png";
+    }
+    if (name.empty()) return {};
+    return kBoxArtBase + name;
+}
+
 }  // namespace
 
 App::~App() {
-    // A check in flight posts its answer to the dispatcher, so it must be finished before
-    // anything it touches goes away. The request has a short timeout of its own.
+    // Work in flight posts its answer to the dispatcher, so it must be finished before
+    // anything it touches goes away. Both requests have a short timeout of their own, and
+    // the box art worker stops between downloads.
+    covers_stop_ = true;
     if (update_thread_.joinable()) update_thread_.join();
+    if (covers_thread_.joinable()) covers_thread_.join();
     job_.shutdown();
     game_.shutdown();
 }
@@ -87,6 +109,8 @@ bool App::create() {
     invalidate();
 
     if (settings_.check_updates) start_update_check(false);
+    // Art for a game that has none, so the page is not bare on a fresh install.
+    fetch_covers();
 
     // Which folder is in use, and why it is that one: a remembered choice looks like the
     // launcher ignoring the project it shipped with unless it says so.
@@ -252,6 +276,7 @@ void App::handle_event(const SDL_Event& event) {
                 if (candidate.valid()) {
                     project_.emplace(dropped, settings_.game);
                     covers_.clear();
+                    fetch_covers();
                     settings_.project_root = candidate.root().wstring();
                     settings_.game = project_->game();
                     play_status_.clear();
@@ -782,7 +807,7 @@ void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool select
                       RectF(box.left + 14, box.top + box.height() * 0.62f, box.right - 14,
                             box.top + box.height() * 0.86f),
                       Face::CardTitle, rgb(theme::Text), TextAlign::Center);
-        painter_.text(L"Drop cover.png in " + game.folder + L"/",
+        painter_.text(L"Drop " + game.folder + L".png in covers/",
                       RectF(box.left + 10, box.bottom - 34, box.right - 10, box.bottom - 14),
                       Face::Tiny, rgb(theme::Muted), TextAlign::Center);
     }
@@ -1667,6 +1692,7 @@ void App::activate(Id id) {
                 tools_ = check_tools();
                 // Covers the user dropped in since the launcher started.
                 covers_.clear();
+                fetch_covers();
                 settings_note_ = L"Tools rescanned.";
                 break;
             case Id::SettingsTools: {
@@ -1817,6 +1843,7 @@ void App::locate_project() {
                     if (candidate.valid()) {
                         project_.emplace(chosen, settings_.game);
                         covers_.clear();
+                        fetch_covers();
                         settings_.project_root = candidate.root().wstring();
                         settings_.game = project_->game();
                         play_status_.clear();
@@ -1858,14 +1885,76 @@ const App::Cover* App::cover(const std::wstring& folder) {
 
     Cover art;
     std::error_code ec;
-    for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"}) {
-        fs::path path = project_->root() / folder / name;
+    // covers/ holds one file per game, named after its folder. A cover.png inside the
+    // game folder is where art lived before covers/ existed, and still works.
+    for (const wchar_t* extension : {L".png", L".jpg", L".jpeg"}) {
+        fs::path path = project_->covers_dir() / (folder + extension);
         if (!fs::is_regular_file(path, ec)) continue;
         art.loaded = load_image(path, &art.width, &art.height, art.pixels);
         break;
     }
+    if (!art.loaded) {
+        for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"}) {
+            fs::path path = project_->root() / folder / name;
+            if (!fs::is_regular_file(path, ec)) continue;
+            art.loaded = load_image(path, &art.width, &art.height, art.pixels);
+            break;
+        }
+    }
     Cover& stored = covers_.emplace(key, std::move(art)).first->second;
     return stored.loaded ? &stored : nullptr;
+}
+
+void App::fetch_covers() {
+    if (!project_ || rendering_ || covers_fetching_) return;
+    std::vector<std::pair<std::wstring, std::wstring>> wanted;
+    for (const auto& game : available_games()) {
+        if (cover(game.folder)) continue;
+        auto url = box_art_url(game.folder);
+        if (!url.empty()) wanted.emplace_back(game.folder, url);
+    }
+    if (wanted.empty()) return;
+    auto curl = curl_tool();
+    if (curl.empty()) return;
+
+    fs::path folder = project_->covers_dir();
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    if (ec) return;
+
+    if (covers_thread_.joinable()) covers_thread_.join();
+    covers_fetching_ = true;
+    append_log(format(L"[launcher] fetching box art for %d game(s)\n",
+                      static_cast<int>(wanted.size())));
+    covers_thread_ = std::thread([this, folder, curl, wanted] {
+        int fetched = 0;
+        for (const auto& [game, url] : wanted) {
+            if (covers_stop_) return;
+            // curl writes beside the target and the file is moved into place, so a
+            // failed or cut-off download leaves no half image to draw.
+            fs::path partial = folder / (game + L".part");
+            std::error_code ec;
+            int status = -1;
+            capture_output(curl,
+                           {L"-fsSL", L"--max-time", L"12", L"--connect-timeout", L"5", L"-o",
+                            partial.wstring(), url},
+                           nullptr, &status);
+            if (status == 0 && fs::is_regular_file(partial, ec)) {
+                fs::rename(partial, folder / (game + L".png"), ec);
+                if (!ec) ++fetched;
+            } else {
+                fs::remove(partial, ec);
+            }
+        }
+        if (covers_stop_) return;
+        post([this, fetched] {
+            covers_fetching_ = false;
+            if (fetched == 0) return;
+            covers_.clear();
+            append_log(format(L"[launcher] box art: %d cover(s) now in covers/\n", fetched));
+            invalidate();
+        });
+    });
 }
 
 const App::Cover& App::placeholder_cover() {

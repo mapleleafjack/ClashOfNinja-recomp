@@ -127,6 +127,7 @@ std::wstring Project::title() const {
 }
 
 fs::path Project::game_dir() const { return root_ / game_; }
+fs::path Project::covers_dir() const { return root_ / L"covers"; }
 fs::path Project::disc() const { return game_dir() / L"rom" / L"disc"; }
 fs::path Project::dol() const { return disc() / L"sys" / L"main.dol"; }
 fs::path Project::manifest() const { return disc() / L"disc.manifest"; }

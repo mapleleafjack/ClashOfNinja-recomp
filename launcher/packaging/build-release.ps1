@@ -10,8 +10,9 @@
     a toolchain. That is a large folder (about 1 GB unzipped, mostly MinGW); pass
     -Lean for a small launcher that uses an installed toolchain instead.
 
-    Either way the release also carries the game's sources in naruto\ and tools\, so
-    nothing has to be checked out or downloaded: unzip it, choose a disc image, play.
+    Either way the release also carries the games' sources in naruto\ and naruto2\,
+    and tools\, so nothing has to be checked out or downloaded: unzip it, choose a
+    disc image, play.
 
 .EXAMPLE
     .\build-release.ps1 -Zip
@@ -225,21 +226,30 @@ if (-not $Lean) {
     }
 }
 
-# The game's sources travel with the launcher, so a player who has only their own disc
+# The games' sources travel with the launcher, so a player who has only their own disc
 # image can extract, build and play without a checkout or a download. What the disc
 # supplies and the build writes is not shipped: rom\, build\, saves\ and controls.txt are
 # created in the player's copy, exactly as they would be in a checkout. The tools archive
 # holds the toolchain alone, so it gets none of this.
 if (-not $Split) {
     Write-Host 'copying the game sources'
-    $sources = Join-Path $outDir 'naruto'
-    New-Item -ItemType Directory -Force -Path $sources | Out-Null
     $runtime = @('rom', 'build', 'saves')
-    Get-ChildItem (Join-Path $project 'naruto') -Force |
-        Where-Object { $_.Name -ne '.git' -and $runtime -notcontains $_.Name } |
-        ForEach-Object { Copy-Item $_.FullName (Join-Path $sources $_.Name) -Recurse -Force }
+    foreach ($game in @('naruto', 'naruto2')) {
+        $sources = Join-Path $outDir $game
+        New-Item -ItemType Directory -Force -Path $sources | Out-Null
+        Get-ChildItem (Join-Path $project $game) -Force |
+            Where-Object { $_.Name -ne '.git' -and $runtime -notcontains $_.Name } |
+            ForEach-Object { Copy-Item $_.FullName (Join-Path $sources $_.Name) -Recurse -Force }
+    }
     New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'tools') | Out-Null
     Copy-Item (Join-Path $project 'tools\extract_disc.py') (Join-Path $outDir 'tools\extract_disc.py')
+    # Box art this machine already had. The launcher fetches the rest itself, so a
+    # checkout with no covers\ is fine.
+    $covers = Join-Path $project 'covers'
+    if (Test-Path $covers) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'covers') | Out-Null
+        Get-ChildItem $covers -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $outDir 'covers') }
+    }
 }
 
 $readme = @'

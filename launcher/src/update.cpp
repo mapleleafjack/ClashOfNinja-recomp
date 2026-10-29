@@ -8,17 +8,9 @@
 #include <initializer_list>
 
 namespace nla {
-namespace {
 
-// The launcher asks this repository for its releases, unauthenticated.
-constexpr wchar_t kRepository[] = L"mapleleafjack/ClashOfNinja-recomp";
-
-std::wstring latest_release_url() {
-    return std::wstring(L"https://api.github.com/repos/") + kRepository + L"/releases/latest";
-}
-
-// curl is what reaches GitHub: part of macOS, on PATH in the Windows bundle's System32
-// and everywhere else this builds.
+// curl is what reaches the network: part of macOS, on PATH in the Windows bundle's
+// System32 and everywhere else this builds.
 std::wstring curl_tool() {
 #if defined(_WIN32)
     return find_tool_from({L"C:\\Windows\\System32\\curl.exe"}, L"curl.exe");
@@ -26,6 +18,15 @@ std::wstring curl_tool() {
     return find_tool_from({L"/usr/bin/curl", L"/usr/local/bin/curl", L"/opt/homebrew/bin/curl"},
                           L"curl");
 #endif
+}
+
+namespace {
+
+// The launcher asks this repository for its releases, unauthenticated.
+constexpr wchar_t kRepository[] = L"mapleleafjack/ClashOfNinja-recomp";
+
+std::wstring latest_release_url() {
+    return std::wstring(L"https://api.github.com/repos/") + kRepository + L"/releases/latest";
 }
 
 // bsdtar reads zip on all three systems, so unpacking needs no second tool.

@@ -33,6 +33,10 @@ struct UpdateCheck {
 // thread. A build without a released version never asks.
 UpdateCheck check_for_update();
 
+// curl, which the launcher uses for everything it fetches: the update check, a release
+// download, and the games' box art. Empty when the machine has none.
+std::wstring curl_tool();
+
 // Dotted versions, compared field by field; a leading v and a -suffix are ignored, so
 // "v1.2.0" is newer than "1.1.9" and "1.2.0-beta1" is not newer than "1.2.0".
 bool is_newer_version(const std::wstring& candidate, const std::wstring& current);

@@ -12,7 +12,8 @@ was added before the rule existed.
 
 Two extra rules catch an asset copied somewhere the path rules do not name: a published
 file over 2 MiB is refused, and so is one with NUL bytes in it, since nothing here is
-either. Publishable artwork is the launcher's own, so images are exempt.
+either. Publishable artwork is the launcher's own, so images are exempt - but covers/ is
+the games' box art, which the launcher fetches rather than ships, and is refused.
 
 Each game's `analysis/symbols.txt` is meant to be published: it is addresses, sizes and
 names, not the game's contents.
@@ -42,6 +43,9 @@ DENIED_DIRS = (
     'orig/',
     'build/',
 )
+# Box art the launcher shows: the publisher's, fetched onto the player's machine instead
+# of shipped. Only art the project drew itself may be published.
+DENIED_ART_DIRS = ('covers/',)
 DENIED_EXT = frozenset(
     'iso ciso rvz wia gcz wbfs tgc nfs h4m trk bnr dol img'.split())
 BINARY_OK_EXT = frozenset('png jpg jpeg gif ico icns svg pdf'.split())
@@ -86,6 +90,8 @@ def problem(path):
     """Why `path` may not be published, or None."""
     if any(path.startswith(d) for d in DENIED_DIRS):
         return 'derived from the disc'
+    if any(path.startswith(d) for d in DENIED_ART_DIRS):
+        return 'box art, which belongs to the publisher'
     ext = path.rsplit('.', 1)[-1].lower() if '.' in os.path.basename(path) else ''
     if ext in DENIED_EXT:
         return 'a disc file (.%s)' % ext

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -156,9 +157,12 @@ class App {
     void locate_project();
     // The games the project folder supplies, in the launcher's fixed order.
     std::vector<GameInfo> available_games() const;
-    // A game's cover art from its own folder, or nullptr when it has none.
+    // A game's cover art from covers/, or nullptr when it has none.
     const Cover* cover(const std::wstring& folder);
-    // The art drawn in a cover's place until one is put in the game folder.
+    // Fetches the box art for the games that have none, so a fresh install shows covers
+    // without the launcher shipping art the publisher owns.
+    void fetch_covers();
+    // The art drawn in a cover's place until covers/ gets a file for that game.
     const Cover& placeholder_cover();
     void select_game(const std::wstring& folder);
     void launch_game(const std::wstring& folder);
@@ -240,6 +244,11 @@ class App {
     ProjectStatus status_;
     std::map<std::wstring, Cover> covers_;
     Cover placeholder_;
+    // The box art download, and whether one is in flight. Quitting sets the stop flag so
+    // the worker does not hold the exit up for the rest of its downloads.
+    std::thread covers_thread_;
+    std::atomic_bool covers_stop_{false};
+    bool covers_fetching_ = false;
 
     Job job_;
     GameProcess game_;
