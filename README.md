@@ -20,7 +20,7 @@ hardware, so this is not an emulator: it is an ordinary executable that runs the
 
 Releases are on the
 [releases page](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest) (latest is
-v1.3.0).
+v1.4.0).
 
 | Platform | Download | Also needs |
 | --- | --- | --- |
