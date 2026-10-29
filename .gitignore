@@ -48,6 +48,13 @@ covers/
 naruto/cover.*
 naruto2/cover.*
 
+# Local-only work trees for discs this repository does not carry, and the dtk output that
+# comes from them. They stay on the machine that has them, like the disc they need.
+gnt3/
+gnt4/
+config/G3NJDA/
+config/G4NJDA/
+
 # The launcher's build output.
 launcher/build/
 launcher/build-release/
