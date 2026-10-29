@@ -209,7 +209,7 @@ there — it needs the user's own disc image.
 | --- | --- |
 | pull request, push to `main` | compile check on macOS (arm64) and Windows (x64), both running `ctest`, plus `tools/check_publish.py` |
 | tag `v*` | the same, then the Windows tool archive and the launcher that pins it, then every zip attached to that tag's release (created if it does not exist yet) |
-| manual run | the same as a compile check; `-f bundle=true` adds the Windows release pair without publishing |
+| manual run | the same as a compile check; `-f bundle=true` adds the Windows release pair without publishing — and without the pinned tool archive, since a branch has no release to download it from, so that launcher uses installed tools |
 
 The assets are named after the tag: `NarutoLauncher-macOS-arm64-v<version>.zip` holding the
 `.app` plus the notices, `NarutoLauncher-Windows-x64-v<version>.zip` holding the launcher,

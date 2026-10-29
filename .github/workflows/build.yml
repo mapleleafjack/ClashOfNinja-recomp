@@ -184,7 +184,7 @@ jobs:
     name: Windows (x64, release)
     # Writes the tool archive the launcher downloads (about 190 MB, most of it MinGW-w64)
     # and the small launcher that pins it, so it only runs for a release; a manual run can
-    # ask for it with -f bundle=true.
+    # ask for it with -f bundle=true, and then builds a launcher without the pin.
     if: startsWith(github.ref, 'refs/tags/v') || inputs.bundle
     runs-on: windows-2022
     steps:
@@ -220,6 +220,13 @@ jobs:
         run: |
           ./launcher/packaging/build-release.ps1 -SkipBuild -Zip -Split `
             -Version "${{ steps.version.outputs.value }}"
+
+      - name: Pin the archive into the launcher
+        # Only a tag has a release to download the archive from. A manual run has no such
+        # URL, so it builds a launcher that uses tools already installed instead.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
           # The launcher can only fetch the bytes it was built against, so the archive is
           # written first and its URL, digest and size are baked into the build below.
           $zip = Get-ChildItem launcher/dist/NarutoLauncher-tools-windows-x64-*.zip |
@@ -262,6 +269,7 @@ jobs:
           -Version "${{ steps.version.outputs.value }}"
 
       - name: The pinned archive downloads and matches its digest
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           # The launcher's own download path, against the release it will be published to.
