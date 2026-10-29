@@ -72,7 +72,7 @@ Painter::~Painter() = default;
 bool Painter::initialise(Present present, wstring* error) {
     present_ = std::move(present);
 #if defined(NLA_HAS_LOGO)
-    decode_png(kLogoPng, kLogoPngSize, &logo_width_, &logo_height_, logo_);
+    decode_image(kLogoPng, kLogoPngSize, &logo_width_, &logo_height_, logo_);
 #endif
     return text_->initialise(error);
 }
@@ -274,45 +274,69 @@ float Painter::measure(wstring_view content, Face face, float) {
 }
 
 void Painter::draw_logo(const RectF& rect) {
-    if (logo_.empty()) return;
-    int left = static_cast<int>(std::lround(rect.left * scale_));
-    int top = static_cast<int>(std::lround(rect.top * scale_));
-    int width = static_cast<int>(std::lround(rect.width() * scale_));
-    int height = static_cast<int>(std::lround(rect.height() * scale_));
-    if (width <= 0 || height <= 0) return;
+    draw_image(rect, logo_.data(), logo_width_, logo_height_);
+}
 
-    for (int y = 0; y < height; ++y) {
-        int py = top + y;
-        if (py < 0 || py >= height_) continue;
+void Painter::draw_image(const RectF& rect, const std::uint32_t* pixels, int width, int height,
+                         float radius, float opacity) {
+    if (pixels == nullptr || width <= 0 || height <= 0 || opacity <= 0.0f) return;
+    RectF area{rect.left * scale_, rect.top * scale_, rect.right * scale_, rect.bottom * scale_};
+    if (area.width() <= 0.0f || area.height() <= 0.0f) return;
+    float area_radius = radius * scale_;
+
+    // The image fills the box and keeps its proportions, so the extra of the longer side
+    // is cropped evenly at both ends.
+    float cover = std::max(area.width() / width, area.height() / height);
+    float visible_width = area.width() / cover;
+    float visible_height = area.height() / cover;
+    float origin_x = (width - visible_width) / 2.0f;
+    float origin_y = (height - visible_height) / 2.0f;
+
+    int left = std::clamp(static_cast<int>(std::floor(area.left)) - 1, 0, width_);
+    int right = std::clamp(static_cast<int>(std::ceil(area.right)) + 1, 0, width_);
+    int top = std::clamp(static_cast<int>(std::floor(area.top)) - 1, 0, height_);
+    int bottom = std::clamp(static_cast<int>(std::ceil(area.bottom)) + 1, 0, height_);
+
+    for (int py = top; py < bottom; ++py) {
         std::uint32_t* row = pixels_.data() + static_cast<size_t>(py) * width_;
-        float source_y = (static_cast<float>(y) + 0.5f) * logo_height_ / height - 0.5f;
-        int y0 = std::clamp(static_cast<int>(std::floor(source_y)), 0, logo_height_ - 1);
-        int y1 = std::min(y0 + 1, logo_height_ - 1);
+        float v = (static_cast<float>(py) + 0.5f - area.top) / area.height();
+        float source_y =
+            origin_y + std::clamp(v, 0.0f, 1.0f) * visible_height - 0.5f;
+        int y0 = std::clamp(static_cast<int>(std::floor(source_y)), 0, height - 1);
+        int y1 = std::min(y0 + 1, height - 1);
         float fy = std::clamp(source_y - y0, 0.0f, 1.0f);
-        for (int x = 0; x < width; ++x) {
-            int px = left + x;
-            if (px < 0 || px >= width_) continue;
-            float source_x = (static_cast<float>(x) + 0.5f) * logo_width_ / width - 0.5f;
-            int x0 = std::clamp(static_cast<int>(std::floor(source_x)), 0, logo_width_ - 1);
-            int x1 = std::min(x0 + 1, logo_width_ - 1);
+        for (int px = left; px < right; ++px) {
+            float alpha =
+                coverage_for(rounded_rect_distance(static_cast<float>(px) + 0.5f,
+                                                   static_cast<float>(py) + 0.5f, area,
+                                                   area_radius)) *
+                opacity;
+            if (alpha <= 0.0f) continue;
+
+            float u = (static_cast<float>(px) + 0.5f - area.left) / area.width();
+            float source_x =
+                origin_x + std::clamp(u, 0.0f, 1.0f) * visible_width - 0.5f;
+            int x0 = std::clamp(static_cast<int>(std::floor(source_x)), 0, width - 1);
+            int x1 = std::min(x0 + 1, width - 1);
             float fx = std::clamp(source_x - x0, 0.0f, 1.0f);
 
-            std::uint32_t texels[4] = {
-                logo_[static_cast<size_t>(y0) * logo_width_ + x0],
-                logo_[static_cast<size_t>(y0) * logo_width_ + x1],
-                logo_[static_cast<size_t>(y1) * logo_width_ + x0],
-                logo_[static_cast<size_t>(y1) * logo_width_ + x1],
+            const std::uint32_t* samples[4] = {
+                pixels + static_cast<size_t>(y0) * width + x0,
+                pixels + static_cast<size_t>(y0) * width + x1,
+                pixels + static_cast<size_t>(y1) * width + x0,
+                pixels + static_cast<size_t>(y1) * width + x1,
             };
             float weights[4] = {(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy};
             Color color{0, 0, 0, 0};
             for (int corner = 0; corner < 4; ++corner) {
-                std::uint32_t texel = texels[corner];
+                std::uint32_t texel = *samples[corner];
                 color.r += static_cast<float>((texel >> 16) & 0xFF) / 255.0f * weights[corner];
                 color.g += static_cast<float>((texel >> 8) & 0xFF) / 255.0f * weights[corner];
                 color.b += static_cast<float>(texel & 0xFF) / 255.0f * weights[corner];
                 color.a += static_cast<float>((texel >> 24) & 0xFF) / 255.0f * weights[corner];
             }
-            if (color.a > 0.0f) row[px] = blend_over(row[px], color, 1.0f);
+            if (color.a <= 0.0f) continue;
+            row[px] = blend_over(row[px], color, alpha);
         }
     }
 }

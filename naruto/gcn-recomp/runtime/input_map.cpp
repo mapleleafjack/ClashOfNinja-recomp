@@ -53,13 +53,19 @@ struct Binding {
     int index = 0;       // button, hat or axis number
     uint8_t hat_dir = 0;
     Half half = Half::Whole;
+    int pad = 0;  // the player it drives: the device's pin, or the keyboard's pad
     bool invert = false;
     float deadzone = -1.0f, gain = 1.0f, threshold = -1.0f;
     SDL_Joystick* joy = nullptr;  // resolved whenever a device comes or goes
 };
 
+// `pad = "<device>" 2`: the device, and the key and axis lines that name it, drive pad 2.
+struct Pin { std::string device; int nth = 1; int pad = 0; };
+
 std::string g_path;
 std::vector<Binding> g_bindings;
+std::vector<Pin> g_pins;
+int g_keyboard_pad = 0;  // keyboard_pad, one less than the file's number
 FfbSettings g_ffb;
 std::string g_ffb_device;  // ffb_device, "#n" removed; empty for the stick_x binding's
 int g_ffb_nth = 1;
@@ -86,15 +92,20 @@ void split_nth(const std::string& s, std::string& name, int& nth) {
 
 // How a device would be written in the file: its name, and "#n" if it is not the first
 // of that name.
+int device_nth(SDL_Joystick* j) {
+    const char* name = SDL_JoystickName(j);
+    int nth = 0;
+    for (SDL_Joystick* o : g_open) {
+        if (same_name(SDL_JoystickName(o), name ? name : "")) nth++;
+        if (o == j) break;
+    }
+    return nth;
+}
+
 std::string device_label(SDL_Joystick* j) {
     const char* name = SDL_JoystickName(j);
     std::string n = name ? name : "?";
-    int nth = 0;
-    for (SDL_Joystick* o : g_open) {
-        if (same_name(SDL_JoystickName(o), n)) nth++;
-        if (o == j) break;
-    }
-    if (nth > 1) n += " #" + std::to_string(nth);
+    if (device_nth(j) > 1) n += " #" + std::to_string(device_nth(j));
     return n;
 }
 
@@ -122,12 +133,18 @@ void attach_wheel() {
 }
 
 void resolve() {
-    for (auto& b : g_bindings)
-        if (b.kind != Kind::Key) b.joy = find_device(b.device, b.nth);
+    for (auto& b : g_bindings) {
+        if (b.kind == Kind::Key) { b.pad = g_keyboard_pad; continue; }
+        b.joy = find_device(b.device, b.nth);
+        b.pad = 0;
+        for (const auto& pin : g_pins)
+            if (pin.nth == b.nth && same_name(b.device.c_str(), pin.device)) { b.pad = pin.pad; break; }
+    }
     attach_wheel();
 }
 
 bool parse_float(const std::string& s, float& v);
+bool parse_int(const std::string& s, int& v);
 
 // Where along each stick axis the game's own handling of the pad puts its response, in
 // the pad's units from the centre (127 the most): the smallest offset it does anything
@@ -181,6 +198,31 @@ bool parse_ffb(const std::vector<std::string>& w, std::string& err) {
             return true;
         }
     err = "unknown setting \"" + w[0] + "\"";
+    return false;
+}
+
+// `pad = "<device>" <n>` and `keyboard_pad = <n>`: which of the console's four pads a
+// device or the keyboard drives.
+bool parse_pad_line(const std::vector<std::string>& w, std::string& err) {
+    if (w[0] == "pad") {
+        if (w.size() != 4 || w[1] != "=") { err = "expected pad = \"<device>\" <1 to 4>"; return false; }
+        int n;
+        if (!parse_int(w[3], n) || n < 1 || n > 4) { err = "pad = \"<device>\" <1 to 4>"; return false; }
+        Pin pin;
+        split_nth(w[2], pin.device, pin.nth);
+        pin.pad = n - 1;
+        g_pins.push_back(pin);
+        return true;
+    }
+    if (w[0] == "keyboard_pad") {
+        int n;
+        if (w.size() != 3 || w[1] != "=" || !parse_int(w[2], n) || n < 1 || n > 4) {
+            err = "keyboard_pad = <1 to 4>";
+            return false;
+        }
+        g_keyboard_pad = n - 1;
+        return true;
+    }
     return false;
 }
 
@@ -320,6 +362,8 @@ void print_targets() {
 bool input_map_load(const char* path) {
     g_path = path;
     g_bindings.clear();
+    g_pins.clear();
+    g_keyboard_pad = 0;
     g_ffb = FfbSettings();
     g_ffb_device.clear();
     for (int a = 0; a < 4; a++)
@@ -338,6 +382,7 @@ bool input_map_load(const char* path) {
         if (tokenize(line, w, err)) {
             if (w.empty()) continue;
             if (parse_range(w, err)) continue;
+            if (err.empty() && parse_pad_line(w, err)) continue;
             if (err.empty() && (w[0].compare(0, 3, "ffb") == 0 ? parse_ffb(w, err) : parse_line(w, b, err))) {
                 if (w[0].compare(0, 3, "ffb") != 0) g_bindings.push_back(b);
                 continue;
@@ -351,6 +396,12 @@ bool input_map_load(const char* path) {
     for (int a = 0; a < 4; a++)
         if (g_range[a][0] != 0.0f || g_range[a][1] != 100.0f)
             fprintf(stderr, ", %.*s %g to %g", (int)strlen(kRangeKeys[a][0]) - 4, kRangeKeys[a][0], g_range[a][0], g_range[a][1]);
+    if (g_keyboard_pad) fprintf(stderr, ", keyboard as player %d", g_keyboard_pad + 1);
+    for (const auto& pin : g_pins) {
+        std::string label = pin.device;
+        if (pin.nth > 1) label += " #" + std::to_string(pin.nth);
+        fprintf(stderr, ", \"%s\" as player %d", label.c_str(), pin.pad + 1);
+    }
     fprintf(stderr, "\n");
     if (!ok) print_targets();
     ffb_configure(g_ffb);
@@ -386,13 +437,14 @@ void input_map_event(const SDL_Event& e) {
     }
 }
 
-void input_map_apply(PadState& p) {
-    ffb_update(pad_motor(0));
+void input_map_apply(int pad, PadState& p) {
+    if (pad == 0) ffb_update(pad_motor(0));  // the wheel is player 1's
     if (g_bindings.empty()) return;
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
     float v[(int)Target::Count] = {};
     bool pressed[(int)Target::Count] = {};
     for (const auto& b : g_bindings) {
+        if (b.pad != pad) continue;
         const float x = value(b, keys);
         float& acc = v[(int)b.target];
         if (bipolar(b.target)) acc += x;
@@ -426,6 +478,20 @@ void input_map_apply(PadState& p) {
 
 void input_map_shutdown() { ffb_shutdown(); }
 
+int input_map_pad_of_name(const char* name, int nth) {
+    for (const auto& pin : g_pins)
+        if (pin.nth == nth && same_name(name, pin.device)) return pin.pad;
+    return -1;
+}
+
+int input_map_keyboard_pad() { return g_keyboard_pad; }
+
+bool input_map_pad_bound(int pad) {
+    for (const auto& b : g_bindings)
+        if (b.pad == pad) return true;
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // --list-controls and --test-ffb
 
@@ -450,12 +516,13 @@ std::string quoted_key(SDL_Scancode sc) {
 
 }  // namespace
 
-int input_map_probe() {
+int input_map_probe(const char* path) {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
+    input_map_load(path);
     // A window, for the keyboard: keys reach only a focused window. Joysticks are read
     // whether or not it has focus.
     SDL_Window* win = SDL_CreateWindow("Press or move a control (Escape quits)", SDL_WINDOWPOS_CENTERED,
@@ -487,9 +554,11 @@ int input_map_probe() {
                 if (!j || std::find(g_open.begin(), g_open.end(), j) != g_open.end()) break;
                 g_open.push_back(j);
                 settling.push_back({SDL_JoystickInstanceID(j), SDL_GetTicks() + kSettleMs});
-                printf("device \"%s\": %d axes, %d buttons, %d hats%s\n", device_label(j).c_str(),
+                const int pin = input_map_pad_of_name(SDL_JoystickName(j), device_nth(j));
+                printf("device \"%s\": %d axes, %d buttons, %d hats%s, player %d%s\n", device_label(j).c_str(),
                        SDL_JoystickNumAxes(j), SDL_JoystickNumButtons(j), SDL_JoystickNumHats(j),
-                       SDL_JoystickIsHaptic(j) == 1 ? ", force feedback" : "");
+                       SDL_JoystickIsHaptic(j) == 1 ? ", force feedback" : "", pin >= 0 ? pin + 1 : 1,
+                       pin >= 0 ? " (pinned)" : "");
                 for (int a = 0; a < SDL_JoystickNumAxes(j); a++) {
                     int16_t rest = 0;
                     if (!SDL_JoystickGetAxisInitialState(j, a, &rest)) rest = SDL_JoystickGetAxis(j, a);
@@ -597,6 +666,31 @@ int input_map_test_ffb(const char* path) {
     printf("\n");
     input_map_shutdown();
     if (win) SDL_DestroyWindow(win);
+    SDL_Quit();
+    return 0;
+}
+
+int input_map_list_devices(const char* path) {
+    if (SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
+        fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
+        return 1;
+    }
+    // The file's pins, so each device is reported with the pad it is on now. A missing
+    // file is not an error here: the picker offers the pads and writes them itself.
+    input_map_load(path);
+    SDL_Event e;  // the controllers already plugged in arrive as events
+    while (SDL_PollEvent(&e)) {}
+    printf("keyboard\t%d\n", g_keyboard_pad + 1);
+    std::vector<std::string> seen;
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        if (!SDL_IsGameController(i)) continue;
+        const char* name = SDL_GameControllerNameForIndex(i);
+        if (!name) continue;
+        int nth = 1;
+        for (const auto& other : seen) if (!SDL_strcasecmp(other.c_str(), name)) nth++;
+        seen.emplace_back(name);
+        printf("device\t%d\t%d\t%s\n", nth, input_map_pad_of_name(name, nth) + 1, name);
+    }
     SDL_Quit();
     return 0;
 }

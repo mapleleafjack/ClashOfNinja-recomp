@@ -23,6 +23,7 @@ class Window {
     bool create(const wstring& title, int logical_width, int logical_height, wstring* error);
     void destroy();
     void show();
+    void set_title(const wstring& title);
     void set_min_size(int logical_width, int logical_height);
 
     // Pixels per logical unit, from the display the window is on.

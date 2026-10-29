@@ -3,10 +3,19 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace nla {
 
 namespace fs = std::filesystem;
+
+// One of the games the project builds: its own folder under the project root, holding a
+// CMakeLists.txt that names the game and the disc it is checked against.
+struct GameInfo {
+    std::wstring folder;       // "naruto", "naruto2"
+    std::wstring title;        // the game's name, as the build calls it
+    std::wstring short_title;  // what the launcher's game switch has room for
+};
 
 struct DiscStatus {
     bool extracted = false;
@@ -22,12 +31,18 @@ struct ProjectStatus {
 
 class Project {
   public:
-    explicit Project(fs::path root);
+    explicit Project(fs::path root, std::wstring game = {});
+
+    static const std::vector<GameInfo>& games();
+    static const GameInfo& game_info(const std::wstring& folder);
+    static std::wstring default_game();
 
     bool valid() const;
 
     fs::path root() const { return root_; }
-    fs::path naruto() const;
+    std::wstring game() const { return game_; }
+    std::wstring title() const;
+    fs::path game_dir() const;
     fs::path disc() const;
     fs::path dol() const;
     fs::path manifest() const;
@@ -47,6 +62,7 @@ class Project {
 
   private:
     fs::path root_;
+    std::wstring game_;
 };
 
 }  // namespace nla

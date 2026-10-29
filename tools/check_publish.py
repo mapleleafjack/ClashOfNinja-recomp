@@ -14,8 +14,8 @@ Two extra rules catch an asset copied somewhere the path rules do not name: a pu
 file over 2 MiB is refused, and so is one with NUL bytes in it, since nothing here is
 either. Publishable artwork is the launcher's own, so images are exempt.
 
-`naruto/analysis/symbols.txt` is meant to be published: it is addresses, sizes and names,
-not the game's contents.
+Each game's `analysis/symbols.txt` is meant to be published: it is addresses, sizes and
+names, not the game's contents.
 """
 import hashlib
 import os
@@ -31,7 +31,11 @@ DENIED_DIRS = (
     'naruto/rom/',
     'naruto/build/',
     'naruto/saves/',
+    'naruto2/rom/',
+    'naruto2/build/',
+    'naruto2/saves/',
     'config/GNREDA/',
+    'config/GNUEDA/',
     'launcher/build/',
     'launcher/build-release/',
     'launcher/dist/',
@@ -42,7 +46,11 @@ DENIED_EXT = frozenset(
     'iso ciso rvz wia gcz wbfs tgc nfs h4m trk bnr dol img'.split())
 BINARY_OK_EXT = frozenset('png jpg jpeg gif ico icns svg pdf'.split())
 MAX_BYTES = 2 << 20
-DOL_SHA1 = '19251f7f15f8b6f7e0cd1c753409151ec49d9af2'
+# The supported builds' main.dol, one per game.
+DOL_SHA1S = frozenset((
+    '19251f7f15f8b6f7e0cd1c753409151ec49d9af2',  # Naruto: Clash of Ninja (GNREDA)
+    '2440b77fad91e1892d1769ff8650852244e64415',  # Naruto: Clash of Ninja 2 (GNUEDA)
+))
 
 
 def git(*args, cwd=PROJECT, env=None):
@@ -98,7 +106,7 @@ def problem(path):
             if not chunk:
                 break
             digest.update(chunk)
-    if digest.hexdigest() == DOL_SHA1:
+    if digest.hexdigest() in DOL_SHA1S:
         return 'the game\'s main.dol'
     if b'\0' in head and ext not in BINARY_OK_EXT:
         return 'binary, and not an image'

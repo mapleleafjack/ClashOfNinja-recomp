@@ -11,7 +11,8 @@ Usage: extract_disc.py <image> [outdir] [--disc-id ID] [--dol-sha1 SHA]
 `image` is a plain .iso, a .ciso, or any other format `nodtool` reads (RVZ, WIA, GCZ,
 WBFS, TGC, NFS): those are converted through nodtool first, so one tool covers every
 image a user may have. `outdir` defaults to <project>/naruto/rom/disc, which is where
-gcn_add_game looks for it.
+gcn_add_game looks for it; pass <project>/naruto2/rom/disc, with that game's --disc-id and
+--dol-sha1, for the second game.
 """
 import argparse
 import hashlib

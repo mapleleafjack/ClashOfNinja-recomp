@@ -143,9 +143,12 @@ static void on_fault(const void* fault_addr, int code) {
 bool audio_open();
 
 // ---------------------------------------------------------------------------
-// Input: keyboard + first game controller -> GC pad 1, and controls.txt (input_map.h)
+// Input: the keyboard and up to four game controllers -> the four GC pads, and
+// controls.txt (input_map.h), whose devices and keys may name any of them.
 // ---------------------------------------------------------------------------
-static SDL_GameController* g_ctrl;
+static SDL_GameController* g_ctrl[4];  // a controller on each pad, as they arrive
+static int g_players = 4;              // --players=N: how many pads a controller may take
+static int g_keyboard_pad = 0;         // controls.txt's keyboard_pad, one less than the file's
 
 static uint8_t axis_to_u8(int v, bool invert) {
     float f = v / 32767.0f;
@@ -154,10 +157,10 @@ static uint8_t axis_to_u8(int v, bool invert) {
     return (uint8_t)std::clamp(r, 0, 255);
 }
 
-// The keyboard, the first game controller and controls.txt, merged into `p`: buttons are
-// added, and a stick or trigger is taken over only while it is pushed, so that they can
-// share the pad with a headset's controllers (xr_desktop.cpp).
-static void merge_desktop_pad(PadState& p) {
+// The keyboard, and a game controller, each merged into `p`: buttons are added, and a
+// stick or trigger is taken over only while it is pushed, so that they can share the pad
+// with a headset's controllers (xr_desktop.cpp).
+static void merge_keyboard(PadState& p) {
     const uint8_t* k = SDL_GetKeyboardState(nullptr);
     if (k[SDL_SCANCODE_RETURN]) p.buttons |= PAD_START;
     if (k[SDL_SCANCODE_X]) p.buttons |= PAD_A;
@@ -180,8 +183,12 @@ static void merge_desktop_pad(PadState& p) {
         p.stick_x = (uint8_t)(128 + sx);
         p.stick_y = (uint8_t)(128 + sy);
     }
-    if (g_ctrl) {
-        auto b = [&](SDL_GameControllerButton btn) { return SDL_GameControllerGetButton(g_ctrl, btn); };
+}
+
+static void merge_controller(int pad, PadState& p) {
+    SDL_GameController* c = g_ctrl[pad];
+    if (c) {
+        auto b = [&](SDL_GameControllerButton btn) { return SDL_GameControllerGetButton(c, btn); };
         if (b(SDL_CONTROLLER_BUTTON_A)) p.buttons |= PAD_A;
         if (b(SDL_CONTROLLER_BUTTON_X)) p.buttons |= PAD_B;
         if (b(SDL_CONTROLLER_BUTTON_B)) p.buttons |= PAD_X;
@@ -192,31 +199,85 @@ static void merge_desktop_pad(PadState& p) {
         if (b(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) p.buttons |= PAD_DOWN;
         if (b(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) p.buttons |= PAD_LEFT;
         if (b(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) p.buttons |= PAD_RIGHT;
-        int lx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTX);
-        int ly = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTY);
+        int lx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX);
+        int ly = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY);
         if (abs(lx) > 4000 || abs(ly) > 4000) { p.stick_x = axis_to_u8(lx, false); p.stick_y = axis_to_u8(ly, true); }
-        int rx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTX);
-        int ry = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTY);
+        int rx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX);
+        int ry = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY);
         if (abs(rx) > 1000 || abs(ry) > 1000) { p.cstick_x = axis_to_u8(rx, false); p.cstick_y = axis_to_u8(ry, true); }
-        int lt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-        int rt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+        int lt = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
+        int rt = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
         if (lt > 1000) { p.trig_l = std::max(p.trig_l, (uint8_t)(lt * 255 / 32767)); if (lt > 30000) p.buttons |= PAD_L; }
         if (rt > 1000) { p.trig_r = std::max(p.trig_r, (uint8_t)(rt * 255 / 32767)); if (rt > 30000) p.buttons |= PAD_R; }
     }
-    input_map_apply(p);
-    // The pad's rumble motor on the gamepad, renewed while it runs.
-    static bool rumbling = false;
-    const bool motor = pad_motor(0);
-    if (g_ctrl && (motor || rumbling)) SDL_GameControllerRumble(g_ctrl, motor ? 0x6000 : 0, motor ? 0xA000 : 0, motor ? 200 : 0);
-    rumbling = motor;
+}
+
+// The pad's rumble motor on its controller, renewed while it runs.
+static void update_rumble(int pad) {
+    static bool rumbling[4];
+    const bool motor = pad_motor(pad);
+    if (g_ctrl[pad] && (motor || rumbling[pad]))
+        SDL_GameControllerRumble(g_ctrl[pad], motor ? 0x6000 : 0, motor ? 0xA000 : 0, motor ? 200 : 0);
+    rumbling[pad] = motor;
+}
+
+// The first pad's sources: what a headset frontend merges into the pad it does not drive
+// itself (xr_desktop.cpp).
+static void merge_desktop_pad(PadState& p) {
+    if (g_keyboard_pad == 0) merge_keyboard(p);
+    if (g_ctrl[0]) merge_controller(0, p);
+    input_map_apply(0, p);
+    update_rumble(0);
+}
+
+// A controller takes the pad controls.txt pins it to, else the first free one, as long as
+// it is one of the --players pads. Past that it is left alone, so an idle controller on the
+// desk does not become player 3 and change whose pad a game polls.
+static void open_controller(int device_index) {
+    if (input_map_binds_index(device_index)) return;  // a device controls.txt binds is its own
+    const char* name = SDL_GameControllerNameForIndex(device_index);
+    int nth = 0;
+    for (SDL_GameController* c : g_ctrl)
+        if (c && SDL_GameControllerName(c) && name && !SDL_strcasecmp(SDL_GameControllerName(c), name)) nth++;
+    int pad = input_map_pad_of_name(name, nth + 1);
+    // A pin to a pad past --players, or one already taken, falls back to the first free one.
+    if (pad >= 0 && (pad >= g_players || g_ctrl[pad])) pad = -1;
+    for (int i = 0; i < g_players && pad < 0; i++)
+        if (!g_ctrl[i]) pad = i;
+    if (pad < 0) {
+        if (const char* n = SDL_GameControllerNameForIndex(device_index))
+            fprintf(stderr, "\"%s\" is not used: --players=%d fills every pad it allows\n", n, g_players);
+        return;
+    }
+    SDL_GameController* c = SDL_GameControllerOpen(device_index);
+    if (!c) { fprintf(stderr, "controller %d: %s\n", device_index, SDL_GetError()); return; }
+    g_ctrl[pad] = c;
+    fprintf(stderr, "player %d: \"%s\"\n", pad + 1, SDL_GameControllerName(c) ? SDL_GameControllerName(c) : "?");
+}
+
+static void close_controller(SDL_JoystickID id) {
+    for (int i = 0; i < 4; i++) {
+        if (!g_ctrl[i] || SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(g_ctrl[i])) != id) continue;
+        fprintf(stderr, "player %d: \"%s\" disconnected\n", i + 1,
+                SDL_GameControllerName(g_ctrl[i]) ? SDL_GameControllerName(g_ctrl[i]) : "?");
+        SDL_GameControllerClose(g_ctrl[i]);
+        g_ctrl[i] = nullptr;
+    }
 }
 
 static void update_pad() {
-    PadState p;
-    p.connected = true;
-    merge_desktop_pad(p);
-    input_script_apply(p);
-    pad_set_state(0, p);
+    for (int pad = 0; pad < 4; pad++) {
+        PadState p;
+        // The first pad always answers: the keyboard and controls.txt drive it, and a game
+        // polling it expects something there.
+        p.connected = pad == 0 || pad == g_keyboard_pad || g_ctrl[pad] || input_map_pad_bound(pad);
+        if (pad == g_keyboard_pad) merge_keyboard(p);
+        if (g_ctrl[pad]) merge_controller(pad, p);
+        input_map_apply(pad, p);
+        if (pad == 0) input_script_apply(p);
+        update_rumble(pad);
+        pad_set_state(pad, p);
+    }
 }
 
 // The window's events. False once the user has asked to quit.
@@ -226,9 +287,8 @@ static bool pump_events() {
     while (SDL_PollEvent(&e)) {
         input_map_event(e);
         if (e.type == SDL_QUIT) running = false;
-        // A device controls.txt binds is the file's alone.
-        else if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl && !input_map_binds_index(e.cdevice.which))
-            g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
+        else if (e.type == SDL_CONTROLLERDEVICEADDED) open_controller(e.cdevice.which);
+        else if (e.type == SDL_CONTROLLERDEVICEREMOVED) close_controller(e.cdevice.which);
         else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false;
     }
     return running;
@@ -256,7 +316,7 @@ int main(int argc, char** argv) {
     const char* record_to = nullptr;
     int record_w = 2560, record_h = 1440;
     const char* controls = "controls.txt";
-    bool test_ffb = false;
+    bool test_ffb = false, list_controls = false, list_devices = false;
     // --telemetry[=host:port]: the game's motion to a motion platform (telemetry.h).
     const char* telemetry_to = getenv("GCN_TELEMETRY");
     int scale = 2;
@@ -267,9 +327,11 @@ int main(int argc, char** argv) {
         }
         else if (!strcmp(argv[i], "--eye")) g_eye_mode = true;
         else if (!strcmp(argv[i], "--vr")) vr = true;
-        else if (!strcmp(argv[i], "--list-controls")) return input_map_probe();
+        else if (!strcmp(argv[i], "--list-controls")) list_controls = true;
+        else if (!strcmp(argv[i], "--list-devices")) list_devices = true;
         else if (!strcmp(argv[i], "--test-ffb")) test_ffb = true;
         else if (!strncmp(argv[i], "--controls=", 11)) controls = argv[i] + 11;
+        else if (!strncmp(argv[i], "--players=", 10)) g_players = std::clamp(atoi(argv[i] + 10), 1, 4);
         else if (!strcmp(argv[i], "--telemetry")) telemetry_to = "";
         else if (!strncmp(argv[i], "--telemetry=", 12)) telemetry_to = argv[i] + 12;
         else if (!strcmp(argv[i], "--first-person")) first_person = true;
@@ -289,6 +351,9 @@ int main(int argc, char** argv) {
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
         else if (argv[i][0] != '-') iso = argv[i];
     }
+    // After the loop, so that a --controls= later on the command line is the file read.
+    if (list_controls) return input_map_probe(controls);
+    if (list_devices) return input_map_list_devices(controls);
     if (test_ffb) return input_map_test_ffb(controls);
     plat_install_crash_handlers(on_interrupt, on_fault);
     if (record_to && !record::start(record_to, record_w, record_h, 60)) return 1;
@@ -354,6 +419,7 @@ int main(int argc, char** argv) {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) fatal("SDL_Init: %s", SDL_GetError());
     input_map_load(controls);
+    g_keyboard_pad = input_map_keyboard_pad();
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     const bool gl_debug = getenv("GCN_GL_DEBUG") != nullptr;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG |

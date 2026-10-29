@@ -39,6 +39,16 @@
 // the default keyboard and gamepad mapping, which stays on except for a device the file
 // names.
 //
+// Players. The console has four pads; a game controller takes the first that is free, and
+// its lines here follow it. Two lines move a device or the keyboard to another pad, as the
+// console numbers them, 1 to 4:
+//   pad = "<device>" 2    that controller is player 2, not whichever pad came free, and
+//                         every line here that names it drives that pad too
+//   keyboard_pad = 2      the keyboard, and every `key` binding, as player 2
+// A pad is 1 until the file says otherwise, so a file with neither line drives the same
+// pad it always did. A device with no binding here keeps the default gamepad mapping, as
+// before; one that has bindings is the file's alone, also as before.
+//
 // --list-controls runs input_map_probe() instead of the game: it prints the devices and,
 // for each control pressed or moved, the source to paste into the file.
 //
@@ -67,12 +77,27 @@ void input_map_event(const SDL_Event& e);
 // Whether the file names the joystick at this SDL device index (the default gamepad
 // mapping leaves such a device alone).
 bool input_map_binds_index(int device_index);
-// The file's bindings, merged into `p`.
-void input_map_apply(PadState& p);
+// The pad the file pins this device to, 0 to 3, or -1. `name` and `nth` name the device
+// as the file does: the second of two with the same name is nth 2.
+int input_map_pad_of_name(const char* name, int nth);
+// The pad the keyboard belongs to, 0 to 3: keyboard_pad, or 0.
+int input_map_keyboard_pad();
+// Whether any binding targets `pad`, so that a device the file names alone keeps the pad
+// present.
+bool input_map_pad_bound(int pad);
+// The file's bindings for `pad`, merged into `p`.
+void input_map_apply(int pad, PadState& p);
 // Stops the wheel's force feedback (ffb.h), before the program exits.
 void input_map_shutdown();
-// The --list-controls loop. SDL must not be initialised yet. Returns the exit code.
-int input_map_probe();
+// The --list-controls loop. SDL must not be initialised yet. `path` is read first, so the
+// pads it pins a device to are shown. Returns the exit code.
+int input_map_probe(const char* path);
+// --list-devices: one line per game controller SDL can see, for the launcher's player
+// picker, and the pad the keyboard is on. Tab separated:
+//   keyboard<TAB><pad 1 to 4>
+//   device<TAB><nth><TAB><pad, 0 for automatic><TAB><name>
+// SDL must not be initialised yet. Returns the exit code.
+int input_map_list_devices(const char* path);
 // --test-ffb: the file's wheel with its force feedback and no game, showing where the
 // steering is. SDL must not be initialised yet. Returns the exit code.
 int input_map_test_ffb(const char* path);

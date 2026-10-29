@@ -89,6 +89,10 @@ void Window::destroy() {
 
 void Window::show() { SDL_ShowWindow(window_); }
 
+void Window::set_title(const wstring& title) {
+    if (window_) SDL_SetWindowTitle(window_, narrow(title).c_str());
+}
+
 void Window::set_min_size(int logical_width, int logical_height) {
     SDL_SetWindowMinimumSize(window_, logical_width, logical_height);
 }

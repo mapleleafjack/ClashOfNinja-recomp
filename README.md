@@ -1,6 +1,6 @@
-# Naruto: Clash of Ninja (GNREDA) — static recompilation for macOS
+# Naruto: Clash of Ninja (GNREDA) and Clash of Ninja 2 (GNUEDA) — static recompilation for macOS
 
-Native Apple Silicon build of the GameCube game via
+Native Apple Silicon builds of the two GameCube games via
 [gcn-recomp](https://github.com/ethannicholas/gcn-recomp), using
 [decomp-toolkit](https://github.com/encounter/decomp-toolkit) for analysis and function
 boundaries. Not an emulator: the PowerPC code is translated to C and linked against a
@@ -10,39 +10,41 @@ runtime that implements the GameCube hardware.
 
 | Path | What it is |
 | --- | --- |
-| `tools/extract_disc.py` | one-time extraction of the user's own disc image into `naruto/rom/disc` |
-| `tools/setup.sh` | that, then the build |
+| `tools/extract_disc.py` | one-time extraction of the user's own disc image into `<game>/rom/disc` |
+| `tools/setup.sh` | that, then the build; the game folder is an optional second argument |
 | `tools/check_publish.py` | proves nothing derived from the disc is in what would be published |
 | `LICENSE`, `THIRD-PARTY-NOTICES.md` | this project's MIT licence, and the licences of what it is built on |
 | `launcher/` | desktop launcher for Windows, macOS and Linux: one C++ application — extract the disc, build, play |
-| `naruto/rom/disc/` | the disc, extracted: `sys/main.dol`, `sys/fst.bin`, `files/…` and a `disc.manifest` of disc offsets. Derived from the user's disc; not committed |
-| `config/GNREDA/`, `build/GNREDA/` | dtk project config and split output, when you generate them. Not committed — both come from the disc, see "Analysis" |
-| `naruto/` | the recompilation project (the thing that builds and runs) |
-| `naruto/analysis/symbols.txt` | dtk symbols, with the SDK functions dtk missed named by hand |
-| `naruto/recomp/*.txt` | steering tables: which functions to replace at runtime, etc. |
-| `naruto/build/naruto` | the app |
-| `naruto/build/naruto_bench` | headless benchmark |
+| `naruto/rom/disc/`, `naruto2/rom/disc/` | each disc, extracted: `sys/main.dol`, `sys/fst.bin`, `files/…` and a `disc.manifest` of disc offsets. Derived from the user's disc; not committed |
+| `config/GNREDA/`, `config/GNUEDA/`, `build/GNREDA/`, `build/GNUEDA/` | dtk project config and split output, when you generate them. Not committed — both come from the disc, see "Analysis" |
+| `naruto/`, `naruto2/` | the recompilation projects (the things that build and run) |
+| `naruto/analysis/symbols.txt`, `naruto2/analysis/symbols.txt` | dtk symbols, with the SDK functions dtk missed named by hand |
+| `naruto/recomp/*.txt`, `naruto2/recomp/*.txt` | steering tables: which functions to replace at runtime, etc. |
+| `naruto/build/naruto`, `naruto2/build/naruto2` | the apps |
+| `naruto/build/naruto_bench`, `naruto2/build/naruto2_bench` | headless benchmarks |
 
 ## Setup (once, with your own disc)
 
-The game needs a disc image, and none may be committed or shipped. Point the setup at
-yours — any format [nodtool](https://github.com/encounter/nod) reads, which is ISO, CISO,
-RVZ, WIA, GCZ, WBFS, TGC and NFS:
+Each game needs its own disc image, and none may be committed or shipped. Point the setup
+at yours — any format [nodtool](https://github.com/encounter/nod) reads, which is ISO,
+CISO, RVZ, WIA, GCZ, WBFS, TGC and NFS. The second argument is the game folder, `naruto`
+(Clash of Ninja, the default) or `naruto2` (Clash of Ninja 2):
 
 ```sh
 cargo install --locked nodtool          # once, if your image is not a plain ISO/CISO
-tools/setup.sh "/path/to/your disc image"
+tools/setup.sh "/path/to/clash of ninja.iso"
+tools/setup.sh "/path/to/clash of ninja 2.iso" naruto2
 ```
 
-That writes `naruto/rom/disc/`, then reads it back through the manifest and compares every
-file with the image, refusing to continue if `main.dol` is not the pinned build. **The
-image is not needed after that:**
+That writes `naruto/rom/disc/` or `naruto2/rom/disc/`, then reads it back through the
+manifest and compares every file with the image, refusing to continue if `main.dol` is not
+the pinned build for that game. **The image is not needed after that:**
 
 ```sh
-rm "/path/to/your disc image"
+rm "/path/to/clash of ninja 2.iso"
 ```
 
-`naruto/rom/disc/disc.manifest` is what makes that possible: it records the disc offset
+`<game>/rom/disc/disc.manifest` is what makes that possible: it records the disc offset
 each extracted file came from, and the runtime serves the console's DVD reads from it
 (see "How the disc reaches the game" below).
 
@@ -55,6 +57,9 @@ ninja -C build
 ./build/naruto            # or: ./build/naruto_bench --seconds=10
 ```
 
+`naruto2/` builds the same way and produces `./build/naruto2` and `./build/naruto2_bench`;
+it shares the runtime and recompiler in `naruto/gcn-recomp/` rather than copying them.
+
 `cmake` picks up `rom/disc` on its own; `-DGAME_ISO=/path/to/image.iso` still works, as
 does putting an `.iso`/`.ciso` in `rom/` instead of the tree.
 
@@ -64,9 +69,9 @@ beside it or on `PATH`.
 
 ## Launcher (Windows, macOS, Linux)
 
-`launcher/` is one C++ application that builds on all three. Its window is a single
-**Launch the game** button: it asks for your disc image, extracts and builds as needed, then
-plays. It draws its own interface — no widget toolkit, one executable per platform — and
+`launcher/` is one C++ application that builds on all three. Its window is the two games
+as box-art covers: clicking one asks for your disc image, extracts and builds as needed,
+then plays. It draws its own interface — no widget toolkit, one executable per platform — and
 needs only SDL2, the same library the game's runtime uses.
 
 ```sh
@@ -82,6 +87,10 @@ ninja -C launcher/build NarutoLauncher
 launcher/build/NarutoLauncher              # macOS: launcher/build/NarutoLauncher.app
 ```
 
+A plain configure is a development build, version 0.0.0, and one thing follows from that:
+it never offers to update itself to a published release, which would replace the copy you
+are working on. A release build passes its tag as `-DNLA_VERSION=<version>`.
+
 On Windows, CMake finds the SDL2 that `gcn-recomp` already builds under
 `%LOCALAPPDATA%\gcn-recomp`; pass `-DSDL2_DIR=<the folder holding SDL2Config.cmake>` to
 use another. A release of the launcher is a single executable — SDL2 is linked in
@@ -89,21 +98,43 @@ statically — so nothing else has to be installed for it to start.
 
 What it does:
 
-- **Launch the game** — the window is one call to action. It asks for the disc image when
-  the game data is missing, builds the game when there is no binary yet, and otherwise
-  starts it. While it works, the step and a progress bar replace the button, and Activity
-  shows the output; when the game runs the button becomes Stop.
+- **Launch the game** — the window is the two covers. Clicking one makes that game the
+  current one: it asks for the disc image when the game data is missing, builds the game
+  when there is no binary yet, and otherwise starts it. While it works, the step and a
+  progress bar replace the status line, and Activity shows the output; when the game runs
+  a Stop button appears beside the covers.
+- **Covers** — a game's cover is the `cover.png` (or `cover.jpg`/`cover.jpeg`) in its own
+  folder: `naruto/cover.png` and `naruto2/cover.png`. It is fitted into a 3:4 tile with
+  its corners rounded, so any size works, and nothing is derived from the disc. Box art
+  belongs to the publisher, so it stays out of the repository — put your own files there.
+  Without one, the tile names the game and says where the file goes.
+- **Games** — the cover that is outlined is the game the launcher works on: *Clash of
+  Ninja* or *Clash of Ninja 2*. Each has its own disc, build and saves under its own
+  folder, and the launcher remembers the last choice; the title and the window name follow
+  the highlighted cover. A game folder that is not in the project does not appear.
 - **Game disc** — reads ISO and CISO itself, including the FST offset shift that NKit and
   rebuilt images use. Other formats (RVZ, WIA, GCZ, WBFS, TGC, NFS) are converted with
   `nodtool` first. It checks `main.dol`'s SHA-1 before writing anything and puts the new
   tree in place only when the whole extraction succeeded; the extractor writes the same
-  bytes, and the same `disc.manifest`, as `tools/extract_disc.py`.
+  bytes, and the same `disc.manifest`, as `tools/extract_disc.py`. The expected disc ID and
+  `main.dol` hash are read from the selected game's `CMakeLists.txt`.
 - **Build** — CMake and Ninja with their output streamed into Activity, a progress bar and
   Cancel. Cancel ends the whole build tree: a job object on Windows, the process group
   elsewhere, so compilers the build started go too.
-- **Play** — the same `--scale`, `--no-music`, `--no-input-log` and `--controls` arguments
-  as the command line. Stop sends `SIGINT` on macOS and Linux, which the runtime answers by
-  dumping its GX FIFO, then escalates if the game ignores it.
+- **Play** — the same `--scale`, `--no-music`, `--no-input-log`, `--players` and
+  `--controls` arguments as the command line. Stop sends `SIGINT` on macOS and Linux,
+  which the runtime answers by dumping its GX FIFO, then escalates if the game ignores it.
+- **Players** — the **Players…** button beside the play options opens a panel with a row
+  for the keyboard and one for each controller the game can see, and the pad each plays as,
+  *Player 1* to *Player 4*: the console's four controller sockets. A controller left on
+  *Automatic* takes the first pad that is free, so plugging in a second controller makes it
+  player 2 with nothing to set. *Refresh* looks again after a device comes or goes. The
+  picks are written to the game's `controls.txt` as `pad = "<device>" <n>` and
+  `keyboard_pad = <n>`, which is the file the runtime reads, so the same choice can be made
+  by hand or dropped into a file someone else can use; a comment or a binding already in
+  that file is kept. The launcher asks the game itself for the device list
+  (`--list-devices`), so the names are the ones the runtime matches. Changing a pad takes
+  effect the next time the game is started.
 - **Updates** — the launcher asks GitHub for the newest release when it starts, and
   offers it when that release is newer than the one it was built from. "Update now"
   downloads the zip for this system, unpacks it and hands over to a small helper: the
@@ -123,10 +154,10 @@ What it does:
   commit it was built from; when the checkout is older than that, Settings says so instead
   of letting an unmatched pair fail later in the build.
 - **Settings** — everything that is not part of launching the game: the project folder,
-  a replacement disc image, the play defaults (window scale, music, input log), the saves
-  and controls files, the build tools with a Rebuild action, and a Desktop or menu
-  shortcut: a `.lnk` on Windows, a symlink to the `.app` on macOS, a `.desktop` file on
-  Linux.
+  a replacement disc image, the play defaults (window scale, music, input log, who plays
+  as which player), the saves and controls files, the build tools with a Rebuild action,
+  and a Desktop or menu shortcut: a `.lnk` on Windows, a symlink to the `.app` on macOS,
+  a `.desktop` file on Linux.
 - **Tools** — a `tools/` folder beside the executable comes first, then PATH and the
   platform's usual install locations (winget packages and Program Files on Windows,
   Homebrew on macOS, `/usr/local` and `~/.cargo/bin` everywhere). On Windows, when the
@@ -137,14 +168,16 @@ What it does:
 
 Drag a disc image or a project folder onto the window, or use the built-in picker. The
 launcher finds the project beside itself, or remembers the folder you choose. "Show
-details" reveals the Activity log whenever it is hidden.
+details" reveals the Activity log whenever it is hidden; the covers stay, smaller, beside
+it. Settings → **Rescan** also picks up cover art added while the launcher is running.
 
-`ctest --test-dir launcher/build` renders the main window, Settings, the picker and the
-update prompt to BMP files, through
-`--render <file> [main|settings|picker|confirm|update|update-banner|click:x,y|settings-click:x,y|update-click:x,y]`,
+`ctest --test-dir launcher/build` renders the main window, Settings, the Players panel,
+the picker and the update prompt to BMP files, through
+`--render <file> [main|settings|players|picker|confirm|update|update-banner|click:x,y|settings-click:x,y|players-click:x,y|update-click:x,y]`,
 which needs no window and no desktop. The click modes paint, click that point and paint
-again (the `settings-` and `update-` forms open those views first), so the tests cover hit
-testing and activation as well as drawing. A render also needs one usable system font; on a minimal
+again (the `settings-`, `players-` and `update-` forms open those views first), so the tests
+cover hit testing and activation as well as drawing. Points separated by `;` click in turn,
+so a test can open a menu and then pick from it; a render leaves `controls.txt` alone. A render also needs one usable system font; on a minimal
 Linux install that means `fonts-dejavu` or `fonts-liberation`.
 
 `launcher/tests/extract_test.cpp` runs the extractor from a console so its output can be
@@ -248,9 +281,21 @@ are derived from the disc, so they are not committed. `dtk` fetches itself with
 
 ```sh
 DTK=naruto/gcn-recomp/tools/dtk
-$DTK dol config naruto/rom/disc/sys/main.dol -o config/GNREDA/config.yml   # once
+$DTK dol config naruto/rom/disc/sys/main.dol -o config/GNREDA/config.yml    # once, per game
+$DTK dol config naruto2/rom/disc/sys/main.dol -o config/GNUEDA/config.yml
+
+# `dtk dol config` writes only the object and its hash. Add the two outputs to the file,
+# or `dtk dol split` has nowhere to put the symbols it makes:
+#   symbols: build/GNUEDA/symbols.txt
+#   splits: build/GNUEDA/splits.txt
+
 $DTK dol split config/GNREDA/config.yml build/GNREDA                        # 0.6s
+$DTK dol split config/GNUEDA/config.yml build/GNUEDA                        # 0.7s
 ```
+
+The symbols for a game are `build/<ID>/symbols.txt`; `naruto/analysis/symbols.txt` and
+`naruto2/analysis/symbols.txt` are those files with the functions noted under "Findings"
+named by hand.
 
 ## How the disc reaches the game
 
@@ -301,26 +346,52 @@ Everything else in `naruto/recomp/` follows the reference projects: `hle.txt` re
 implementations, and `idle.txt` marks the backward branch of the SDK scheduler's idle spin
 (`800E954C` in `SelectThread`) so the runtime can skip guest time.
 
+**Clash of Ninja 2 is `GNUEDA`, `main.dol` SHA-1
+`2440b77fad91e1892d1769ff8650852244e64415`**, pinned in `naruto2/CMakeLists.txt`. Its
+image here is a trimmed ISO; the extractor recognises that and uses the FST offsets as they
+are, as it does for the first game's NKit image.
+
+**dtk found 4959 functions in the second game and named the thread and report functions
+itself** — `OSLoadContext`, `OSReport`, `OSResetSystem`, `SelectThread` — but left
+`OSSaveContext` at `0x800F506C` and `OSPanic` at `0x800F57CC` as `fn_…`. Both were
+identified against the first game rather than by reading disassembly: `OSSaveContext`'s
+body is byte-for-byte the same, and `OSPanic` sits directly after `OSReport`
+(`0x800F574C` + `0x80`) at the same sizes. `naruto2/analysis/symbols.txt` names them,
+`naruto2/recomp/special_calls.txt` lists `800F506C` — the function, not the `bl` — and
+`idle.txt` marks `800FA2E0`, the scheduler's idle spin in `SelectThread`.
+
+**The second disc has no relocatable modules.** It carries `audio`, `fpack` and `movie`
+plus `opening.bnr`; nothing is loaded with `OSLink`, so `RELS` and `REL_RUNTIME` are unused.
+
 ## Status
 
-Works, running from the extracted tree with no image present: boot, SDK init, DVD/FST
+Clash of Ninja (GNREDA) works, running from the extracted tree with no image present: boot, SDK init, DVD/FST
 reads, both logo movies and the opening H4M movie (full-frame video and audio), title
 screen with 3D scene, background music and sound effects, and in-game 3D with the HUD
 (a Naruto vs Kakashi match rendered at ~52 fps in a 1280×960 window).
 Performance: ~570 fps headless (9.5× the game's 60 fps).
 
-Not yet done: gameplay has not been driven with a controller here, so inputs and the
-battle logic beyond what the game does on its own are untested; and the earlier "crash
-around the title screen" was not reproduced — it looks like it was the two concurrent
-instances sharing `saves/`, plus a `SIGINT` reading as a crash (the interrupt handler
-dumps the GX FIFO and exits 1).
+Clash of Ninja 2 (GNUEDA) works from its own extracted tree as well: boot, SDK init, the
+DVD/FST reads, the Viz logo movie, the title menu, scripted menu input through Single Player
+and into a Naruto vs Neji match with the HUD and arena rendering in 3D. Performance:
+~467 fps headless steady state (7.8× the game's 60 fps).
+
+Not yet done for the second game: its steering tables are the first game's five HLE
+replacements, one `special_calls` entry and one idle loop, with nothing added for what it
+does differently, and gameplay beyond entering a match has not been driven here.
+
+Not yet done for the first game: gameplay has not been driven with a controller here, so
+inputs and the battle logic beyond what the game does on its own are untested; and the earlier
+"crash around the title screen" was not reproduced — it looks like it was the two
+concurrent instances sharing `saves/`, plus a `SIGINT` reading as a crash (the interrupt
+handler dumps the GX FIFO and exits 1).
 
 ## Publishing
 
 What ships is the project's own work: the recompilation project, the steering tables, the
-launcher and the tools, plus `naruto/analysis/symbols.txt` — addresses, sizes and names,
-which is a map and not the game's contents. No `main.dol`, no disc file, no image and no
-build output is published, and neither is `naruto/saves/` (a memory card). A binary built
+launcher and the tools, plus each game's `analysis/symbols.txt` — addresses, sizes and
+names, which is a map and not the game's contents. No `main.dol`, no disc file, no image and
+no build output is published, and neither is either `saves/` folder (a memory card). A binary built
 from this additionally carries [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and
 `licenses/`, which is a licence obligation, not a nicety — see "Licensing".
 
@@ -333,7 +404,7 @@ tools/check_publish.py     # exit 0: nothing derived from the disc is in the pub
 It lists what `git add .` would publish and fails on any path from the disc, any
 disc-image or disc-asset extension (`.iso`, `.ciso`, `.rvz`, `.wia`, `.gcz`, `.wbfs`,
 `.tgc`, `.nfs`, `.h4m`, `.trk`, `.bnr`, `.dol`), any published file over 2 MiB, any
-binary that is not an image, and any file whose contents are the pinned `main.dol` under
+binary that is not an image, and any file whose contents are either pinned `main.dol` under
 whatever name. It reads tracked files as well as untracked ones, because `.gitignore` does
 not un-track a file that was added before its rule existed. Before `git init` it still
 works: it points an empty throwaway repository at the tree so `.gitignore` answers,
@@ -344,8 +415,9 @@ it from your own disc image.
 
 ## Licensing
 
-The project's own work — `tools/`, `launcher/`, `naruto/CMakeLists.txt`, `naruto/recomp/`,
-`naruto/analysis/` and this documentation — is MIT, © 2026 Jack Musajo; see
+The project's own work — `tools/`, `launcher/`, `naruto/CMakeLists.txt`,
+`naruto2/CMakeLists.txt`, `naruto/recomp/`, `naruto2/recomp/`, `naruto/analysis/`,
+`naruto2/analysis/` and this documentation — is MIT, © 2026 Jack Musajo; see
 [LICENSE](LICENSE).
 
 What it builds on is not all under the same terms, so
@@ -362,7 +434,7 @@ contains none of their code or content and needs the user's own disc to do anyth
 
 ## Notes
 
-- `naruto/saves/` holds the memory card image and input logs.
+- `naruto/saves/` and `naruto2/saves/` hold each game's memory card image and input logs.
 - `--dump-dir=DIR --dump-every=N` writes every Nth presented frame as PNG. Dumps come from
   the present path, so they need a window: `--headless` never presents a frame (it discards
   each batch) and is for measuring, not looking.
@@ -377,7 +449,7 @@ contains none of their code or content and needs the user's own disc to do anyth
   replacement is a public-domain 8x8 set, so those prompts have words. `GCN_IPL_FONT=FILE`
   serves a blob of your own from that address instead — the Yay0 font the ROM holds, the
   same shape as Dolphin's bundled fonts.
-- Nothing from the disc is redistributable. `naruto/rom/`, `naruto/build/`,
-  `config/GNREDA/` and `naruto/saves/` are all derived from it and are gitignored; see
-  "Publishing". The extracted tree can be rebuilt from the user's own disc at any time
+- Nothing from the disc is redistributable. `naruto/rom/`, `naruto2/rom/`,
+  `naruto/build/`, `naruto2/build/`, `config/GNREDA/`, `config/GNUEDA/`, `naruto/saves/`
+  and `naruto2/saves/` are all derived from it and are gitignored; see "Publishing". The extracted tree can be rebuilt from the user's own disc at any time
   with `tools/setup.sh`.

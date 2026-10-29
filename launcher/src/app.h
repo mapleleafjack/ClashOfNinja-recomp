@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <thread>
@@ -66,6 +67,12 @@ enum class Id {
     Scale4,
     ToggleMute,
     ToggleInputLog,
+    SettingsPlayers,
+    SettingsRefreshDevices,
+    PadRow,                       // a player row in Settings: +0 the keyboard, then the controllers
+    PadRowEnd = PadRow + 8,
+    PadOption,                    // the pads a row may be set to: +0 Automatic, then 1 to 4
+    PadOptionEnd = PadOption + 8,
     OverlayAction,
     OverlayCancel,
     PickerUp,
@@ -73,6 +80,7 @@ enum class Id {
     PickerAccept,
     PickerCancel,
     PickerEntry,  // the first entry row; the rest follow it
+    GameCover,    // the first game's cover on the main page; the rest follow it
 };
 
 class App {
@@ -99,6 +107,13 @@ class App {
         bool directory = false;
     };
 
+    // A game's cover art, read from its folder once and kept for later frames.
+    struct Cover {
+        bool loaded = false;
+        int width = 0;
+        int height = 0;
+        std::vector<std::uint32_t> pixels;
+    };
     enum class Pill { Muted, Ok, Warn, Bad };
     enum class PickerKind { None, Folder, Image };
     // What came of looking for a newer release.
@@ -111,10 +126,13 @@ class App {
 
     void paint();
     void paint_header();
-    void paint_launch_card();
-    void paint_activity();
+    void paint_games();
+    void paint_cover(Id id, const Rect& rect, const GameInfo& game, bool selected,
+                     bool enabled);
+    void paint_activity(float top);
     void paint_settings();
     void paint_overlay();
+    void paint_pad_menu();
     void paint_picker();
     void paint_scale_menu();
 
@@ -124,6 +142,8 @@ class App {
     void checkbox(Id id, float x, float y, const std::wstring& label, bool checked,
                   bool enabled = true);
     void scale_combo(Id id, const Rect& rect, bool enabled);
+    // A row in Settings: a name on the left, the pad it plays as on the right.
+    void pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled);
     void pill(const Rect& rect, const std::wstring& text, Pill state);
     void card_box(const Rect& rect);
 
@@ -134,6 +154,15 @@ class App {
 
     void refresh();
     void locate_project();
+    // The games the project folder supplies, in the launcher's fixed order.
+    std::vector<GameInfo> available_games() const;
+    // A game's cover art from its own folder, or nullptr when it has none.
+    const Cover* cover(const std::wstring& folder);
+    // The art drawn in a cover's place until one is put in the game folder.
+    const Cover& placeholder_cover();
+    void select_game(const std::wstring& folder);
+    void launch_game(const std::wstring& folder);
+    std::wstring current_title() const;
     void choose_image();
     void start_setup(const std::filesystem::path& image);
     void begin_setup(const std::filesystem::path& image, bool then_launch);
@@ -146,6 +175,11 @@ class App {
     void play();
     void open_path(const std::filesystem::path& path);
     void reset_controls();
+    // The controllers the game would see, and the pads they play as, from the game's
+    // --list-devices. Row 0 is the keyboard.
+    void open_players();
+    void refresh_devices();
+    void write_pad_pins();
     void activate(Id id);
     bool modal_active() const { return settings_open_ || overlay_open_ || picker_ != PickerKind::None; }
 
@@ -187,8 +221,7 @@ class App {
     void accept_picker();
     void fill_picker_path();
 
-    void invalidate() { window_.invalidate(); }
-    void post(std::function<void()> task) { dispatcher_.post(std::move(task)); }
+    void invalidate() { window_.invalidate(); }    void post(std::function<void()> task) { dispatcher_.post(std::move(task)); }
     void animate();
 
     Window window_;
@@ -198,6 +231,8 @@ class App {
     Settings settings_;
     std::optional<Project> project_;
     ProjectStatus status_;
+    std::map<std::wstring, Cover> covers_;
+    Cover placeholder_;
 
     Job job_;
     GameProcess game_;
@@ -223,9 +258,24 @@ class App {
     std::wstring settings_note_;
     std::vector<ToolInfo> tools_;
 
+    // A controller SDL reports, as the game names it, and the pad it plays as: 1 to 4, or
+    // 0 for the first one free.
+    struct DeviceRow {
+        std::wstring name;
+        int nth = 1;
+        int pad = 0;
+    };
+    std::vector<DeviceRow> devices_;
+    std::wstring devices_note_;  // why the list is empty, when it is
+    int keyboard_pad_ = 1;
+    int pad_menu_row_ = -1;  // the row whose menu is open, -1 for none
+    Rect pad_menu_anchor_{};
+    bool rendering_ = false;  // --render: no game to ask, so the rows are stand-ins
+
     bool overlay_open_ = false;
     bool overlay_confirm_ = false;
     bool overlay_update_ = false;
+    bool overlay_players_ = false;
     std::wstring overlay_title_;
     std::wstring overlay_text_;
     std::wstring overlay_action_;

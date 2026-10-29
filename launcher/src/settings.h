@@ -6,8 +6,13 @@ namespace nla {
 
 struct Settings {
     std::wstring project_root;
+    // The game folder under the project root: "naruto" or "naruto2".
+    std::wstring game;
     std::wstring last_image;
     int scale = 2;
+    // How many of the console's four pads a game controller may take, which the player
+    // picker raises to the highest pad it names.
+    int players = 4;
     bool mute_music = false;
     bool input_log = true;
     int window_width = 1060;

@@ -2,6 +2,7 @@
 
 #include "disc.h"
 #include "git.h"
+#include "image.h"
 #include "shortcut.h"
 #include "tools_package.h"
 #include "util.h"
@@ -19,7 +20,6 @@ namespace {
 
 constexpr wchar_t kTitle[] = L"Naruto: Clash of Ninja";
 constexpr wchar_t kSubtitle[] = L"GameCube static recompilation";
-constexpr wchar_t kWindowTitle[] = L"Naruto: Clash of Ninja — Launcher";
 
 std::wstring scale_label(int factor) {
     return format(L"%d×   %d × %d", factor, 640 * factor, 480 * factor);
@@ -54,10 +54,13 @@ bool App::create() {
     clean_up_after_update();
 
     auto root = Project::locate(settings_.project_root);
-    if (root) project_.emplace(*root);
+    if (root) project_.emplace(*root, settings_.game);
+    if (project_) settings_.game = project_->game();
 
     std::wstring error;
-    if (!window_.create(kWindowTitle, settings_.window_width, settings_.window_height, &error)) {
+    std::wstring window_title = current_title() + L" — Launcher";
+    if (!window_.create(window_title, settings_.window_width, settings_.window_height,
+                        &error)) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Naruto: Clash of Ninja",
                                  narrow(error).c_str(), nullptr);
         return false;
@@ -234,14 +237,17 @@ void App::handle_event(const SDL_Event& event) {
             std::error_code ec;
             if (dropped.empty()) return;
             if (fs::is_directory(dropped, ec)) {
-                Project candidate(dropped);
+                Project candidate(dropped, settings_.game);
                 if (candidate.valid()) {
-                    project_.emplace(dropped);
+                    project_.emplace(dropped, settings_.game);
+                    covers_.clear();
                     settings_.project_root = candidate.root().wstring();
+                    settings_.game = project_->game();
                     play_status_.clear();
                     save_settings();
                     auto text = dropped.wstring();
                     append_log(format(L"[launcher] project: %ls\n", text.c_str()));
+                    window_.set_title(current_title() + L" — Launcher");
                     refresh();
                     if (launch_wanted_) {
                         launch_wanted_ = false;
@@ -250,9 +256,8 @@ void App::handle_event(const SDL_Event& event) {
                 } else {
                     auto text = dropped.wstring();
                     show_message(L"Not a project folder",
-                                 std::wstring(L"That folder does not hold "
-                                              L"naruto/CMakeLists.txt and "
-                                              L"tools/extract_disc.py:\n\n") +
+                                 std::wstring(L"That folder does not hold the game "
+                                              L"folders and tools/extract_disc.py:\n\n") +
                                      text);
                 }
             } else if (is_disc_image(dropped)) {
@@ -278,7 +283,11 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
                 scale_open_ = false;
                 invalidate();
             } else if (overlay_open_) {
+                // Escape out of the players panel lands back in Settings, which is where
+                // it was opened from; the other panels are all there is under them.
+                const bool back_to_settings = overlay_players_;
                 close_overlay();
+                if (back_to_settings) open_settings();
             } else if (settings_open_) {
                 settings_open_ = false;
                 invalidate();
@@ -386,9 +395,11 @@ bool write_bmp(const std::string& path, const std::uint32_t* pixels, int width, 
 }  // namespace
 
 int App::render_to(const std::string& path, float scale, const std::string& view) {
+    rendering_ = true;
     settings_ = Settings::load();
     tools_ = check_tools();
-    if (auto root = Project::locate(settings_.project_root)) project_.emplace(*root);
+    if (auto root = Project::locate(settings_.project_root)) project_.emplace(*root, settings_.game);
+    if (project_) settings_.game = project_->game();
     status_ = project_ ? project_->status() : ProjectStatus{};
     append_log(L"[launcher] render check");
 
@@ -405,18 +416,26 @@ int App::render_to(const std::string& path, float scale, const std::string& view
 
     // Exercises hit testing and the click path without a window: paint once to build the
     // hit list, click the point, then paint the result.
-    auto click = [this](const std::string& point) {
-        float x = 0, y = 0;
-        if (std::sscanf(point.c_str(), "%f,%f", &x, &y) != 2) return false;
-        paint();
-        SDL_Event event{};
-        event.type = SDL_MOUSEBUTTONDOWN;
-        event.button.button = SDL_BUTTON_LEFT;
-        event.button.x = static_cast<Sint32>(x);
-        event.button.y = static_cast<Sint32>(y);
-        handle_event(event);
-        event.type = SDL_MOUSEBUTTONUP;
-        handle_event(event);
+    // Points are separated by ';', so a render can open a menu and then pick from it.
+    auto click = [this](const std::string& points) {
+        size_t start = 0;
+        while (start <= points.size()) {
+            size_t end = points.find(';', start);
+            if (end == std::string::npos) end = points.size();
+            float x = 0, y = 0;
+            if (std::sscanf(points.substr(start, end - start).c_str(), "%f,%f", &x, &y) != 2)
+                return false;
+            paint();
+            SDL_Event event{};
+            event.type = SDL_MOUSEBUTTONDOWN;
+            event.button.button = SDL_BUTTON_LEFT;
+            event.button.x = static_cast<Sint32>(x);
+            event.button.y = static_cast<Sint32>(y);
+            handle_event(event);
+            event.type = SDL_MOUSEBUTTONUP;
+            handle_event(event);
+            start = end + 1;
+        }
         return true;
     };
 
@@ -432,6 +451,14 @@ int App::render_to(const std::string& path, float scale, const std::string& view
 
     if (view == "settings") {
         open_settings();
+    } else if (view == "players") {
+        open_players();
+    } else if (view.rfind("players-click:", 0) == 0) {
+        open_players();
+        if (!click(view.substr(14))) {
+            std::fprintf(stderr, "usage: players-click:<x>,<y>\n");
+            return 1;
+        }
     } else if (view == "picker") {
         open_picker(PickerKind::Image, L"Choose your own disc image",
                     project_ ? project_->root() : home_dir(), [](const fs::path&) {});
@@ -479,8 +506,7 @@ void App::paint() {
     hits_.clear();
 
     paint_header();
-    paint_launch_card();
-    if (log_visible_) paint_activity();
+    paint_games();
 
     if (settings_open_) {
         paint_settings();
@@ -489,6 +515,7 @@ void App::paint() {
     }
     if (picker_ != PickerKind::None) paint_picker();
     if (scale_open_) paint_scale_menu();
+    if (pad_menu_row_ >= 0) paint_pad_menu();
 
     painter_.end();
 }
@@ -506,7 +533,9 @@ void App::paint_header() {
     Rect settings_button{width_ - 24 - 104, 24, 104, 34};
     button(Id::OpenSettings, settings_button, L"Settings", false, true);
 
-    float title_right = width_ - 260;
+    // The games are the big covers below, so the header only carries the title of the
+    // one they would launch, and what the launcher found about it.
+    float title_right = settings_button.x - 16;
     if (update_state_ == UpdateState::Available && !update_release_.version.empty()) {
         std::wstring label = L"Update " + update_release_.version;
         float badge_w = text_width(label, Face::Button) + 30;
@@ -515,7 +544,7 @@ void App::paint_header() {
         title_right = std::min(title_right, badge.x - 16);
     }
 
-    painter_.text(kTitle, RectF(82, 14, title_right, 46), Face::Title,
+    painter_.text(current_title(), RectF(82, 14, title_right, 46), Face::Title,
                   rgb(theme::Text));
     painter_.text(kSubtitle, RectF(83, 48, title_right, 68), Face::Subtitle,
                   rgb(theme::Muted));
@@ -523,20 +552,10 @@ void App::paint_header() {
     painter_.line(24, 86, width_ - 24, 86, rgb(theme::Border));
 }
 
-void App::paint_launch_card() {
-    bool splash = !log_visible_;
-    float center_x = width_ / 2;
-    // Enough room for the status, the call to action and the links beneath it.
-    constexpr float kBlockHeight = 246.0f;
-
-    float top;
-    if (splash) {
-        top = 86.0f + std::max(24.0f, (height_ - 86.0f - kBlockHeight) * 0.5f);
-    } else {
-        Rect card{24, 104, width_ - 48, 284};
-        card_box(card);
-        top = card.y + 20;
-    }
+void App::paint_games() {
+    constexpr float kHeaderBottom = 86.0f;
+    auto games = available_games();
+    bool compact = log_visible_;
 
     std::wstring title;
     std::wstring detail;
@@ -545,7 +564,7 @@ void App::paint_launch_card() {
 
     if (busy_) {
         title = stage_.empty() ? L"Working…" : stage_;
-        detail = L"The launcher is running this step. Activity has its output.";
+        detail = L"The launcher is running this step. Details holds its output.";
         pill_text = L"working";
         pill_state = Pill::Muted;
     } else if (game_.running()) {
@@ -555,46 +574,38 @@ void App::paint_launch_card() {
         pill_state = Pill::Ok;
     } else if (!project_) {
         title = L"Find the game folder";
-        detail = L"Put the launcher beside the project folder, or press Launch the game "
-                 L"and pick it once: the launcher remembers the choice.";
+        detail = L"Put the launcher beside the project folder, or pick it once here: the "
+                 L"launcher remembers the choice.";
         pill_text = L"setup";
         pill_state = Pill::Warn;
     } else if (!status_.disc.extracted) {
         title = L"Choose your disc image";
-        detail = L"Press Launch the game and pick your own Naruto: Clash of Ninja disc "
-                 L"image. The launcher extracts the files the build and runtime read; "
-                 L"nothing from the disc is included in the launcher.";
+        detail = L"Click a cover and pick your own disc image. The launcher extracts the "
+                 L"files the build and runtime read; nothing from the disc is included in "
+                 L"the launcher.";
         pill_text = L"needs disc";
         pill_state = Pill::Warn;
     } else if (!status_.disc.verified) {
         title = L"This is not the supported disc";
-        detail = L"The extracted main.dol does not match the supported USA release. Press "
-                 L"Launch the game and pick the correct image.";
+        detail = L"The extracted main.dol does not match the supported USA release. Click "
+                 L"the cover and pick the correct image.";
         pill_text = L"wrong disc";
         pill_state = Pill::Bad;
     } else if (!status_.built) {
         title = L"Ready to build";
-        detail = L"Launch the game builds it first, then starts it. A first build takes a "
+        detail = L"A cover builds that game first, then starts it. A first build takes a "
                  L"few minutes.";
         pill_text = L"not built";
         pill_state = Pill::Warn;
     } else {
         title = L"Ready to play";
-        detail = L"The game opens in its own window. Escape quits in the game.";
+        detail = L"Click a cover to start that game. Escape quits in the game.";
         pill_text = L"ready";
         pill_state = Pill::Ok;
     }
 
-    float pill_w = text_width(pill_text, Face::Small) + 32;
-    pill(Rect{center_x - pill_w / 2, top, pill_w, 22}, pill_text, pill_state);
-
-    painter_.text(title, RectF(center_x - 380, top + 24, center_x + 380, top + 76),
-                  Face::Hero, rgb(theme::Text), TextAlign::Center);
-    painter_.text(detail, RectF(center_x - 340, top + 80, center_x + 340, top + 134),
-                  Face::Body, rgb(theme::Muted), TextAlign::Center);
-
-    if (busy_) {
-        Rect bar{center_x - 210, top + 140, 420, 6};
+    // The step in flight, or the game that is up, and the way back to the log.
+    auto progress_bar = [this](const Rect& bar) {
         painter_.fill_round(bar.box(), 3, rgb(0x242932));
         if (progress_ >= 0) {
             float fraction = std::min(1.0f, static_cast<float>(progress_) / 100.0f);
@@ -612,35 +623,171 @@ void App::paint_launch_card() {
                                     rgb(theme::Accent));
             }
         }
-    } else if (!play_status_.empty()) {
-        painter_.text(play_status_,
-                      RectF(center_x - 330, top + 140, center_x + 330, top + 158),
+    };
+    auto draw_controls = [&](float center_x, float top, float width) {
+        float bottom = top;
+        if (busy_) {
+            progress_bar(Rect{center_x - width / 2, top + 4, width, 6});
+            if (job_.running()) {
+                float cancel_w = text_width(L"Cancel", Face::Tiny);
+                link(Id::Stop, Rect{center_x - cancel_w / 2, top + 20, cancel_w, 18},
+                     L"Cancel");
+            }
+            bottom = top + 44;
+        } else if (game_.running()) {
+            button(Id::Stop, Rect{center_x - 110, top, 220, 40}, L"Stop the game", true, true,
+                   true);
+            bottom = top + 46;
+        }
+        if (!compact) {
+            std::wstring toggle = L"Show details";
+            float toggle_w = text_width(toggle, Face::Tiny);
+            link(Id::LogToggle, Rect{center_x - toggle_w / 2, bottom + 4, toggle_w, 18},
+                 toggle);
+            bottom += 24;
+        }
+        if (!play_status_.empty() && !busy_) {
+            painter_.text(play_status_,
+                          RectF(center_x - 330, bottom + 2, center_x + 330, bottom + 20),
+                          Face::Tiny, rgb(theme::Muted), TextAlign::Center);
+        }
+    };
+
+    if (games.empty()) {
+        constexpr float kBlockHeight = 214.0f;
+        float center_x = width_ / 2;
+        float top =
+            kHeaderBottom + std::max(24.0f, (height_ - kHeaderBottom - kBlockHeight) * 0.5f);
+        float pill_w = text_width(pill_text, Face::Small) + 32;
+        pill(Rect{center_x - pill_w / 2, top, pill_w, 22}, pill_text, pill_state);
+        painter_.text(title, RectF(center_x - 380, top + 26, center_x + 380, top + 78),
+                      Face::Hero, rgb(theme::Text), TextAlign::Center);
+        painter_.text(detail, RectF(center_x - 340, top + 82, center_x + 340, top + 136),
+                      Face::Body, rgb(theme::Muted), TextAlign::Center);
+        button(Id::Launch, Rect{center_x - 130, top + 152, 260, 50}, L"Find the game folder",
+               true, !busy_, false, Face::ButtonLarge);
+        if (!play_status_.empty()) {
+            painter_.text(play_status_,
+                          RectF(center_x - 330, top + 210, center_x + 330, top + 228),
+                          Face::Tiny, rgb(theme::Muted), TextAlign::Center);
+        }
+        return;
+    }
+
+    // Each game is a box-art sized cover, `count` of them across the page.
+    const int count = static_cast<int>(games.size());
+    const float gap = compact ? 20.0f : 32.0f;
+    const float label_height = compact ? 22.0f : 28.0f;
+    const float status_height = compact ? 0.0f : 172.0f;
+
+    float max_tile_width = (width_ - 96.0f - gap * (count - 1)) / count;
+    float max_tile_height = height_ - kHeaderBottom - 48.0f - label_height - status_height;
+    if (compact) max_tile_height = std::min(max_tile_height, 216.0f);
+    max_tile_height = std::max(160.0f, std::min(max_tile_height, 470.0f));
+    float tile_height = max_tile_height;
+    float tile_width = tile_height * 3.0f / 4.0f;
+    if (tile_width > max_tile_width) {
+        tile_width = max_tile_width;
+        tile_height = tile_width * 4.0f / 3.0f;
+    }
+    float row_width = count * tile_width + (count - 1) * gap;
+
+    float left = compact ? 24.0f : (width_ - row_width) / 2.0f;
+    float top;
+    if (compact) {
+        top = kHeaderBottom + 24.0f;
+    } else {
+        float block_height = tile_height + label_height + 22.0f + status_height;
+        top = kHeaderBottom +
+              std::max(16.0f, (height_ - kHeaderBottom - 24.0f - block_height) * 0.5f);
+    }
+
+    bool can_launch = !busy_ && !game_.running();
+    float x = left;
+    for (int index = 0; index < count; ++index) {
+        const auto& game = games[static_cast<size_t>(index)];
+        bool selected = project_ && project_->game() == game.folder;
+        Rect tile{x, top, tile_width, tile_height};
+        paint_cover(static_cast<Id>(static_cast<int>(Id::GameCover) + index), tile, game,
+                    selected, can_launch);
+        painter_.text(game.short_title,
+                      RectF(tile.x, tile.y + tile.h + 4, tile.x + tile.w,
+                            tile.y + tile.h + 4 + label_height),
+                      Face::Button, selected ? rgb(theme::Accent) : rgb(theme::Muted),
+                      TextAlign::Center, TextVAlign::Center, false);
+        x += tile_width + gap;
+    }
+
+    if (compact) {
+        float status_left = left + row_width + 28.0f;
+        float status_right = width_ - 24.0f;
+        float pill_w = text_width(pill_text, Face::Small) + 32;
+        pill(Rect{status_left, top + 2, pill_w, 22}, pill_text, pill_state);
+        painter_.text(title,
+                      RectF(status_left, top + 32, status_right, top + 60),
+                      Face::CardTitle, rgb(theme::Text));
+        painter_.text(detail, RectF(status_left, top + 66, status_right, top + 132),
+                      Face::Body, rgb(theme::Muted));
+        draw_controls((status_left + status_right) / 2, top + 140,
+                      std::min(420.0f, status_right - status_left));
+        paint_activity(top + tile_height + label_height + 26.0f);
+        return;
+    }
+
+    float status_top = top + tile_height + label_height + 22.0f;
+    float center_x = width_ / 2;
+    float pill_w = text_width(pill_text, Face::Small) + 32;
+    pill(Rect{center_x - pill_w / 2, status_top, pill_w, 22}, pill_text, pill_state);
+    painter_.text(title,
+                  RectF(center_x - 380, status_top + 26, center_x + 380, status_top + 74),
+                  Face::Hero, rgb(theme::Text), TextAlign::Center);
+    painter_.text(detail,
+                  RectF(center_x - 350, status_top + 78, center_x + 350, status_top + 124),
+                  Face::Body, rgb(theme::Muted), TextAlign::Center);
+    draw_controls(center_x, status_top + 130, 420.0f);
+}
+
+void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool selected,
+                      bool enabled) {
+    bool hovered = enabled && hover_ == id;
+    bool down = enabled && pressed_ == id;
+    constexpr float kRadius = 14.0f;
+    RectF box = rect.box();
+
+    painter_.fill_round(RectF(box.left, box.top + 3, box.right, box.bottom + 5), kRadius,
+                        rgb(0x000000, 0.32f));
+
+    const Cover* art = cover(game.folder);
+    if (art && art->loaded) {
+        painter_.draw_image(box, art->pixels.data(), art->width, art->height, kRadius);
+    } else {
+        // Without art of its own, the tile still names the game and says where the cover
+        // goes, so the page works on a fresh checkout.
+        const Cover& fallback = placeholder_cover();
+        painter_.draw_image(box, fallback.pixels.data(), fallback.width, fallback.height,
+                            kRadius);
+        painter_.text(game.short_title,
+                      RectF(box.left + 14, box.top + box.height() * 0.62f, box.right - 14,
+                            box.top + box.height() * 0.86f),
+                      Face::CardTitle, rgb(theme::Text), TextAlign::Center);
+        painter_.text(L"Drop cover.png in " + game.folder + L"/",
+                      RectF(box.left + 10, box.bottom - 34, box.right - 10, box.bottom - 14),
                       Face::Tiny, rgb(theme::Muted), TextAlign::Center);
     }
 
-    Rect launch_button{center_x - 150, top + 164, 300, 56};
-    if (game_.running()) {
-        button(Id::Launch, launch_button, L"Stop the game", true, true, true,
-               Face::ButtonLarge);
-    } else {
-        button(Id::Launch, launch_button, L"Launch the game", true, !busy_, false,
-               Face::ButtonLarge);
-    }
+    if (hovered) painter_.fill_round(box, kRadius, rgb(0xffffff, down ? 0.10f : 0.06f));
+    if (!enabled) painter_.fill_round(box, kRadius, rgb(theme::Background, 0.55f));
 
-    std::wstring toggle = log_visible_ ? L"Hide details" : L"Show details";
-    float toggle_w = text_width(toggle, Face::Tiny);
-    bool show_cancel = busy_ && job_.running();
-    float cancel_w = show_cancel ? text_width(L"Cancel", Face::Tiny) : 0.0f;
-    float links_w = toggle_w + (show_cancel ? 24.0f + cancel_w : 0.0f);
-    float links_x = center_x - links_w / 2;
-    link(Id::LogToggle, Rect{links_x, top + 228, toggle_w, 18}, toggle);
-    if (show_cancel) {
-        link(Id::Stop, Rect{links_x + toggle_w + 24, top + 228, cancel_w, 18}, L"Cancel");
-    }
+    Color border = !enabled ? rgb(theme::Border)
+                            : (selected ? rgb(theme::Accent)
+                                        : (hovered ? rgb(theme::BorderStrong)
+                                                   : rgb(theme::Border)));
+    if (selected) painter_.stroke_round(box, kRadius, rgb(theme::Accent, 0.30f), 6.0f);
+    painter_.stroke_round(box, kRadius, border, selected ? 2.0f : 1.0f);
+    if (enabled) register_hit(id, rect);
 }
 
-void App::paint_activity() {
-    float top = 404.0f;
+void App::paint_activity(float top) {
     float card_height = std::max(140.0f, height_ - top - 24.0f);
     Rect card{24, top, width_ - 48, card_height};
     card_box(card);
@@ -820,8 +967,11 @@ void App::paint_settings() {
                   rgb(theme::Muted));
     scale_combo(Id::Scale, Rect{left + 96, y, 180, 32}, !busy_);
     checkbox(Id::ToggleMute, left + 300, y + 7, L"Mute music", settings_.mute_music, !busy_);
-    checkbox(Id::ToggleInputLog, left + 430, y + 7, L"Log controller input",
-             settings_.input_log, !busy_);
+    checkbox(Id::ToggleInputLog, left + 408, y + 7, L"Input log", settings_.input_log,
+             !busy_);
+    // Who plays as whom, in its own panel: the console's four pads and one row each.
+    button(Id::SettingsPlayers, Rect{right - 110, y, 110, 32}, L"Players…", false,
+           !busy_);
     y += 36;
     separator();
 
@@ -917,8 +1067,9 @@ void App::paint_settings() {
 
 void App::paint_overlay() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
-    float panel_w = 620;
-    float panel_h = 300;
+    float panel_w = overlay_players_ ? 660.0f : 620.0f;
+    float panel_h = overlay_players_ ? 168.0f + 34.0f * static_cast<float>(1 + devices_.size())
+                                     : 300.0f;
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
@@ -926,9 +1077,42 @@ void App::paint_overlay() {
     painter_.text(overlay_title_, RectF(panel.x + 26, panel.y + 20, panel.x + panel.w - 26,
                                               panel.y + 50),
                   Face::CardTitle, rgb(theme::Text));
-    painter_.text(overlay_text_, RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
-                                             panel.y + 200),
-                  Face::Body, rgb(theme::Muted));
+    if (overlay_players_) {
+        // The keyboard, then each controller the game can see, and the pad each plays as.
+        // The picks go to the game's controls.txt, which is what the runtime reads.
+        float left = panel.x + 26;
+        float right = panel.x + panel.w - 26;
+        float y = panel.y + 60;
+        painter_.text(L"A controller takes the first free pad unless it says otherwise here.",
+                      RectF(left, y, right - 70, y + 20), Face::Tiny, rgb(theme::Muted));
+        link(Id::SettingsRefreshDevices, Rect{right - 62, y, 62, 18}, L"Refresh");
+        y += 26;
+        auto pad_row = [&](Id id, const std::wstring& name, const std::wstring& value) {
+            painter_.text(elide(name, Face::Small, right - left - 200),
+                          RectF(left, y + 5, right - left - 200 + left, y + 27), Face::Small,
+                          rgb(theme::Text));
+            pad_combo(id, Rect{right - 190, y, 190, 28}, value, !busy_);
+            y += 34;
+        };
+        pad_row(static_cast<Id>(static_cast<int>(Id::PadRow)), L"Keyboard",
+                L"Player " + std::to_wstring(keyboard_pad_));
+        for (size_t i = 0; i < devices_.size(); ++i) {
+            const DeviceRow& device = devices_[i];
+            std::wstring label = device.name;
+            if (device.nth > 1) label += L" #" + std::to_wstring(device.nth);
+            pad_row(static_cast<Id>(static_cast<int>(Id::PadRow) + 1 + static_cast<int>(i)),
+                    label, device.pad == 0 ? L"Automatic"
+                                           : L"Player " + std::to_wstring(device.pad));
+        }
+        if (devices_.empty()) {
+            painter_.text(elide(devices_note_, Face::Small, right - left),
+                          RectF(left, y + 4, right, y + 26), Face::Small, rgb(theme::Muted));
+        }
+    } else {
+        painter_.text(overlay_text_, RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
+                                                 panel.y + 200),
+                      Face::Body, rgb(theme::Muted));
+    }
 
     button(Id::OverlayAction, Rect{panel.x + panel.w - 26 - 130, panel.y + panel.h - 56, 130,
                                    36},
@@ -940,8 +1124,45 @@ void App::paint_overlay() {
     }
 }
 
-void App::paint_scale_menu() {
-    Rect menu{scale_anchor_.x, scale_anchor_.y + scale_anchor_.h + 6, scale_anchor_.w, 4 * 32 + 8};
+void App::pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled) {
+    bool hovered = enabled && hover_ == id;
+    painter_.fill_round(rect.box(), 8, rgb(hovered ? 0x2c333e : 0x242932));
+    painter_.stroke_round(rect.box(), 8, rgb(theme::BorderStrong), 1);
+    painter_.text(value, RectF(rect.x + 10, rect.y, rect.x + rect.w - 26, rect.y + rect.h),
+                  Face::Small, enabled ? rgb(theme::Text) : rgb(0x69707d),
+                  TextAlign::Leading, TextVAlign::Center, false);
+    float chevron_x = rect.x + rect.w - 16;
+    float chevron_y = rect.y + rect.h / 2 - 2;
+    painter_.line(chevron_x - 4, chevron_y, chevron_x, chevron_y + 4, rgb(theme::Muted), 1.6f);
+    painter_.line(chevron_x, chevron_y + 4, chevron_x + 4, chevron_y, rgb(theme::Muted), 1.6f);
+    if (enabled) register_hit(id, rect);
+}
+
+// The pads a row can be set to: the keyboard always plays as one, a controller may be left
+// to the first pad that is free, which is what "Automatic" writes.
+void App::paint_pad_menu() {
+    const bool keyboard = pad_menu_row_ == 0;
+    const int count = keyboard ? 4 : 5;
+    Rect menu{pad_menu_anchor_.x, pad_menu_anchor_.y + pad_menu_anchor_.h + 6, pad_menu_anchor_.w,
+              count * 30.0f + 8};
+    painter_.fill_round(menu.box(), 10, rgb(0x1b1e25));
+    painter_.stroke_round(menu.box(), 10, rgb(theme::BorderStrong), 1);
+    const int current = keyboard ? keyboard_pad_
+                                 : devices_[static_cast<size_t>(pad_menu_row_ - 1)].pad;
+    for (int i = 0; i < count; ++i) {
+        const int pad = keyboard ? i + 1 : i;  // 0 is Automatic
+        Rect item{menu.x + 4, menu.y + 4 + i * 30.0f, menu.w - 8, 30};
+        Id id = static_cast<Id>(static_cast<int>(Id::PadOption) + i);
+        if (hover_ == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
+        painter_.text(pad == 0 ? L"Automatic" : L"Player " + std::to_wstring(pad),
+                      RectF(item.x + 10, item.y, item.x + item.w - 10, item.y + item.h),
+                      Face::Small, pad == current ? rgb(theme::Accent) : rgb(theme::Text),
+                      TextAlign::Leading, TextVAlign::Center, false);
+        register_hit(id, item);
+    }
+}
+
+void App::paint_scale_menu() {    Rect menu{scale_anchor_.x, scale_anchor_.y + scale_anchor_.h + 6, scale_anchor_.w, 4 * 32 + 8};
     painter_.fill_round(menu.box(), 10, rgb(0x1b1e25));
     painter_.stroke_round(menu.box(), 10, rgb(theme::BorderStrong), 1);
     for (int index = 0; index < 4; ++index) {
@@ -1267,6 +1488,50 @@ void App::activate(Id id) {
         return;
     }
 
+    if (overlay_open_ && overlay_players_) {
+        if (pad_menu_row_ >= 0) {
+            const int row = pad_menu_row_;
+            const bool keyboard = row == 0;
+            const int picked = static_cast<int>(id) - static_cast<int>(Id::PadOption);
+            if (id >= Id::PadOption && id < Id::PadOptionEnd && picked < (keyboard ? 4 : 5)) {
+                const int pad = keyboard ? picked + 1 : picked;
+                if (keyboard) keyboard_pad_ = pad;
+                else devices_[static_cast<size_t>(row - 1)].pad = pad;
+                pad_menu_row_ = -1;
+                write_pad_pins();
+                return;
+            }
+            pad_menu_row_ = -1;  // anything else closes the menu, then does its own work
+        }
+        if (id >= Id::PadRow && id < Id::PadRowEnd) {
+            const int row = static_cast<int>(id) - static_cast<int>(Id::PadRow);
+            if (row >= 0 && row < 1 + static_cast<int>(devices_.size())) {
+                pad_menu_row_ = row;
+                for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
+                    if (it->id == id) {
+                        pad_menu_anchor_ = it->rect;
+                        break;
+                    }
+                }
+                invalidate();
+                return;
+            }
+        }
+        switch (id) {
+            case Id::SettingsRefreshDevices:
+                refresh_devices();
+                invalidate();
+                return;
+            case Id::OverlayAction:
+                // Back to Settings, which is where the panel was opened from.
+                close_overlay();
+                open_settings();
+                return;
+            default:
+                return;
+        }
+    }
+
     if (overlay_open_) {
         if (id == Id::OverlayAction) {
             auto callback = overlay_callback_;
@@ -1311,7 +1576,7 @@ void App::activate(Id id) {
                 if (project_) {
                     std::error_code ec;
                     bool present = fs::exists(project_->controls(), ec);
-                    open_path(present ? project_->controls() : project_->naruto());
+                    open_path(present ? project_->controls() : project_->game_dir());
                 }
                 return;
             case Id::SettingsResetControls: reset_controls(); return;
@@ -1326,6 +1591,8 @@ void App::activate(Id id) {
             case Id::SettingsRescan:
                 rescan_environment();
                 tools_ = check_tools();
+                // Covers the user dropped in since the launcher started.
+                covers_.clear();
                 settings_note_ = L"Tools rescanned.";
                 break;
             case Id::SettingsTools: {
@@ -1371,6 +1638,9 @@ void App::activate(Id id) {
                 settings_.input_log = !settings_.input_log;
                 save_settings();
                 break;
+            case Id::SettingsPlayers:
+                open_players();
+                return;
             default:
                 break;
         }
@@ -1420,8 +1690,14 @@ void App::activate(Id id) {
             settings_.input_log = !settings_.input_log;
             save_settings();
             break;
-        default:
+        default: {
+            // A cover on the main page: it stands for that game and starts it.
+            int game_index = static_cast<int>(id) - static_cast<int>(Id::GameCover);
+            auto games = available_games();
+            if (game_index >= 0 && game_index < static_cast<int>(games.size()))
+                launch_game(games[static_cast<size_t>(game_index)].folder);
             break;
+        }
     }
     invalidate();
 }
@@ -1459,16 +1735,19 @@ void App::continue_launch() {
 
 void App::locate_project() {
     fs::path start = project_ ? project_->root() : home_dir();
-    open_picker(PickerKind::Folder, L"Choose the folder that holds naruto/ and tools/", start,
+    open_picker(PickerKind::Folder, L"Choose the folder that holds the game folders and tools/", start,
                 [this](const fs::path& chosen) {
-                    Project candidate(chosen);
+                    Project candidate(chosen, settings_.game);
                     auto text = chosen.wstring();
                     if (candidate.valid()) {
-                        project_.emplace(chosen);
+                        project_.emplace(chosen, settings_.game);
+                        covers_.clear();
                         settings_.project_root = candidate.root().wstring();
+                        settings_.game = project_->game();
                         play_status_.clear();
                         save_settings();
                         append_log(format(L"[launcher] project: %ls\n", text.c_str()));
+                        window_.set_title(current_title() + L" — Launcher");
                         refresh();
                         if (launch_wanted_) {
                             launch_wanted_ = false;
@@ -1476,12 +1755,111 @@ void App::locate_project() {
                         }
                     } else {
                         show_message(L"Not a project folder",
-                                     std::wstring(L"That folder does not hold "
-                                                  L"naruto/CMakeLists.txt and "
-                                                  L"tools/extract_disc.py:\n\n") +
+                                     std::wstring(L"That folder does not hold the game "
+                                                  L"folders and tools/extract_disc.py:\n\n") +
                                          text);
                     }
                 });
+}
+
+std::vector<GameInfo> App::available_games() const {
+    std::vector<GameInfo> out;
+    if (!project_) return out;
+    for (const auto& game : Project::games()) {
+        std::error_code ec;
+        if (fs::is_regular_file(project_->root() / game.folder / L"CMakeLists.txt", ec))
+            out.push_back(game);
+    }
+    return out;
+}
+
+const App::Cover* App::cover(const std::wstring& folder) {
+    if (!project_) return nullptr;
+    // The key carries the project root, so a moved or newly chosen project folder does
+    // not pick up art from the old one.
+    std::wstring key = (project_->root() / folder).wstring();
+    auto found = covers_.find(key);
+    if (found != covers_.end()) return found->second.loaded ? &found->second : nullptr;
+
+    Cover art;
+    std::error_code ec;
+    for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"}) {
+        fs::path path = project_->root() / folder / name;
+        if (!fs::is_regular_file(path, ec)) continue;
+        art.loaded = load_image(path, &art.width, &art.height, art.pixels);
+        break;
+    }
+    Cover& stored = covers_.emplace(key, std::move(art)).first->second;
+    return stored.loaded ? &stored : nullptr;
+}
+
+const App::Cover& App::placeholder_cover() {
+    if (placeholder_.loaded) return placeholder_;
+
+    // A still, dark box with the launcher's accent glowing behind where the logo sits,
+    // so an empty cover looks deliberate rather than broken.
+    constexpr int kWidth = 300;
+    constexpr int kHeight = 400;
+    const float glow_x = kWidth * 0.5f;
+    const float glow_y = kHeight * 0.33f;
+    const float glow_radius = kWidth * 0.62f;
+
+    placeholder_.width = kWidth;
+    placeholder_.height = kHeight;
+    placeholder_.pixels.resize(static_cast<size_t>(kWidth) * kHeight);
+    const Color top = rgb(0x262d39);
+    const Color bottom = rgb(0x151920);
+    const Color accent = rgb(theme::Accent);
+    for (int y = 0; y < kHeight; ++y) {
+        float t = static_cast<float>(y) / (kHeight - 1);
+        for (int x = 0; x < kWidth; ++x) {
+            float distance = std::hypot(static_cast<float>(x) - glow_x,
+                                        static_cast<float>(y) - glow_y) /
+                             glow_radius;
+            float glow = std::pow(std::clamp(1.0f - distance, 0.0f, 1.0f), 2.4f) * 0.30f;
+            auto channel = [&](float from, float to, float light) {
+                float value = from + (to - from) * t;
+                value += (light - value) * glow;
+                return static_cast<std::uint32_t>(
+                    std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
+            };
+            std::uint32_t red = channel(top.r, bottom.r, accent.r);
+            std::uint32_t green = channel(top.g, bottom.g, accent.g);
+            std::uint32_t blue = channel(top.b, bottom.b, accent.b);
+            placeholder_.pixels[static_cast<size_t>(y) * kWidth + x] =
+                0xFF000000u | (red << 16) | (green << 8) | blue;
+        }
+    }
+    placeholder_.loaded = true;
+    return placeholder_;
+}
+
+std::wstring App::current_title() const {
+    return project_ ? project_->title() : std::wstring(kTitle);
+}
+
+void App::select_game(const std::wstring& folder) {
+    if (!project_ || busy_ || game_.running()) return;
+    if (folder == project_->game()) return;
+    Project next(project_->root(), folder);
+    if (!next.valid()) return;
+    project_ = std::move(next);
+    settings_.game = project_->game();
+    play_status_.clear();
+    save_settings();
+    window_.set_title(current_title() + L" — Launcher");
+    append_log(format(L"[launcher] game: %ls\n", project_->title().c_str()));
+    refresh();
+}
+
+void App::launch_game(const std::wstring& folder) {
+    if (busy_ || game_.running()) return;
+    if (!project_) {
+        launch();
+        return;
+    }
+    select_game(folder);
+    launch();
 }
 
 void App::choose_image() {
@@ -1778,11 +2156,11 @@ std::vector<Task> App::build_tasks() {
     auto ninja = find_tool(L"ninja" + wstring(exe_suffix()));
     if (cmake.empty() || ninja.empty()) return tasks;
 
-    fs::path naruto = project_->naruto();
+    fs::path game_dir = project_->game_dir();
     fs::path build = project_->build_dir();
     fs::path root = project_->root();
     std::vector<std::wstring> configure = {
-        L"-S", naruto.wstring(), L"-B", build.wstring(), L"-G", L"Ninja",
+        L"-S", game_dir.wstring(), L"-B", build.wstring(), L"-G", L"Ninja",
         L"-DCMAKE_BUILD_TYPE=RelWithDebInfo",
     };
     auto sdl = bundled_sdl2_prefix();
@@ -1845,6 +2223,10 @@ void App::play() {
     };
     if (settings_.mute_music) args.push_back(L"--no-music");
     if (!settings_.input_log) args.push_back(L"--no-input-log");
+    // One pad per controller, and never fewer than the pads the picker names.
+    int players = settings_.players;
+    for (const auto& device : devices_) players = std::max(players, device.pad);
+    args.push_back(L"--players=" + std::to_wstring(std::clamp(players, 1, 4)));
     args.push_back(L"--controls=" + project_->controls().wstring());
 
     settings_.project_root = project_->root().wstring();
@@ -1852,7 +2234,7 @@ void App::play() {
     append_log(L"\n$ " + command_line(project_->binary().wstring(), args) + L"\n");
     play_status_ = L"Starting…";
     bool started =
-        game_.start(project_->binary().wstring(), args, project_->naruto(),
+        game_.start(project_->binary().wstring(), args, project_->game_dir(),
                     [this](const std::wstring& text) {
                         post([this, text] { append_log(text); });
                     },
@@ -1895,6 +2277,115 @@ void App::open_path(const fs::path& path) {
     }
 }
 
+// Who plays as whom: the keyboard and each controller the game can see, one row each.
+void App::open_players() {
+    refresh_devices();
+    overlay_open_ = true;
+    overlay_players_ = true;
+    overlay_confirm_ = false;
+    overlay_update_ = false;
+    overlay_callback_ = nullptr;
+    overlay_title_ = L"Players";
+    overlay_action_ = L"Done";
+    settings_open_ = false;
+    scale_open_ = false;
+    pad_menu_row_ = -1;
+    invalidate();
+}
+
+void App::refresh_devices() {
+    devices_.clear();
+    keyboard_pad_ = 1;
+    devices_note_.clear();
+    // A stand-in list for the renders: the same two rows whatever this machine has
+    // plugged in, so the drawing is the same everywhere it is checked.
+    if (rendering_) {
+        devices_ = {{L"Xbox Wireless Controller", 1, 0}, {L"PS4 Controller", 1, 2}};
+        return;
+    }
+    std::error_code ec;
+    // The game answers for itself: its own SDL sees the devices, and it names them exactly
+    // as the pad pins in controls.txt do.
+    if (!project_ || !fs::exists(project_->binary(), ec)) {
+        devices_note_ = L"Build the game first: the launcher asks it which controllers it sees.";
+        return;
+    }
+    std::string out;
+    if (!capture_output(project_->binary().wstring(),
+                        {L"--list-devices", L"--controls=" + project_->controls().wstring()}, &out))
+        return;
+    for (const auto& line : split(widen(out), L'\n')) {
+        auto fields = split(line, L'\t');
+        if (fields.size() >= 2 && fields[0] == L"keyboard") {
+            keyboard_pad_ = std::clamp(std::atoi(narrow(fields[1]).c_str()), 1, 4);
+        } else if (fields.size() >= 4 && fields[0] == L"device") {
+            DeviceRow device;
+            device.nth = std::atoi(narrow(fields[1]).c_str());
+            device.pad = std::atoi(narrow(fields[2]).c_str());
+            device.name = fields[3];
+            devices_.push_back(device);
+        }
+    }
+    if (devices_.empty()) devices_note_ = L"No controller found. Plug one in and press Refresh.";
+}
+
+// The pads this picker owns are the `pad = "<device>" <n>` and `keyboard_pad = <n>` lines.
+// Everything else in controls.txt is the player's own mapping and is kept as written, and
+// so is a pin for a controller that is unplugged right now: it is still who plays next
+// time it is plugged in.
+void App::write_pad_pins() {
+    // A render checks the panel, not the player's disk: it runs with no game to read back
+    // from, so its device list is a stand-in and must not reach controls.txt.
+    if (!project_ || rendering_) return;
+    const fs::path path = project_->controls();
+    std::wstring text;
+    std::error_code ec;
+    if (fs::exists(path, ec)) text = read_text_file(path);
+    std::map<std::wstring, int> pins;
+    std::wstring kept;
+    for (const auto& line : split(text, L'\n')) {
+        auto words = split(trim(line), L' ');
+        if (!words.empty() && words[0] == L"pad") {
+            const size_t open = line.find(L'"', line.find(L"pad"));
+            const size_t close = line.rfind(L'"');
+            if (open != std::wstring::npos && close != std::wstring::npos && close > open) {
+                const int pad = std::atoi(narrow(line.substr(close + 1)).c_str());
+                if (pad >= 1 && pad <= 4) pins[line.substr(open + 1, close - open - 1)] = pad;
+            }
+            continue;
+        }
+        if (!words.empty() && words[0] == L"keyboard_pad") continue;
+        kept += line;
+        kept += L'\n';
+    }
+    for (const auto& device : devices_) {
+        std::wstring label = device.name;
+        if (device.nth > 1) label += L" #" + std::to_wstring(device.nth);
+        if (device.pad == 0) pins.erase(label);
+        else pins[label] = device.pad;
+    }
+    if (keyboard_pad_ != 1)
+        kept += L"keyboard_pad = " + std::to_wstring(keyboard_pad_) + L"\n";
+    int highest = 1;
+    for (const auto& [label, pad] : pins) {
+        kept += L"pad = \"" + label + L"\" " + std::to_wstring(pad) + L"\n";
+        highest = std::max(highest, pad);
+    }
+    if (!write_text_file(path, narrow(kept))) {
+        show_message(L"Player pads", L"The launcher could not write\n\n" + path.wstring());
+        return;
+    }
+    // A pad past the cap would be ignored by the game, so the cap follows the picks.
+    settings_.players = std::max(settings_.players, highest);
+    save_settings();
+    append_log(L"[launcher] players: keyboard is player " + std::to_wstring(keyboard_pad_) + L"\n");
+    for (const auto& [label, pad] : pins)
+        append_log(L"[launcher] players: \"" + label + L"\" is player " +
+                   std::to_wstring(pad) + L"\n");
+    refresh_devices();  // so the rows show what the game now reads back
+    invalidate();
+}
+
 void App::reset_controls() {
     if (!project_) return;
     std::error_code ec;
@@ -1924,6 +2415,7 @@ void App::show_message(const std::wstring& title, const std::wstring& text,
     overlay_action_ = action;
     overlay_callback_ = nullptr;
     overlay_update_ = false;
+    overlay_players_ = false;
     scale_open_ = false;
     invalidate();
 }
@@ -1938,6 +2430,7 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
     overlay_action_ = action;
     overlay_callback_ = std::move(confirmed);
     overlay_update_ = false;
+    overlay_players_ = false;
     scale_open_ = false;
     invalidate();
 }
@@ -1946,6 +2439,8 @@ void App::close_overlay() {
     overlay_open_ = false;
     overlay_confirm_ = false;
     overlay_update_ = false;
+    overlay_players_ = false;
+    pad_menu_row_ = -1;
     overlay_callback_ = nullptr;
     invalidate();
 }
@@ -2113,9 +2608,11 @@ void App::open_update_page() {
 void App::open_settings() {
     settings_open_ = true;
     scale_open_ = false;
+    pad_menu_row_ = -1;
     settings_note_.clear();
     tools_ = check_tools();
     refresh_source_status();
+    refresh_devices();
     invalidate();
 }
 

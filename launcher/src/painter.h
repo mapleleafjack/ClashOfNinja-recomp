@@ -107,6 +107,12 @@ class Painter {
     bool has_logo() const { return !logo_.empty(); }
     void draw_logo(const RectF& rect);
 
+    // Draws 0xAARRGGBB pixels into `rect`, scaled to fill it and cropping what does not
+    // fit, so an image keeps its proportions. `radius` rounds the corners, `opacity`
+    // fades the whole image over what is underneath.
+    void draw_image(const RectF& rect, const std::uint32_t* pixels, int width, int height,
+                    float radius = 0.0f, float opacity = 1.0f);
+
   private:
     std::unique_ptr<TextEngine> text_;
     Present present_;

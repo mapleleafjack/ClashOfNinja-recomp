@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
-# A tagged release passes the tag as the version, so the bundle reports it; a plain
-# configure keeps the historical 1.0.
+# A tagged release passes the tag as the version, so the bundle reports it, and CI passes
+# 0.0.0 for a branch build. A plain configure is a development build too: 0.0.0 keeps it
+# from offering to replace itself with the published release.
 if(NOT NLA_VERSION)
-  set(NLA_VERSION "1.0")
+  set(NLA_VERSION "0.0.0")
 endif()
 project(NarutoLauncher VERSION ${NLA_VERSION} LANGUAGES CXX)
 
@@ -222,9 +223,15 @@ add_test(NAME render-picker
 add_test(NAME click-settings
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-settings.bmp" click:990,42)
 add_test(NAME click-details
-         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,567)
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,765)
 add_test(NAME click-choose-image
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-choose-image.bmp" settings-click:789,280)
+add_test(NAME render-players
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-players.bmp" players)
+# Picks a pad for the second controller on the panel: opens its menu, then takes item 2.
+add_test(NAME click-players
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-players.bmp"
+                 "players-click:735,433;690,510")
 add_test(NAME render-update
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-update.bmp" update)
 add_test(NAME render-update-banner

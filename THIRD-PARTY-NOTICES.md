@@ -106,7 +106,8 @@ respective owners. If you redistribute the launcher, keep this attribution with 
 
 ## Not third-party, but worth restating
 
-`naruto/analysis/symbols.txt` is a symbol map — addresses, sizes and names recovered from
-the user's own disc, which is the same class of artefact every decompilation project
-publishes. `naruto/recomp/*.txt` are steering tables of addresses. Neither contains any of
-the game's code or content, and neither is a licensed third-party work.
+`naruto/analysis/symbols.txt` and `naruto2/analysis/symbols.txt` are symbol maps —
+addresses, sizes and names recovered from the user's own discs, which is the same class of
+artefact every decompilation project publishes. `naruto/recomp/*.txt` and
+`naruto2/recomp/*.txt` are steering tables of addresses. None of them contains any of the
+games' code or content, and none is a licensed third-party work.

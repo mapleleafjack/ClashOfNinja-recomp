@@ -52,9 +52,12 @@ Settings Settings::load() {
     auto values = read(fs::path(file_path()));
     Settings settings;
     settings.project_root = read_text(values, L"projectRoot");
+    settings.game = read_text(values, L"game");
     settings.last_image = read_text(values, L"lastImage");
     settings.scale = read_int(values, L"scale", 2);
     if (settings.scale < 1 || settings.scale > 4) settings.scale = 2;
+    settings.players = read_int(values, L"players", 4);
+    if (settings.players < 1 || settings.players > 4) settings.players = 4;
     settings.mute_music = read_bool(values, L"muteMusic", false);
     settings.input_log = read_bool(values, L"inputLog", true);
     settings.check_updates = read_bool(values, L"checkUpdates", true);
@@ -75,8 +78,10 @@ void Settings::save() const {
         text += format(L"%ls=%ls\n", key, value.c_str());
     };
     put(L"projectRoot", project_root);
+    put(L"game", game);
     put(L"lastImage", last_image);
     put(L"scale", std::to_wstring(scale));
+    put(L"players", std::to_wstring(players));
     put(L"muteMusic", mute_music ? L"1" : L"0");
     put(L"inputLog", input_log ? L"1" : L"0");
     put(L"checkUpdates", check_updates ? L"1" : L"0");

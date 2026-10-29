@@ -4,6 +4,7 @@
 
 # The extracted disc, and any disc image in any format nodtool reads.
 naruto/rom/
+naruto2/rom/
 *.iso
 *.ciso
 *.rvz
@@ -19,7 +20,9 @@ naruto/rom/
 
 # Build output, dtk output, and the disc-derived dtk project config.
 naruto/build/
+naruto2/build/
 config/GNREDA/
+config/GNUEDA/
 orig/
 build/
 build-*/
@@ -27,8 +30,14 @@ build-*/
 # The memory card and input logs. The runtime writes `saves/` beside the current
 # directory, so a run started from the project root leaves one there too.
 naruto/saves/
+naruto2/saves/
 /saves/
 /inputs/
+
+# Cover art the launcher shows for each game. Box art belongs to the publisher, so it
+# stays on the machine that has it; `git add -f` a file you drew yourself.
+naruto/cover.*
+naruto2/cover.*
 
 # The launcher's build output.
 launcher/build/
