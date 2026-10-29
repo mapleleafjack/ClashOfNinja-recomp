@@ -5,8 +5,8 @@
 namespace nla {
 
 struct Settings {
-    std::wstring project_root;
-    // The game folder under the project root: "naruto", "naruto2", "gnt3" or "gnt4".
+    // The game folder: "naruto", "naruto2", "gnt3" or "gnt4". The project itself is always
+    // the launcher's own folder, so there is no path to remember here.
     std::wstring game;
     std::wstring last_image;
     int scale = 2;

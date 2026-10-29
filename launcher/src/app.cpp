@@ -98,7 +98,7 @@ bool App::create() {
     // What an earlier update could not remove once its helper had finished.
     clean_up_after_update();
 
-    auto root = Project::locate(settings_.project_root);
+    auto root = Project::locate();
     if (root) project_.emplace(*root, settings_.game);
     if (project_) settings_.game = project_->game();
 
@@ -132,13 +132,9 @@ bool App::create() {
     // Art for a game that has none, so the page is not bare on a fresh install.
     fetch_covers();
 
-    // Which folder is in use, and why it is that one: a remembered choice looks like the
-    // launcher ignoring the project it shipped with unless it says so.
+    // Which folder is in use, so the log never leaves where the games are a guess.
     if (project_) {
-        bool remembered = !settings_.project_root.empty() &&
-                          fs::path(settings_.project_root) == project_->root();
-        append_log(format(L"[launcher] project: %ls%ls\n", project_->root().c_str(),
-                          remembered ? L" (remembered)" : L""));
+        append_log(format(L"[launcher] project: %ls\n", project_->root().c_str()));
     }
     if (!project_) {
         append_log(L"[launcher] project folder not located yet; Launch the game asks "
@@ -296,11 +292,20 @@ void App::handle_event(const SDL_Event& event) {
             if (dropped.empty()) return;
             if (fs::is_directory(dropped, ec)) {
                 Project candidate(dropped, settings_.game);
+                if (!candidate.valid()) {
+                    std::wstring error;
+                    if (!Project::create(dropped, &error)) {
+                        show_message(L"Could not set the folder up", error);
+                        return;
+                    }
+                    append_log(format(L"[launcher] wrote the game folders in %ls\n",
+                                      dropped.wstring().c_str()));
+                    candidate = Project(dropped, settings_.game);
+                }
                 if (candidate.valid()) {
                     project_.emplace(dropped, settings_.game);
                     covers_.clear();
                     fetch_covers();
-                    settings_.project_root = candidate.root().wstring();
                     settings_.game = project_->game();
                     play_status_.clear();
                     save_settings();
@@ -459,7 +464,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
     headless_ = true;
     settings_ = Settings::load();
     tools_ = check_tools();
-    if (auto root = Project::locate(settings_.project_root)) project_.emplace(*root, settings_.game);
+    if (auto root = Project::locate()) project_.emplace(*root, settings_.game);
     if (project_) settings_.game = project_->game();
     status_ = project_ ? project_->status() : ProjectStatus{};
     append_log(L"[launcher] render check");
@@ -639,9 +644,9 @@ void App::paint_games() {
         pill_text = L"running";
         pill_state = Pill::Ok;
     } else if (!project_) {
-        title = L"Find the game folder";
-        detail = L"Put the launcher beside the project folder, or pick it once here: the "
-                 L"launcher remembers the choice.";
+        title = L"Set up your game folder";
+        detail = L"Pick a folder and the launcher writes the four game folders into it, then "
+                 L"extracts your disc. It remembers the choice.";
         pill_text = L"setup";
         pill_state = Pill::Warn;
     } else if (!status_.disc.extracted) {
@@ -730,7 +735,7 @@ void App::paint_games() {
                       Face::Hero, rgb(theme::Text), TextAlign::Center);
         painter_.text(detail, RectF(center_x - 340, top + 82, center_x + 340, top + 136),
                       Face::Body, rgb(theme::Muted), TextAlign::Center);
-        button(Id::Launch, Rect{center_x - 130, top + 152, 260, 50}, L"Find the game folder",
+        button(Id::Launch, Rect{center_x - 130, top + 152, 260, 50}, L"Choose a folder",
                true, !busy_, false, Face::ButtonLarge);
         if (!play_status_.empty()) {
             painter_.text(play_status_,
@@ -1698,16 +1703,26 @@ void App::continue_launch() {
 
 void App::locate_project() {
     fs::path start = project_ ? project_->root() : home_dir();
-    choose_path(PickerKind::Folder, L"Choose the folder that holds the game folders and tools/",
-                start,
+    choose_path(PickerKind::Folder, L"Choose the folder to put the game folders in", start,
                 [this](const fs::path& chosen) {
                     Project candidate(chosen, settings_.game);
                     auto text = chosen.wstring();
+                    if (!candidate.valid()) {
+                        // An empty folder is the normal case: the projects are the
+                        // launcher's to write, since they are not in the package.
+                        std::wstring error;
+                        if (!Project::create(chosen, &error)) {
+                            show_message(L"Could not set the folder up", error);
+                            return;
+                        }
+                        append_log(format(L"[launcher] wrote the game folders in %ls\n",
+                                          text.c_str()));
+                        candidate = Project(chosen, settings_.game);
+                    }
                     if (candidate.valid()) {
                         project_.emplace(chosen, settings_.game);
                         covers_.clear();
                         fetch_covers();
-                        settings_.project_root = candidate.root().wstring();
                         settings_.game = project_->game();
                         play_status_.clear();
                         save_settings();
@@ -1728,14 +1743,10 @@ void App::locate_project() {
 }
 
 std::vector<GameInfo> App::available_games() const {
-    std::vector<GameInfo> out;
-    if (!project_) return out;
-    for (const auto& game : Project::games()) {
-        std::error_code ec;
-        if (fs::is_regular_file(project_->root() / game.folder / L"CMakeLists.txt", ec))
-            out.push_back(game);
-    }
-    return out;
+    // All four, always: the covers are the launcher's whole first page, and a game whose
+    // folder does not exist yet gets it when a disc is chosen for it.
+    if (!project_) return {};
+    return std::vector<GameInfo>(Project::games());
 }
 
 const App::Cover* App::cover(const std::wstring& folder) {
@@ -1869,7 +1880,9 @@ void App::select_game(const std::wstring& folder) {
     if (!project_ || busy_ || game_.running()) return;
     if (folder == project_->game()) return;
     Project next(project_->root(), folder);
-    if (!next.valid()) return;
+    // A game the launcher has not set up yet is still a game: it gets its folder when a
+    // disc is chosen for it.
+    if (!next.valid() && Project::game_info(folder).folder != folder) return;
     project_ = std::move(next);
     settings_.game = project_->game();
     play_status_.clear();
@@ -2116,6 +2129,22 @@ void App::start_setup(const fs::path& image) {
         show_message(L"Disc image", L"No such file:\n\n" + image.wstring());
         return;
     }
+    // The game folders are the launcher's to write: a release carries none, so the first
+    // disc chosen for a game sets it up where the launcher lives.
+    if (!fs::is_regular_file(project_->cmake_lists(), ec)) {
+        std::wstring error;
+        if (!Project::create(project_->root(), &error)) {
+            show_message(L"Could not set the folder up", error);
+            return;
+        }
+        auto root = project_->root();
+        auto game = project_->game();
+        project_.emplace(root, game);
+        save_settings();
+        append_log(format(L"[launcher] wrote the game folders in %ls\n",
+                          project_->root().wstring().c_str()));
+        refresh();
+    }
     if (fs::exists(project_->dol(), ec)) {
         show_confirm(L"Replace the extracted disc?",
                      L"A disc is already extracted. Extract again from this image and "
@@ -2230,6 +2259,61 @@ std::vector<Task> App::build_tasks() {
     if (find_tool(L"cl.exe").empty()) configure.push_back(L"-DGCN_OPENXR=OFF");
 #endif
 
+    // The recompiler needs the disc's function map, and a project the launcher wrote starts
+    // without one: dtk makes it from the DOL the launcher extracted. dtk resolves the paths
+    // in its config against the working directory and misreads a Windows drive letter, so
+    // everything is relative to the game folder, which is where it runs.
+    std::error_code symbols_ec;
+    if (!fs::is_regular_file(project_->analysis_symbols(), symbols_ec)) {
+        auto game_dir = project_->game_dir();
+        auto hash = project_->expected_sha1();
+        // A release carries dtk; a -Lean release or a checkout does not, and then the
+        // pinned build is fetched once, so the first build needs nothing installed by hand.
+        auto dtk = std::make_shared<std::wstring>(find_tool(L"dtk" + wstring(exe_suffix())));
+        if (dtk->empty()) {
+            tasks.push_back({L"Fetching dtk…", [dtk](Job& job) -> int {
+                                 std::wstring error;
+                                 *dtk = ensure_dtk(job, &error);
+                                 if (dtk->empty()) {
+                                     job.log(L"[launcher] dtk was not found and could not be "
+                                             L"fetched: " + error + L"\n");
+                                     return 127;
+                                 }
+                                 return 0;
+                             }});
+        }
+        tasks.push_back({L"Reading the disc's symbols…", [dtk, game_dir,
+                                                          hash](Job& job) -> int {
+                             if (dtk->empty()) return 127;  // the step above said why
+                             std::error_code ec;
+                             fs::path work = fs::path(L"build") / L"dtk";
+                             fs::create_directories(game_dir / work, ec);
+                             fs::create_directories(game_dir / L"analysis", ec);
+                             fs::path config = work / L"config.yml";
+                             const std::wstring text =
+                                 L"object: \"rom/disc/sys/main.dol\"\nhash: " + hash +
+                                 L"\nsymbols: \"analysis/symbols.txt\"\n"
+                                 L"splits: \"build/dtk/splits.txt\"\n";
+                             if (!write_text_file(game_dir / config, narrow(text))) {
+                                 job.log(L"[launcher] could not write " +
+                                         (game_dir / config).wstring() + L"\n");
+                                 return 1;
+                             }
+                             job.log(L"$ dtk dol split " + config.wstring() + L" " +
+                                     work.wstring() + L"\n");
+                             int code = job.run_process(
+                                 *dtk, {L"dol", L"split", config.wstring(), work.wstring()},
+                                 game_dir);
+                             if (code != 0) return code;
+                             if (!fs::is_regular_file(game_dir / L"analysis" / L"symbols.txt",
+                                                      ec)) {
+                                 job.log(L"[launcher] dtk wrote no symbol map\n");
+                                 return 1;
+                             }
+                             return 0;
+                         }});
+    }
+
     tasks.push_back({L"Configuring CMake…", [cmake, configure, root](Job& job) -> int {
                          job.log(L"$ " + command_line(cmake, configure) + L"\n");
                          return job.run_process(cmake, configure, root);
@@ -2276,7 +2360,7 @@ void App::play() {
     args.push_back(L"--players=" + std::to_wstring(std::clamp(players, 1, 4)));
     args.push_back(L"--controls=" + project_->controls().wstring());
 
-    settings_.project_root = project_->root().wstring();
+    settings_.game = project_->game();
     save_settings();
     append_log(L"\n$ " + command_line(project_->binary().wstring(), args) + L"\n");
     play_status_ = L"Starting…";
@@ -2588,10 +2672,7 @@ void App::open_settings() {
     invalidate();
 }
 
-void App::save_settings() {
-    if (project_) settings_.project_root = project_->root().wstring();
-    settings_.save();
-}
+void App::save_settings() { settings_.save(); }
 
 }  // namespace nla
 

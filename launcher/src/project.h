@@ -56,13 +56,23 @@ class Project {
     fs::path saves() const;
     fs::path extract_script() const;
     fs::path cmake_lists() const;
+    // The disc's symbol map, which dtk makes from the DOL the launcher extracted.
+    fs::path analysis_symbols() const;
+
+    // Writes the four game projects into `root`, copies in the recompiler and the tool
+    // script the launcher travels with, and leaves whatever is already there alone. True
+    // when `root` is a project afterwards; `error` says what went wrong when it is not.
+    static bool create(const fs::path& root, std::wstring* error);
 
     std::wstring disc_id() const;
     std::wstring expected_sha1() const;
     DiscStatus disc_status() const;
     ProjectStatus status() const;
 
-    static std::optional<fs::path> locate(const std::wstring& saved);
+    // The folder the launcher works in: its own, beside the executable, so the game
+    // folders, the disc, the build and the saves travel with it. A macOS bundle cannot be
+    // written into, so it works in the copy it laid down in the user's folder instead.
+    static std::optional<fs::path> locate();
 
   private:
     fs::path root_;

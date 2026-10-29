@@ -12,10 +12,10 @@ hardware, so this is not an emulator: it is an ordinary executable that runs the
 | Gekitou Ninja Taisen! 3 | `G3NJDA` |
 | Gekitou Ninja Taisen! 4 | `G4NJDA` |
 
-The game projects are not in this repository: each one's symbol map and steering tables are
-recovered from the disc, so they stay on the machine that has it. A release ships the launcher
-and the tools and is pointed at your own checkout — [Building and running](docs/BUILDING.md)
-covers making one.
+The game projects are not in this repository: each one's symbol map and steering tables come
+from the disc, so the launcher writes the four projects into its own folder and reads your own
+disc for the symbol maps. A release carries no game folder — [Releases](docs/RELEASING.md)
+covers what it does carry.
 
 ![The launcher with all four games](docs/screenshots/launcher.png)
 
@@ -25,7 +25,7 @@ covers making one.
 
 Releases are on the
 [releases page](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest) (latest is
-v1.4.0).
+v1.5.0).
 
 | Platform | Download | Also needs |
 | --- | --- | --- |
@@ -37,10 +37,10 @@ v1.4.0).
    `C:\Games\NarutoLauncher` — MinGW-w64 will not run from one. Windows may also warn that the
    publisher is unknown, as the launcher is not code-signed yet: *More info → Run anyway*. On
    macOS, right-click → Open the app the first time (it is signed ad hoc, not notarised).
-2. **Start the launcher.** It lists the game projects in your checkout, one cover each.
-3. **Click a cover and choose your disc image.** The first click extracts the disc and builds
-   the game, which takes a few minutes; on Windows it first fetches about 190 MB of build
-   tools, with a progress bar.
+2. **Start the launcher.** The four games appear as covers.
+3. **Click a cover and choose your disc image.** The first click writes that game's folder
+   into the launcher's own folder, extracts the disc and builds the game, which takes a few
+   minutes; on Windows it first fetches about 190 MB of build tools, with a progress bar.
 4. **Play.** After that a click starts the game. Saves and controller mappings stay in that
    game's folder.
 

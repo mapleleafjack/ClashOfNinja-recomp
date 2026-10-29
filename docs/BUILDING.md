@@ -7,8 +7,10 @@
 
 Each game needs its own disc image, and none may be committed or shipped. The game folder
 has to exist first — `<game>/CMakeLists.txt`, its `analysis/symbols.txt` and its
-`recomp/*.txt`, which are yours to keep locally and are not in this repository; `setup.sh`
-stops with `error: no game project at …` without it. Any format
+`recomp/*.txt`, which are yours to keep locally and are not in this repository. The launcher
+writes that tree into the folder it lives in and makes `symbols.txt` with dtk from your own
+`main.dol` (fetching dtk itself when it has none); from a terminal, `setup.sh` stops with
+`error: no game project at …` until the folder is there. Any format
 [nodtool](https://github.com/encounter/nod) reads works:
 
 `ISO` · `CISO` · `RVZ` · `WIA` · `GCZ` · `WBFS` · `TGC` · `NFS`
@@ -63,10 +65,15 @@ putting an `.iso`/`.ciso` in `rom/` instead of the extracted tree.
 
 ### Without the launcher, from a release
 
-A release can be driven from a terminal. Download one from the
-[releases page](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest). It has no
-game project in it, so it is pointed at yours: `NARUTO_TOOLS` names the release's `tools/`
-folder, and `tools/setup.sh` in your checkout does the rest.
+A release carries no game project, so the terminal path runs from a folder the launcher has set
+up — the first disc chosen for a game writes `naruto\`, `naruto2\`, `gnt3\` and `gnt4\` beside
+the launcher — or from a checkout. In that folder `tools/setup.sh` extracts the disc and builds
+with the tools the release carries; `NARUTO_TOOLS` names the release's `tools/` folder.
+
+```sh
+NARUTO_TOOLS="/Applications/Naruto Launcher.app/Contents/Resources/tools" \
+    tools/setup.sh --run "/path/to/your disc image"
+```
 
 ```sh
 NARUTO_TOOLS="/Applications/Naruto Launcher.app/Contents/Resources/tools" \

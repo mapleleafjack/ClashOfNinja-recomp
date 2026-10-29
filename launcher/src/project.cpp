@@ -1,5 +1,6 @@
 #include "project.h"
 
+#include "project_templates.h"
 #include "util.h"
 #include "version.h"
 
@@ -44,22 +45,27 @@ bool looks_like_project(const fs::path& root) {
 // What the disc supplied, what the build writes, and what the player changed: a newer
 // launcher's copy of the sources must leave all of it alone.
 bool is_runtime_path(std::wstring_view relative) {
-    if (relative == L"naruto/controls.txt") return true;
-    for (const wchar_t* name : {L"naruto/rom", L"naruto/build", L"naruto/saves"}) {
-        std::wstring_view prefix(name);
-        if (relative == prefix) return true;
-        if (relative.size() > prefix.size() && relative.compare(0, prefix.size(), prefix) == 0 &&
-            relative[prefix.size()] == L'/') {
-            return true;
+    for (const auto& game : kGames) {
+        std::wstring controls = game.folder + L"/controls.txt";
+        if (relative == controls) return true;
+        for (const wchar_t* name : {L"rom", L"build", L"saves"}) {
+            std::wstring dir = game.folder + L"/" + name;
+            std::wstring_view prefix(dir);
+            if (relative == prefix) return true;
+            if (relative.size() > prefix.size() &&
+                relative.compare(0, prefix.size(), prefix) == 0 &&
+                relative[prefix.size()] == L'/') {
+                return true;
+            }
         }
     }
     return false;
 }
 
-// A bundle may carry a project in Contents/Resources/project — a released one does not, but
-// an assembled one can — and a signed bundle must not be written into, so it is copied
-// where a build can write: beside the launcher's settings. The marker holds the launcher's
-// version, so an updated launcher lays its copy down once without disturbing the disc, the
+// A bundle may carry a project in Contents/Resources/project, and a signed bundle must not
+// be written into, so it is copied where a build can write: beside the launcher's
+// settings. The marker holds the launcher's version, so an updated launcher lays its copy
+// down once without disturbing the disc, the
 // build or the saves.
 std::optional<fs::path> seed_bundled_project() {
     fs::path resources = bundle_resources_dir();
@@ -142,6 +148,83 @@ fs::path Project::controls() const { return game_dir() / L"controls.txt"; }
 fs::path Project::saves() const { return game_dir() / L"saves"; }
 fs::path Project::extract_script() const { return root_ / L"tools" / L"extract_disc.py"; }
 fs::path Project::cmake_lists() const { return game_dir() / L"CMakeLists.txt"; }
+fs::path Project::analysis_symbols() const {
+    return game_dir() / L"analysis" / L"symbols.txt";
+}
+
+bool Project::create(const fs::path& root, std::wstring* error) {
+    auto fail = [error](const std::wstring& text) {
+        if (error) *error = text;
+        return false;
+    };
+
+    std::error_code ec;
+    fs::create_directories(root, ec);
+    if (ec) return fail(L"Could not create " + root.wstring() + L": " + widen(ec.message()));
+
+    for (const auto& game : game_templates()) {
+        fs::path dir = root / game.folder;
+        // A folder that has one of the game folders already is someone's project: never
+        // write into it over their files.
+        if (fs::exists(dir, ec) && !fs::is_regular_file(dir / L"CMakeLists.txt", ec)) {
+            return fail(dir.wstring() + L" is already there and is not a game folder. Choose "
+                        L"an empty folder, or one the launcher set up before.");
+        }
+        fs::create_directories(dir / L"analysis", ec);
+        fs::create_directories(dir / L"recomp", ec);
+        if (ec) return fail(L"Could not create " + dir.wstring() + L": " + widen(ec.message()));
+        for (const auto& file : game.files) {
+            fs::path path = dir / file.path;
+            if (fs::exists(path, ec)) continue;
+            if (!write_text_file(path, file.text))
+                return fail(L"Could not write " + path.wstring());
+        }
+    }
+
+    // The recompiler all four projects add, and the script the launcher looks for as the
+    // project's marker, both travel with the launcher: beside it on Windows and Linux, in
+    // Contents/Resources inside a macOS bundle. A development build finds them above
+    // itself, in the checkout it was built from.
+    fs::path shipped = bundle_resources_dir();
+    if (shipped.empty()) {
+        for (fs::path candidate = fs::path(exe_dir()); !candidate.empty();
+             candidate = candidate.parent_path()) {
+            if (fs::is_regular_file(candidate / L"gcn-recomp" / L"CMakeLists.txt", ec) &&
+                fs::is_regular_file(candidate / L"tools" / L"extract_disc.py", ec)) {
+                shipped = candidate;
+                break;
+            }
+            if (candidate.parent_path() == candidate) break;
+        }
+    }
+    if (shipped.empty()) {
+        return fail(L"No gcn-recomp folder and tools\\extract_disc.py were found beside the "
+                    L"launcher, so the game cannot be built. Unzip the whole package, not just "
+                    L"the executable.");
+    }
+    fs::path recomp = shipped / L"gcn-recomp";
+    if (!fs::exists(root / L"gcn-recomp", ec)) {
+        fs::copy(recomp, root / L"gcn-recomp", fs::copy_options::recursive, ec);
+        if (ec) return fail(L"Could not copy the recompiler: " + widen(ec.message()));
+    }
+
+    fs::path tools = shipped / L"tools";
+    if (!fs::is_regular_file(tools / L"extract_disc.py", ec)) {
+        return fail(L"The launcher has no tools\\extract_disc.py beside it. Unzip the whole "
+                    L"package, not just the executable.");
+    }
+    fs::create_directories(root / L"tools", ec);
+    for (const wchar_t* name : {L"extract_disc.py", L"setup.sh"}) {
+        if (!fs::is_regular_file(tools / name, ec)) continue;
+        if (fs::exists(root / L"tools" / name, ec)) continue;
+        fs::copy_file(tools / name, root / L"tools" / name, fs::copy_options::none, ec);
+        if (ec) return fail(L"Could not copy " + (root / L"tools" / name).wstring());
+    }
+
+    if (!looks_like_project(root)) return fail(L"Could not set up the game folders in " +
+                                               root.wstring());
+    return true;
+}
 
 std::wstring Project::disc_id() const {
     auto text = read_text_file(cmake_lists());
@@ -180,37 +263,22 @@ ProjectStatus Project::status() const {
     return status;
 }
 
-std::optional<fs::path> Project::locate(const std::wstring& saved) {
-    // A release ships the game's sources and was built to use them, so the folder beside
-    // or above the launcher wins: a folder remembered from another copy used to come first,
-    // which made a fresh release build a checkout elsewhere and look as if it had brought
-    // nothing with it. A remembered folder still counts when the launcher sits nowhere near
-    // a project.
+std::optional<fs::path> Project::locate() {
+    // The launcher works in its own folder, always: the game folders it writes, the disc it
+    // extracts, the build and the saves all sit beside the executable. Nothing above it, no
+    // folder it was started from and no remembered path is ever used instead, so a copy
+    // carried somewhere else takes its games with it.
     std::error_code ec;
-    fs::path app(exe_dir());
-    if (looks_like_project(app)) return app;
-    // The macOS bundle keeps its copy in Resources and builds from the one it laid down.
-    if (auto shipped = seed_bundled_project()) return shipped;
-
-    std::error_code walk_ec;
-    std::vector<fs::path> starts;
-    starts.push_back(app);
-    starts.push_back(fs::current_path(walk_ec));
-
-    for (const auto& start : starts) {
-        for (fs::path candidate = start; !candidate.empty();) {
-            if (looks_like_project(candidate)) return candidate;
-            auto parent = candidate.parent_path();
-            if (parent == candidate) break;
-            candidate = parent;
-        }
+    // A signed macOS bundle must not be written into, so that release builds in the copy of
+    // the project it laid down in the user's own folder.
+    if (auto seeded = seed_bundled_project()) return seeded;
+    if (!bundle_resources_dir().empty()) {
+        fs::path project = user_data_dir() / L"project";
+        fs::create_directories(project, ec);
+        if (ec) return std::nullopt;
+        return project;
     }
-
-    if (!saved.empty()) {
-        fs::path path(saved);
-        if (looks_like_project(path)) return path;
-    }
-    return std::nullopt;
+    return fs::path(exe_dir());
 }
 
 }  // namespace nla

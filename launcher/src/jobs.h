@@ -20,6 +20,10 @@ struct Task {
     std::function<int(Job&)> run;
 };
 
+// Runs a queue of tasks with the worker's output collected in a string, then writes that
+// to `log`. For a console run with no Activity panel to show the steps in.
+int run_tasks_to_log(std::vector<Task> tasks, const fs::path& log);
+
 // Runs a short queue of tasks on one worker thread. A child process is started in its own
 // process group (POSIX) or job object (Windows), so Cancel kills the whole tree, including
 // compilers the build spawns.

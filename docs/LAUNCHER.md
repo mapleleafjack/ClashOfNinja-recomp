@@ -87,15 +87,19 @@ nothing else has to be installed for it to start.
   with *Cancel* is not asked about again but stays behind the **Update** button in the header.
   A build from a branch hides itself from this, and an install that cannot be written to falls
   back to the release page. The check is the only network request the launcher makes, apart
-  from box art.
-- **Game source.** An update replaces the launcher only; the game is compiled from the project
-  folder the launcher found or was given. The launcher does not update those sources: it
-  builds whatever is there. Nothing is shipped with the launcher, so the project folder is
-  always one you supplied, and newer sources are something to put in place yourself.
+  from box art and the dtk it fetches when it has none.
+- **Game source.** A package carries no game folder: the launcher writes `naruto\`,
+  `naruto2\`, `gnt3\` and `gnt4\` into the folder it lives in, with the recompiler and
+  `tools\extract_disc.py` beside them, when a disc is first chosen for a game, and dtk makes
+  that disc's symbol map. A release carries dtk in `tools\dtk`; a `-Lean` release, or a copy
+  the tool archive was never downloaded for, fetches the pinned build (about 8 MB) into
+  `tools\dtk` the first time a symbol map is needed, so nothing has to be installed by hand.
+  An update replaces the launcher only; the disc, the build and the saves stay where they are.
 - **Settings.** Three things, and nothing else: **Players…** (which controller and keyboard
   play as which pad), the window scale a game opens at, and the update check. Everything else
-  the launcher works out on its own — the project folder and the disc image are asked for from
-  the main page — and the remaining play options keep their defaults: music on, input log on.
+  the launcher works out on its own — the folder is always the one the executable is in, and
+  the disc image is asked for from the main page — and the remaining play options keep their
+  defaults: music on, input log on.
 - **Choosing a folder or an image.** The platform's own chooser: `IFileOpenDialog` with
   `FOS_PICKFOLDERS` on Windows, `NSOpenPanel` on macOS, `zenity` or `kdialog` on Linux. Only a
   Linux machine with neither of those falls back to the picker the launcher draws itself.
@@ -107,12 +111,12 @@ nothing else has to be installed for it to start.
   the pinned SHA-256, and unpacks it into `tools/` — the prompt that appears when a build is
   asked for without them.
 
-Drag a disc image or a project folder onto the window, or choose one. A release carries no
-game project, so what a player supplies is their own checkout and their own disc. The launcher
-uses the project it finds above the executable, or the folder you choose, and if it finds
-neither, the first **Launch the game** asks for it. *Show details* reveals the Activity log whenever it is hidden; the covers stay,
-smaller, beside it. Cover art added while the launcher is running is picked up the next time
-it starts.
+Drag a disc image or a project folder onto the window, or click a cover. A package carries no
+game project, so the covers are always shown and the first disc chosen for a game sets its
+folder up beside the launcher — the game folders, the disc, the build and the saves are always
+in the launcher's own folder, never one above it or one used earlier. *Show details* reveals
+the Activity log whenever it is hidden; the covers stay, smaller, beside it. Cover art added
+while the launcher is running is picked up the next time it starts.
 
 ## Testing it without a window
 

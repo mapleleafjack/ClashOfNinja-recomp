@@ -2,8 +2,9 @@ Naruto: Clash of Ninja - launcher (macOS)
 ========================================
 
 Drag Naruto Launcher.app wherever you like (Applications is fine) and open it.
-It asks for your project folder and your own USA copy of the game, extracts the
-disc, builds the game and starts it. Nothing from the game is included here.
+The four games appear as covers; click one and choose your own USA copy of the game.
+The launcher writes the game folders, extracts the disc, builds the game and starts
+it. Nothing from the game is included here.
 
 What you need
     A C++ compiler. macOS builds are made from your own disc, and Apple's compiler
@@ -19,24 +20,23 @@ What you need
     and waits for it before carrying on. An Xcode installation (or a beta) brings
     the same compiler and SDK and counts too.
 
-    Your own copy of the game projects - the folders holding each game's symbol
-    map and steering tables. Those come off the disc, so they are not part of this
-    app. CMake, Ninja, SDL2 and nodtool are: they live in Contents/Resources/tools,
-    so nothing else is fetched from anywhere.
+    No game project: the launcher writes the four into its own folder, and dtk - which
+    is inside the app, with CMake, Ninja, SDL2 and nodtool - makes each game's symbol map
+    from your own disc. Nothing is fetched from anywhere.
 
 First start
     macOS will not run an app it has not seen before: right-click the app and
     choose Open, once. The bundle is signed ad hoc, not notarised.
 
-    Choose your project folder when the launcher asks for it, then your disc image.
-    The extracted disc, the build and your saves stay inside that project folder,
-    and the game itself is then at:
+    Choose a cover, then your disc image. The launcher writes the game folders beside
+    its own data, and the extracted disc, the build and your saves stay there. The
+    game itself is then at:
 
-        <project>/naruto/build/naruto
+        ~/Library/Application Support/NarutoLauncher/project/naruto/build/naruto
 
 Prefer a terminal?
     The launcher only runs these steps for you, and the tools it uses are inside
-    the app. From your project folder:
+    the app. From the folder the launcher set up:
 
         NARUTO_TOOLS="/Applications/Naruto Launcher.app/Contents/Resources/tools" \
             tools/setup.sh --run "/path/to/your disc image"

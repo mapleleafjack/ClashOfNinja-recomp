@@ -3,9 +3,11 @@
 [README](../README.md) · [Building and running](BUILDING.md) · [The launcher](LAUNCHER.md) ·
 [Recompilation notes](RECOMPILATION.md)
 
-A release carries the launcher and as much of the toolchain as may be redistributed — and no
-game data. It carries no game project either: their symbol maps come off the disc. `.github/workflows/build.yml` builds it; the game itself is
-never built there, because it needs the user's own disc.
+A release carries the launcher, the recompiler and as much of the toolchain as may be
+redistributed — and no game project and no game data. The launcher writes the four game
+folders into a folder a player chooses, and dtk makes each game's symbol map from that
+player's own disc, so a download needs no checkout. `.github/workflows/build.yml` builds it;
+the game itself is never built there, because it needs the user's own disc.
 
 | Event | What happens |
 | --- | --- |
@@ -25,8 +27,8 @@ gh workflow run build.yml -f bundle=true     # exercise the bundle without a rel
 
 | Asset | Holds |
 | --- | --- |
-| `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the build tools inside, plus the notices |
-| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, and no game project |
+| `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the build tools and the recompiler inside, plus the notices |
+| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, `gcn-recomp\`, `tools\extract_disc.py` and the notices; no game folder |
 | `NarutoLauncher-tools-windows-x64-v<version>.zip` | the toolchain the launcher downloads on first use |
 
 The tag also names the version: the workflow passes it as `NLA_VERSION`, which becomes the
@@ -58,12 +60,15 @@ powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -S
 powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Lean -SkipBuild -Zip -Version 1.0.1
 ```
 
-Both forms carry the game's sources: the release folder is `naruto\` and its siblings (sources,
-minus the extracted disc, the build and the saves), `tools\extract_disc.py`, `covers\` if the
-machine had any, the launcher, and the notices. That is the project layout the launcher looks
-for, so it finds the project without being told and a player only ever supplies a disc image.
-`-Lean` ships that and no toolchain; a full release adds `tools\cmake`, `tools\ninja`,
-`tools\mingw64`, `tools\python`, `tools\sdl2` and `tools\nodtool`.
+Both forms carry the same launcher folder: `NarutoLauncher.exe`, `gcn-recomp\` (the project's
+own recompiler, which all four game projects add), `tools\extract_disc.py` and
+`tools\setup.sh`, `covers\` if the machine had any, and the notices. There is no game folder:
+the launcher writes `naruto\`, `naruto2\`, `gnt3\` and `gnt4\` into the folder it was unzipped
+to when a cover is first clicked, copies the recompiler and the script in beside them, and runs
+dtk on that player's `main.dol` to make each game's `analysis\symbols.txt`. `-Lean` ships that
+and no toolchain, and fetches the pinned dtk itself the first time it needs a symbol map; a
+full release adds `tools\cmake`, `tools\ninja`, `tools\mingw64`, `tools\python`, `tools\sdl2`,
+`tools\nodtool` and `tools\dtk`.
 
 `-Split` writes `launcher/dist/NarutoLauncher-tools-windows-x64-v<Version>.zip` and prints its
 SHA-256 and size. Pass those three to CMake when the launcher is configured, so the build can
@@ -88,10 +93,10 @@ against the tree and the script fails if the two disagree, then prints the SHA-2
 release notes. They are written with the `tar` that ships with Windows (bsdtar) rather than
 `Compress-Archive`, which left a 4 KB archive and no error after minutes on this tree.
 
-The launcher ships no game data: the extracted tree is created inside the release folder on
+The launcher ships no game data: the extracted tree is created in the folder the player chose on
 first use, and `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
-The workflow fails the build if the release ever carries any game's `rom/`, `build/` or
-`saves/`.
+The workflow fails the build if the release ever carries a game folder, any game's `rom/`,
+`build/` or `saves/`, or `covers/`.
 
 ## The macOS release
 
@@ -103,10 +108,11 @@ installation — including a beta — brings the same compiler and SDK and count
 else has to be installed: no Homebrew, no `pkg-config`, no checkout, because the game's CMake
 prefers the bundled SDL2's CMake package over `pkg-config`.
 
-`NarutoLauncher-macOS-arm64-v<version>.zip` carries the launcher (SDL2 linked statically) and
-the tools that build the game in `Contents/Resources/tools` — CMake, Ninja, the static SDL2 the
-game links, and nodtool — and no game project. The launcher is pointed at your own checkout and
-builds there with those tools.
+`NarutoLauncher-macOS-arm64-v<version>.zip` carries the launcher (SDL2 linked statically), the
+tools that build the game in `Contents/Resources/tools` — CMake, Ninja, the static SDL2 the game
+links, nodtool and dtk — and the recompiler in `Contents/Resources/gcn-recomp`. There is no game
+project: the launcher writes the four into the folder a player chooses and makes the symbol maps
+from their disc.
 
 What is inside is kept small: CMake ships as the single `cmake` binary thinned to arm64 plus its
 module tree, about 18 MB where the full Kitware `.app` is 180 MB, and the whole zip is about
@@ -122,8 +128,9 @@ Nothing derived from a disc is in the bundle: there is no game project in it at 
 ## Publishing
 
 What ships is the project's own work: the recompiler in `gcn-recomp/`, the launcher and the
-tools. The game projects are not published at all — their symbol maps and steering tables come
-off the disc, so they stay in the checkout of the machine that has it. No `main.dol`, no disc
+tools. The game projects are not published at all — they are not in the repository, the launcher
+writes their files from templates it carries, and their symbol maps and steering data come from
+the player's own disc. No `main.dol`, no disc
 file, no image and no build output is published, and neither is any game's `saves/` folder (a
 memory card) or `covers/` (the publisher's box art). A binary built from this additionally carries
 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) and `licenses/`, which is a licence

@@ -1,4 +1,5 @@
 #include "app.h"
+#include "project.h"
 #include "tools.h"
 #include "tools_package.h"
 #include "util.h"
@@ -43,6 +44,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         LocalFree(argv);
         return code;
     }
+    // The same for the dtk a launcher without its tools fetches to make a symbol map.
+    if (argv && argc >= 3 && wcscmp(argv[1], L"--fetch-dtk") == 0) {
+        int code = nla::fetch_dtk_to_log(std::filesystem::path(argv[2]));
+        LocalFree(argv);
+        return code;
+    }
+    // Writes the four game projects into a folder, which is what the window offers to do.
+    if (argv && argc >= 3 && wcscmp(argv[1], L"--make-project") == 0) {
+        std::wstring error;
+        bool ok = nla::Project::create(std::filesystem::path(argv[2]), &error);
+        if (!ok) std::fwprintf(stderr, L"%ls\n", error.c_str());
+        LocalFree(argv);
+        return ok ? 0 : 1;
+    }
     if (argv) LocalFree(argv);
     nla::App app;
     return app.create() ? app.run() : 1;
@@ -59,6 +74,15 @@ int main(int argc, char** argv) {
     }
     if (argc >= 3 && std::strcmp(argv[1], "--fetch-tools") == 0) {
         return nla::fetch_tools_to_log(std::filesystem::path(argv[2]));
+    }
+    if (argc >= 3 && std::strcmp(argv[1], "--fetch-dtk") == 0) {
+        return nla::fetch_dtk_to_log(std::filesystem::path(argv[2]));
+    }
+    if (argc >= 3 && std::strcmp(argv[1], "--make-project") == 0) {
+        std::wstring error;
+        bool ok = nla::Project::create(std::filesystem::path(argv[2]), &error);
+        if (!ok) std::fprintf(stderr, "%s\n", nla::narrow(error).c_str());
+        return ok ? 0 : 1;
     }
     nla::App app;
     return app.create() ? app.run() : 1;

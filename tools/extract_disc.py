@@ -25,7 +25,13 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(PROJECT, 'naruto', 'gcn-recomp', 'recomp'))
+# gcn-recomp sits beside the game folders; a checkout from before the move kept its own
+# copy in naruto/. Whichever is here is the one dol.py lives in.
+for _recomp in ('gcn-recomp', os.path.join('naruto', 'gcn-recomp')):
+    _path = os.path.join(PROJECT, _recomp, 'recomp')
+    if os.path.isdir(_path):
+        sys.path.insert(0, _path)
+        break
 from dol import DiscImage  # noqa: E402
 
 DEFAULT_DISC_ID = 'GNREDA'

@@ -72,6 +72,7 @@ set(NLA_SOURCES
   src/painter.cpp
   src/jobs.cpp
   src/project.cpp
+  src/project_templates.cpp
   src/settings.cpp
   src/shortcut.cpp
   src/tools.cpp

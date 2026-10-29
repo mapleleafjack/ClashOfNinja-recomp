@@ -10,9 +10,10 @@
     a toolchain. That is a large folder (about 1 GB unzipped, mostly MinGW); pass
     -Lean for a small launcher that uses an installed toolchain instead.
 
-    Either way what ships is the launcher and, unless -Lean, the toolchain. The game
-    projects are not in a release: their symbol maps come off the disc, so they live in
-    the player's own checkout, which the launcher is pointed at.
+    Either way what ships is the launcher, the recompiler in gcn-recomp\, and, unless
+    -Lean, the toolchain. The game projects do not ship: the launcher writes them into the
+    folder a player chooses, and dtk makes each one's symbol map from that player's own
+    disc, so a release needs no checkout and no game data.
 
 .EXAMPLE
     .\build-release.ps1 -Zip
@@ -29,7 +30,8 @@ param(
     [switch]$Clean,
     [string]$Version = "",
     [switch]$Split,
-    [string]$NodtoolVersion = 'v2.0.0-alpha.12'
+    [string]$NodtoolVersion = 'v2.0.0-alpha.12',
+    [string]$DtkVersion = 'v1.8.4'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -224,32 +226,73 @@ if (-not $Lean) {
         $apache = Join-Path $project 'licenses\Apache-2.0.txt'
         if (Test-Path $apache) { Copy-Item $apache $nodLicense }
     }
+
+    # dtk: reads the disc's main.dol and writes the function map the recompiler needs, so
+    # a folder the launcher made builds without a checkout. Same shape as nodtool: a local
+    # copy wins, otherwise the pinned release binary.
+    $dtkOut = Join-Path $tools 'dtk'
+    New-Item -ItemType Directory -Force -Path $dtkOut | Out-Null
+    $dtk = Find-Tool 'dtk.exe'
+    if (-not $dtk) {
+        $dtk = Join-Path $dtkOut 'dtk.exe'
+        if (-not (Test-Path $dtk)) {
+            Write-Host "downloading dtk $DtkVersion"
+            $url = "https://github.com/encounter/decomp-toolkit/releases/download/$DtkVersion/dtk-windows-x86_64.exe"
+            Invoke-WebRequest -Uri $url -OutFile $dtk
+        }
+    } else {
+        Copy-Item $dtk (Join-Path $dtkOut 'dtk.exe')
+    }
+}
+
+# What a player needs beside the launcher, and no game project: the launcher writes those
+# into the folder they choose, and dtk makes the symbol maps from their own disc. The
+# recompiler is the project's own published code, so it travels; the one file the launcher
+# looks for as the project's marker, and the terminal path to the same steps, travel too.
+if (-not $Split) {
+    Write-Host 'copying the recompiler and the tools'
+    $recomp = Join-Path $project 'gcn-recomp'
+    if (-not (Test-Path (Join-Path $recomp 'CMakeLists.txt'))) {
+        throw "no recompiler at $recomp"
+    }
+    Copy-Item $recomp (Join-Path $outDir 'gcn-recomp') -Recurse -Force
+    $projectTools = Join-Path $outDir 'tools'
+    New-Item -ItemType Directory -Force -Path $projectTools | Out-Null
+    Copy-Item (Join-Path $project 'tools\extract_disc.py') (Join-Path $projectTools 'extract_disc.py')
+    Copy-Item (Join-Path $project 'tools\setup.sh') (Join-Path $projectTools 'setup.sh')
+    # Box art this machine already had; the launcher fetches the rest itself.
+    $covers = Join-Path $project 'covers'
+    if (Test-Path $covers) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'covers') | Out-Null
+        Get-ChildItem $covers -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $outDir 'covers') }
+    }
 }
 
 $readme = @'
 Naruto: Clash of Ninja - launcher
 =================================
 
-NarutoLauncher.exe extracts your own disc image, builds the recompilation and
-starts the game. Nothing from the game is included here.
+NarutoLauncher.exe writes the game folders, extracts your own disc image, builds
+the recompilation and starts the game. Nothing from the game is included here.
 
 First start
-    Choose Disc Image... and pick your own USA copy of the game. The launcher
-    extracts it, then configures and compiles the game and starts it. Later
-    starts go straight to Play.
+    The four games appear as covers. Click one and choose Disc Image..., your own USA
+    copy of the game. The launcher writes naruto\, naruto2\, gnt3\ and gnt4\ into this
+    folder on that first click, extracts the disc into that game's rom\disc, reads the
+    symbol map from it with dtk, and configures and compiles the game. Later starts go
+    straight to Play.
 
-    The launcher builds the game from the project folder it was started in, or
-    the one chosen in Settings: that is your own checkout, holding the game
-    folders beside the recompiler - the symbol maps come off the disc, so they
-    are not part of a release. Keep the folder path free of spaces: the
-    bundled MinGW-w64 compiler cannot run from one.
+    Keep the folder you unzip it to free of spaces: the bundled MinGW-w64 compiler
+    cannot run from one.
 
 Tools
-    A release built with tools\ carries cmake, ninja, MinGW-w64, Python and nodtool there,
-    and the launcher prefers them over anything installed on the machine. nodtool reads
-    RVZ, WIA, GCZ, WBFS, TGC and NFS images, so any of those can be chosen directly. If
-    tools\ is missing, the launcher offers to download it (about 189 MB) the first time it
-    needs to build. A -Lean release has no tools and uses PATH or a system install instead.
+    A release built with tools\ carries cmake, ninja, MinGW-w64, Python, dtk and
+    nodtool there, and the launcher prefers them over anything installed on the
+    machine. nodtool reads RVZ, WIA, GCZ, WBFS, TGC and NFS images, so any of those
+    can be chosen directly. If tools\ is missing, the launcher offers to download it
+    (about 189 MB) the first time it needs to build. A -Lean release has no tools and
+    uses PATH or a system install instead, and fetches dtk itself the first time it
+    makes a symbol map.
 
 Settings
     The Settings panel holds the window scale, which controller plays as which pad, and
@@ -257,8 +300,7 @@ Settings
     build whenever a cover is clicked without one.
 
 The extracted disc stays in <game>\rom\disc, the build in <game>\build, saves in
-<game>\saves, and controls in <game>\controls.txt - all inside the project folder,
-so the whole game can be moved or deleted as one.
+<game>\saves, and controls in <game>\controls.txt - all inside this folder.
 '@
 Set-Content -Path (Join-Path $outDir 'README.txt') -Value $readme -Encoding UTF8
 

@@ -439,4 +439,18 @@ void GameProcess::shutdown() {
     running_.store(false);
 }
 
+int run_tasks_to_log(std::vector<Task> tasks, const fs::path& log) {
+    std::string text;
+    std::atomic<int> code{-1};
+    Job job;
+    job.start(
+        std::move(tasks), [&text](const std::wstring& line) { text += narrow(line); },
+        [&text](const std::wstring& line) { text += narrow(line) + "\n"; },
+        [&text](int percent) { text += narrow(format(L"[launcher] %d%%\n", percent)); },
+        [&code](int status) { code = status; });
+    while (code.load() < 0) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    write_text_file(log, text);
+    return code.load();
+}
+
 }  // namespace nla

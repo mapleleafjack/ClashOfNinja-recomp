@@ -1,10 +1,7 @@
 #include "tools_package.h"
 
-#include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <fstream>
-#include <thread>
 
 #include "tools.h"
 #include "util.h"
@@ -271,18 +268,7 @@ std::vector<Task> tools_package_tasks() {
 int fetch_tools_to_log(const fs::path& log) {
     std::vector<Task> tasks = tools_package_tasks();
     if (tasks.empty()) return 1;
-
-    std::string text;
-    std::atomic<int> code{-1};
-    Job job;
-    job.start(
-        std::move(tasks), [&text](const std::wstring& line) { text += narrow(line); },
-        [&text](const std::wstring& line) { text += narrow(line) + "\n"; },
-        [&text](int percent) { text += narrow(format(L"[launcher] %d%%\n", percent)); },
-        [&code](int status) { code = status; });
-    while (code.load() < 0) std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    write_text_file(log, text);
-    return code.load();
+    return run_tasks_to_log(std::move(tasks), log);
 }
 
 }  // namespace nla

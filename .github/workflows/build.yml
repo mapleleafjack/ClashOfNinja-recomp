@@ -128,6 +128,20 @@ jobs:
             https://github.com/encounter/nod/releases/download/v2.0.0-alpha.12/nodtool-macos-arm64
           chmod +x "$res/tools/nodtool/nodtool"
 
+          # dtk, which reads the disc's main.dol and writes the symbol map the recompiler
+          # needs; the launcher runs it once per game, after the disc is extracted.
+          mkdir -p "$res/tools/dtk"
+          curl -fsSL -o "$res/tools/dtk/dtk" \
+            https://github.com/encounter/decomp-toolkit/releases/download/v1.8.4/dtk-macos-arm64
+          chmod +x "$res/tools/dtk/dtk"
+
+          # The recompiler the game projects add, and the tool script the launcher copies
+          # into the folder it sets up. The game projects themselves are written by the
+          # launcher, so a release carries none.
+          cp -R gcn-recomp "$res/gcn-recomp"
+          mkdir -p "$res/tools"
+          cp tools/extract_disc.py tools/setup.sh "$res/tools/"
+
       - name: The bundled tools run
         shell: bash
         run: |
@@ -135,7 +149,10 @@ jobs:
           res="launcher/build-ci/NarutoLauncher.app/Contents/Resources"
           "$res/tools/cmake/bin/cmake" --version | head -1
           "$res/tools/ninja/ninja" --version
+          "$res/tools/dtk/dtk" --version
           test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
+          test -f "$res/gcn-recomp/CMakeLists.txt"
+          test -f "$res/tools/extract_disc.py"
           test ! -e "$res/project"
 
       - name: Sign ad hoc and package
@@ -311,14 +328,18 @@ jobs:
           ./launcher/packaging/build-release.ps1 -Lean -SkipBuild -Zip
           -Version "${{ steps.version.outputs.value }}"
 
-      - name: The release carries nothing from the disc
+      - name: The release carries no game folder
         shell: pwsh
         run: |
-          # The launcher and its tools ship; no game project and nothing derived from a
-          # disc does, because a game folder's symbol maps come off the player's own copy.
+          # The launcher, the recompiler and the tools ship; the game folders do not. The
+          # launcher writes them into the folder a player chooses, and dtk makes each one's
+          # symbol map from that player's own disc, so nothing derived from a disc is here.
           $out = Join-Path 'launcher/dist' 'NarutoLauncher'
-          if (-not (Test-Path (Join-Path $out 'NarutoLauncher.exe'))) {
-            throw 'the release is missing NarutoLauncher.exe'
+          foreach ($needed in 'NarutoLauncher.exe', 'gcn-recomp\CMakeLists.txt',
+                             'tools\extract_disc.py', 'tools\setup.sh') {
+            if (-not (Test-Path (Join-Path $out $needed))) {
+              throw "the release is missing $needed"
+            }
           }
           foreach ($path in 'naruto', 'naruto2', 'gnt3', 'gnt4', 'config', 'covers') {
             if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }

@@ -9,17 +9,6 @@
 
 namespace nla {
 
-// curl is what reaches the network: part of macOS, on PATH in the Windows bundle's
-// System32 and everywhere else this builds.
-std::wstring curl_tool() {
-#if defined(_WIN32)
-    return find_tool_from({L"C:\\Windows\\System32\\curl.exe"}, L"curl.exe");
-#else
-    return find_tool_from({L"/usr/bin/curl", L"/usr/local/bin/curl", L"/opt/homebrew/bin/curl"},
-                          L"curl");
-#endif
-}
-
 namespace {
 
 // The launcher asks this repository for its releases, unauthenticated.

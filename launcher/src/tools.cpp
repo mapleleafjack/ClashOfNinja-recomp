@@ -1,10 +1,12 @@
 #include "tools.h"
 
+#include "jobs.h"
 #include "util.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <set>
+#include <utility>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -94,7 +96,7 @@ std::wstring build_search_path() {
     fs::path bundled = launcher_tools_dir();
     add(bundled);
     for (const wchar_t* sub : {L"cmake/bin", L"ninja", L"mingw64/bin", L"python",
-                               L"python/bin", L"nodtool", L"sdl2/bin"}) {
+                               L"python/bin", L"nodtool", L"dtk", L"sdl2/bin"}) {
         add(bundled / sub);
     }
 
@@ -146,7 +148,103 @@ bool is_executable(const fs::path& path) {
 #endif
 }
 
+// The dtk release the launcher fetches when it has none of its own. build-release.ps1 and
+// the macOS bundle name the same version, so every route runs one build.
+constexpr wchar_t kDtkVersion[] = L"v1.8.4";
+
+// The asset dtk publishes for the machine this launcher was built for.
+std::wstring dtk_asset() {
+#if defined(_WIN32)
+    return L"dtk-windows-x86_64.exe";
+#elif defined(__APPLE__)
+#if defined(__aarch64__) || defined(__arm64__)
+    return L"dtk-macos-arm64";
+#else
+    return L"dtk-macos-x86_64";
+#endif
+#else
+#if defined(__aarch64__)
+    return L"dtk-linux-aarch64";
+#else
+    return L"dtk-linux-x86_64";
+#endif
+#endif
+}
+
 }  // namespace
+
+std::wstring curl_tool() {
+#if defined(_WIN32)
+    return find_tool_from({L"C:\\Windows\\System32\\curl.exe"}, L"curl.exe");
+#else
+    return find_tool_from({L"/usr/bin/curl", L"/usr/local/bin/curl", L"/opt/homebrew/bin/curl"},
+                          L"curl");
+#endif
+}
+
+std::wstring dtk_download_url() {
+    return std::wstring(L"https://github.com/encounter/decomp-toolkit/releases/download/") +
+           kDtkVersion + L"/" + dtk_asset();
+}
+
+std::wstring ensure_dtk(Job& job, std::wstring* error) {
+    auto have = find_tool(std::wstring(L"dtk") + exe_suffix());
+    if (!have.empty()) return have;
+
+    auto curl = curl_tool();
+    if (curl.empty()) {
+        if (error) *error = L"curl was not found, and the launcher uses it to fetch dtk";
+        return {};
+    }
+
+    // Beside the launcher is where a release keeps its tools. A copy that cannot be
+    // written into (a signed bundle, an install under Program Files) gets one in the
+    // user's data instead, and that path is used directly.
+    std::vector<fs::path> dirs;
+    if (bundle_resources_dir().empty()) dirs.push_back(launcher_tools_dir() / L"dtk");
+    dirs.push_back(user_data_dir() / L"tools" / L"dtk");
+
+    auto url = dtk_download_url();
+    job.log(format(L"[launcher] fetching dtk %ls\n", kDtkVersion));
+    for (const auto& dir : dirs) {
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        if (ec) continue;
+        fs::path out = dir / (std::wstring(L"dtk") + exe_suffix());
+        job.log(L"$ curl -fsSL " + url + L" -o " + out.wstring() + L"\n");
+        int code = job.run_process(curl,
+                                   {L"-fsSL", L"--retry", L"2", L"--connect-timeout", L"15",
+                                    L"-o", out.wstring(), url},
+                                   fs::path());
+        if (code != 0) {
+            fs::remove(out, ec);
+            continue;
+        }
+#ifndef _WIN32
+        fs::permissions(out,
+                        fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+                        fs::perm_options::add, ec);
+#endif
+        job.log(L"[launcher] dtk is in " + out.wstring() + L"\n");
+        rescan_environment();
+        return out.wstring();
+    }
+    if (error) *error = L"the download did not work; install dtk from "
+                        L"https://github.com/encounter/decomp-toolkit/releases";
+    return {};
+}
+
+int fetch_dtk_to_log(const fs::path& log) {
+    Task task{L"Fetching dtk…", [](Job& job) -> int {
+                  std::wstring error;
+                  if (ensure_dtk(job, &error).empty()) {
+                      job.log(error + L"\n");
+                      return 1;
+                  }
+                  return 0;
+              }};
+    return run_tasks_to_log(std::vector<Task>{std::move(task)}, log);
+}
 
 fs::path launcher_tools_dir() {
     // A macOS release keeps its tools inside the bundle, where they travel with the

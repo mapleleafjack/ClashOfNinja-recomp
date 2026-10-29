@@ -51,7 +51,6 @@ std::wstring Settings::file_path() {
 Settings Settings::load() {
     auto values = read(fs::path(file_path()));
     Settings settings;
-    settings.project_root = read_text(values, L"projectRoot");
     settings.game = read_text(values, L"game");
     settings.last_image = read_text(values, L"lastImage");
     settings.scale = read_int(values, L"scale", 2);
@@ -77,7 +76,6 @@ void Settings::save() const {
     auto put = [&text](const wchar_t* key, const wstring& value) {
         text += format(L"%ls=%ls\n", key, value.c_str());
     };
-    put(L"projectRoot", project_root);
     put(L"game", game);
     put(L"lastImage", last_image);
     put(L"scale", std::to_wstring(scale));
