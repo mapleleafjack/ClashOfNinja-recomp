@@ -3,10 +3,12 @@
 #include "util.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <map>
 #include <set>
+#include <thread>
 
 namespace nla {
 namespace {
@@ -303,6 +305,63 @@ bool write_all(const fs::path& path, const std::vector<uint8_t>& data, std::wstr
     return true;
 }
 
+// Putting the extracted tree in place means renaming a folder of some thousands of files,
+// and Windows refuses that while any one of them is still open: a virus scanner reading
+// what was just written, the indexer, a folder window. Those handles are short-lived, so
+// the step waits for them rather than reporting a permission error the player cannot act
+// on.
+constexpr int kSwapAttempts = 20;
+constexpr auto kSwapDelay = std::chrono::milliseconds(200);
+
+bool worth_retrying(const std::error_code& ec) {
+    // ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION and the errno
+    // values std::filesystem reports them as.
+    const int value = ec.value();
+    return value == 5 || value == 13 || value == 32 || value == 33 || value == 16;
+}
+
+// remove_all leaves a read-only file alone, and a disc tree that was copied rather than
+// extracted can have them.
+void allow_writes(const fs::path& root) {
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(
+             root, fs::directory_options::skip_permission_denied, ec),
+         end;
+         !ec && it != end; it.increment(ec)) {
+        auto permissions = it->status(ec).permissions();
+        if (ec) break;
+        if ((permissions & fs::perms::owner_write) == fs::perms::none)
+            fs::permissions(it->path(), fs::perms::owner_write, fs::perm_options::add, ec);
+    }
+}
+
+bool remove_tree(const fs::path& path, std::wstring* error) {
+    std::error_code ec;
+    for (int attempt = 0;; ++attempt) {
+        ec.clear();
+        fs::remove_all(path, ec);
+        if (!ec) return true;
+        if (attempt == 0) allow_writes(path);
+        if (attempt + 1 >= kSwapAttempts || !worth_retrying(ec)) break;
+        std::this_thread::sleep_for(kSwapDelay);
+    }
+    if (error) *error = widen(ec.message());
+    return false;
+}
+
+bool rename_tree(const fs::path& from, const fs::path& to, std::wstring* error) {
+    std::error_code ec;
+    for (int attempt = 0;; ++attempt) {
+        ec.clear();
+        fs::rename(from, to, ec);
+        if (!ec) return true;
+        if (attempt + 1 >= kSwapAttempts || !worth_retrying(ec)) break;
+        std::this_thread::sleep_for(kSwapDelay);
+    }
+    if (error) *error = widen(ec.message());
+    return false;
+}
+
 }  // namespace
 
 bool needs_nodtool(const fs::path& image) {
@@ -315,8 +374,9 @@ ExtractOutcome extract_disc(const ExtractRequest& request, const ExtractProgress
     ExtractOutcome outcome;
     fs::path staging = fs::path(request.outdir.wstring() + L".new");
     auto fail = [&](wstring message) {
-        std::error_code remove_ec;
-        fs::remove_all(staging, remove_ec);
+        // A failed swap can leave the staged tree behind with a file still open in it, so
+        // the clean-up waits for it the same way the swap does.
+        remove_tree(staging, nullptr);
         outcome.error = std::move(message);
         return outcome;
     };
@@ -398,8 +458,14 @@ ExtractOutcome extract_disc(const ExtractRequest& request, const ExtractProgress
     for (const auto& piece : extents) total += piece.size;
 
     // Extract into a fresh tree, then swap it in, so a failed run leaves the old disc.
-    std::error_code ec;
-    fs::remove_all(staging, ec);
+    // The fresh tree must start empty: leftovers from an interrupted run would be carried
+    // into place with it.
+    std::wstring swap_error;
+    if (!remove_tree(staging, &swap_error)) {
+        return fail(format(L"cannot clear %ls before extracting: %ls\n\n"
+                           L"Close anything that has that folder open and extract again.",
+                           staging.c_str(), swap_error.c_str()));
+    }
 
     report(8, L"Writing the disc tree…");
     uint64_t written = 0;
@@ -434,16 +500,45 @@ ExtractOutcome extract_disc(const ExtractRequest& request, const ExtractProgress
     if (!write_text_file(staging / L"disc.manifest", manifest))
         return fail(L"cannot write disc.manifest");
 
-    // Swap the new tree in.
+    // Swap the new tree in. The old disc is only let go of once the new one is in place,
+    // and it is put back if the new one cannot be moved in.
+    report(92, L"Putting the disc in place…");
+    std::error_code ec;
     fs::path previous = fs::path(request.outdir.wstring() + L".old");
-    fs::remove_all(previous, ec);
-    if (fs::exists(request.outdir, ec)) fs::rename(request.outdir, previous, ec);
-    fs::rename(staging, request.outdir, ec);
-    if (ec) {
-        return fail(format(L"cannot put the extracted disc in place: %ls",
-                           widen(ec.message()).c_str()));
+    if (!remove_tree(previous, &swap_error)) {
+        return fail(format(L"cannot clear the disc left behind at %ls: %ls\n\n"
+                           L"Close anything that has that folder open and extract again.",
+                           previous.c_str(), swap_error.c_str()));
     }
-    fs::remove_all(previous, ec);
+    bool moved_old = false;
+    if (fs::exists(request.outdir, ec)) {
+        if (!rename_tree(request.outdir, previous, &swap_error)) {
+            return fail(format(L"cannot move the disc at %ls aside: %ls\n\n"
+                               L"Close the game, and any folder window on it, and extract "
+                               L"again.",
+                               request.outdir.c_str(), swap_error.c_str()));
+        }
+        moved_old = true;
+    }
+    if (!rename_tree(staging, request.outdir, &swap_error)) {
+        // The disc the player already had goes back where the game looks for it.
+        std::wstring restore_error;
+        if (moved_old && !rename_tree(previous, request.outdir, &restore_error)) {
+            return fail(format(L"cannot put the extracted disc in place: %ls\n\n"
+                               L"The disc it was replacing could not be moved back either: "
+                               L"%ls\n\n"
+                               L"It is still at %ls. Close anything that has the folder "
+                               L"open and extract again.",
+                               swap_error.c_str(), restore_error.c_str(),
+                               previous.c_str()));
+        }
+        return fail(format(L"cannot put the extracted disc in place: %ls\n\n"
+                           L"Another program is holding one of the written files open, "
+                           L"such as a virus scanner. Let it finish, or close the folder, "
+                           L"and extract again.",
+                           swap_error.c_str()));
+    }
+    remove_tree(previous, nullptr);
 
     outcome.ok = true;
     outcome.bytes = written;

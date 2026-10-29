@@ -31,7 +31,9 @@ using ExtractProgress = std::function<void(int percent, const std::wstring& stag
 bool needs_nodtool(const fs::path& image);
 
 // Writes the disc's boot area, main.dol, the file system and every file it names
-// into `outdir`, plus the disc.manifest the runtime reads. Replaces an existing tree.
+// into `outdir`, plus the disc.manifest the runtime reads. Replaces an existing tree,
+// waiting briefly for a file another program still has open, since Windows refuses to
+// move the folder while one is.
 ExtractOutcome extract_disc(const ExtractRequest& request, const ExtractProgress& progress,
                             const std::atomic_bool& cancel);
 

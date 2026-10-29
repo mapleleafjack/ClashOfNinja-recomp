@@ -60,9 +60,11 @@ nothing else has to be installed for it to start.
 - **Game disc.** Reads ISO and CISO itself, including the FST offset shift that NKit and
   rebuilt images use. Other formats (RVZ, WIA, GCZ, WBFS, TGC, NFS) are converted with
   `nodtool` first. It checks `main.dol`'s SHA-1 before writing anything and puts the new tree
-  in place only when the whole extraction succeeded; the extractor writes the same bytes, and
-  the same `disc.manifest`, as `tools/extract_disc.py`. The expected disc ID and `main.dol`
-  hash are read from the selected game's `CMakeLists.txt`.
+  in place only when the whole extraction succeeded, waiting a few seconds for a file another
+  program still has open — a virus scanner on a just-written file, say — instead of failing on
+  it. The extractor writes the same bytes, and the same `disc.manifest`, as
+  `tools/extract_disc.py`. The expected disc ID and `main.dol` hash are read from the selected
+  game's `CMakeLists.txt`.
 - **Build.** CMake and Ninja, with their output streamed into Activity, a progress bar and
   Cancel. Cancel ends the whole build tree — a job object on Windows, the process group
   elsewhere — so compilers the build started go too.
