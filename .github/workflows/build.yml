@@ -36,8 +36,10 @@ jobs:
   macos:
     name: macOS (arm64)
     # macos-14 and later are Apple Silicon, which is what this build targets; macos-13
-    # and earlier are Intel.
-    runs-on: macos-14
+    # and earlier are Intel. 15 rather than 14: GitHub retires an image about a year after
+    # the last one, and macos-14 is being taken away with brownouts from 2026-11-01
+    # (https://github.com/actions/runner-images/issues/13518).
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
