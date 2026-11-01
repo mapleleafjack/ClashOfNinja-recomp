@@ -1,5 +1,7 @@
 # Naruto: Clash of Ninja — static recompilation
 
+<a href="https://ko-fi.com/jack2438"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"></a>
+
 Native Windows and macOS builds of four GameCube games, made from your own disc. The PowerPC
 code is translated to C once and linked against a runtime that implements the GameCube's
 hardware, so this is not an emulator: it is an ordinary executable that runs the real game, at
