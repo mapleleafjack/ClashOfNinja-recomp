@@ -113,7 +113,15 @@ bool create_shortcut(const fs::path& link, const fs::path& target, const fs::pat
     shell_link->SetPath(target.c_str());
     shell_link->SetWorkingDirectory(working_dir.c_str());
     shell_link->SetDescription(description.c_str());
-    if (!args.empty()) shell_link->SetArguments(join(args, L" ").c_str());
+    if (!args.empty()) {
+        // Each argument quoted on its own: a controls path under "C:\Games\Naruto Launcher"
+        // has a space in it, and IShellLink stores the arguments as one string it hands to
+        // the shell, which splits on them.
+        std::vector<std::wstring> quoted;
+        quoted.reserve(args.size());
+        for (const auto& arg : args) quoted.push_back(quote_arg(arg));
+        shell_link->SetArguments(join(quoted, L" ").c_str());
+    }
     shell_link->SetIconLocation(target.c_str(), 0);
 
     IPersistFile* file = nullptr;

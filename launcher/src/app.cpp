@@ -1316,12 +1316,14 @@ void App::write_game_entry() {
     args.push_back(L"--controls=" + project_->controls().wstring());
     std::wstring error;
     fs::path link = folder / game_entry_name(project_->game());
+    // Recorded before the attempt, so a folder that cannot be written to is reported once
+    // instead of on every refresh until the settings change again.
+    game_entry_for_ = key;
     if (!create_shortcut(link, project_->binary(), project_->game_dir(), project_->title(),
                          L"Starts " + project_->title(), args, &error)) {
         append_log(L"[launcher] the menu entry was not written: " + error + L"\n");
         return;
     }
-    game_entry_for_ = key;
     append_log(format(L"[launcher] menu entry: %ls\n", link.c_str()));
 }
 
