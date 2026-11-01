@@ -184,6 +184,94 @@ jobs:
           path: launcher/build-ci/NarutoLauncher-macOS-arm64-*.zip
           if-no-files-found: error
 
+  linux:
+    name: Linux (x64)
+    # 22.04 rather than 24.04: the binary is built against the runner's glibc, and an older
+    # one starts on more distributions. A Steam Deck runs SteamOS, whose glibc is recent
+    # enough either way, but a user on an older desktop distribution is better served here.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          # SDL2 is built from source below, and a subsystem it finds no headers for is
+          # left out of the library silently -- no video, no audio, no gamepads at run
+          # time. So the development packages it would otherwise detect are installed.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxfixes-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
+            libwayland-dev libdecor-0-dev fonts-dejavu-core xvfb
+
+      - name: Build SDL2 statically
+        shell: pwsh
+        # The distribution's SDL2 is a shared library, so a binary linking it only runs
+        # where SDL2 is installed. SteamOS is immutable and does not guarantee that, so
+        # the same pinned source the other two platforms build against is used here.
+        run: |
+          ./launcher/packaging/build-sdl2.ps1 -Prefix "$env:RUNNER_TEMP/sdl2"
+          "SDL2_DIR=$env:RUNNER_TEMP/sdl2/lib/cmake/SDL2" >> $env:GITHUB_ENV
+
+      - name: Configure
+        run: >
+          cmake -S launcher -B launcher/build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DSDL2_DIR="$SDL2_DIR"
+          -DNLA_VERSION="${{ steps.version.outputs.value }}"
+
+      - name: Build
+        # update_test is a ctest case of its own, so it has to exist before ctest runs.
+        run: ninja -C launcher/build-ci NarutoLauncher update_test
+
+      - name: Test
+        # The render and click cases draw a frame, so they need a display. Xvfb gives them
+        # one with no GPU, and the launcher needs a system font to draw at all.
+        run: xvfb-run --auto-servernum ctest --test-dir launcher/build-ci --output-on-failure
+
+      - name: No dynamic SDL2
+        run: |
+          set -euo pipefail
+          exe=launcher/build-ci/NarutoLauncher
+          if readelf -d "$exe" | grep -qi 'NEEDED.*SDL'; then
+            echo "::error::the launcher links SDL2 dynamically, so it would need SDL2 installed"
+            readelf -d "$exe" | grep -i 'NEEDED.*SDL'
+            exit 1
+          fi
+          echo "SDL2 is linked statically"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          stage="launcher/build-ci/package/NarutoLauncher Linux ${version}"
+          mkdir -p "$stage"
+          cp launcher/build-ci/NarutoLauncher "$stage/"
+          cp LICENSE THIRD-PARTY-NOTICES.md "$stage/"
+          cp -R licenses "$stage/licenses"
+          tar -cJf "launcher/build-ci/NarutoLauncher-Linux-x64-v${version}.tar.xz" \
+            -C launcher/build-ci/package "NarutoLauncher Linux ${version}"
+          sha256sum launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+          if-no-files-found: error
+
   windows:
     name: Windows (x64)
     # One job for both shapes, because a release run needs everything a compile check does:
@@ -361,7 +449,7 @@ jobs:
   publish:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [gate, macos, windows]
+    needs: [gate, macos, linux, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -377,9 +465,11 @@ jobs:
         run: |
           set -euo pipefail
           # One file per name: GitHub refuses a second upload of the same asset, so a stray
-          # copy in another artifact's folder must not fail the release.
+          # copy in another artifact's folder must not fail the release. The two desktop
+          # platforms ship a zip and Linux a tar.xz, so both suffixes are collected.
           mapfile -t assets < <(
-            find dist -name '*.zip' -type f -printf '%f\t%p\n' | sort -u -k1,1 | cut -f2-)
+            find dist \( -name '*.zip' -o -name '*.tar.xz' \) -type f -printf '%f\t%p\n' |
+              sort -u -k1,1 | cut -f2-)
           printf '%s\n' "${assets[@]}"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"

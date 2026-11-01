@@ -96,7 +96,10 @@ std::wstring build_search_path() {
     fs::path bundled = launcher_tools_dir();
     add(bundled);
     for (const wchar_t* sub : {L"cmake/bin", L"ninja", L"mingw64/bin", L"python",
-                               L"python/bin", L"nodtool", L"dtk", L"sdl2/bin"}) {
+                               L"python/bin", L"nodtool", L"dtk", L"sdl2/bin",
+                               // Where a Linux archive puts the compiler it carries: a Mac
+                               // bundle borrows Apple's, a Linux one has no such fallback.
+                               L"bin", L"toolchain/bin", L"gcc/bin"}) {
         add(bundled / sub);
     }
 
@@ -126,6 +129,14 @@ std::wstring build_search_path() {
     add(L"/opt/homebrew/sbin");
     add(L"/usr/local/bin");
     add(L"/usr/local/sbin");
+#if !defined(__APPLE__)
+    // Homebrew on Linux installs to the home directory, needs no root and survives a
+    // SteamOS update, which is the one way a Steam Deck gets a compiler of its own.
+    add(L"/home/linuxbrew/.linuxbrew/bin");
+    add(L"/home/linuxbrew/.linuxbrew/sbin");
+    add(home_dir() / L".linuxbrew" / L"bin");
+    add(home_dir() / L"homebrew" / L"bin");
+#endif
     add(home_dir() / L".cargo" / L"bin");
     add(home_dir() / L".local" / L"bin");
     add(L"/usr/bin");

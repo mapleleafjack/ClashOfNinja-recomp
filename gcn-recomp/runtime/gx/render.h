@@ -170,6 +170,9 @@ struct EfbCopyCmd {
     uint32_t clear_z_value;                // 24-bit
     bool writeback;                        // write it to RAM too (set_copy_writeback in gx.h)
     uint32_t writeback_ticket;             // which, for copy_writeback_done
+    // This display copy is the frame its buffer holds, and the front end ended a batch at
+    // it. False for a copy that is only part of a frame (see display_copy_ends_frame).
+    bool completes_frame;
 };
 
 // A copy written back (EfbCopyCmd::writeback): the renderer hands over its bytes, encoded

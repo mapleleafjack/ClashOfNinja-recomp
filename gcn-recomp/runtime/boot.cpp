@@ -4,7 +4,22 @@
 
 static uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
 
-void vi_init(); void si_init(); void exi_init(); void ai_init(); void dsp_init(); void cp_init();
+void vi_set_tv_mode(uint32_t mode); void vi_init(); void si_init(); void exi_init(); void ai_init(); void dsp_init(); void cp_init();
+
+// The console the disc was made for, from the region byte it carries (header + 3): 0 NTSC,
+// 1 PAL. The PAL releases check it -- VIConfigure panics with "Tried to change mode from
+// (0) to (1), which is forbidden" when the console says NTSC -- and the format also fixes
+// the field rate, so the region decides both.
+static uint32_t disc_tv_mode(const uint8_t* hdr) {
+    switch (hdr[3]) {
+    case 'E':  // USA
+    case 'J':  // Japan
+    case 'K':  // Korea
+        return 0;
+    default:   // Europe and its language variants
+        return 1;
+    }
+}
 
 uint32_t boot_load(const char* iso_path) {
     di_init(iso_path);
@@ -27,13 +42,15 @@ uint32_t boot_load(const char* iso_path) {
     }
 
     // ---- low memory (IPL boot info) ----
+    uint32_t tv_mode = disc_tv_mode(hdr);
     memcpy(mem_ptr(0x80000000), hdr, 0x20);
     mem_w32(0x8000001C, 0xC2339F3D);
     mem_w32(0x80000020, 0x0D15EA5E);        // booted from bootrom
     mem_w32(0x80000024, 1);
     mem_w32(0x80000028, RAM_SIZE);
     mem_w32(0x8000002C, 0x10000006);        // console type: latest devkit (as Dolphin)
-    mem_w32(0x800000CC, 0);                 // NTSC
+    mem_w32(0x800000CC, tv_mode);           // 0 NTSC, 1 PAL: what the disc was made for
+    vi_set_tv_mode(tv_mode);
     mem_w32(0x800000D0, ARAM_SIZE);
     mem_w32(0x800000F0, RAM_SIZE);
     mem_w32(0x800000F8, 162000000);         // bus clock

@@ -5,9 +5,14 @@
 
 static uint16_t g_vi[0x80];
 static uint64_t g_frame_start;
-static constexpr uint64_t FIELD_TICKS = (uint64_t)(TB_FREQ / 59.94);
+// Two fields make a frame: 59.94 fields a second on NTSC, 50 exactly on PAL. The console's
+// format is the disc's, so a PAL release is timed as it was on a PAL console (vi_set_tv_mode).
+static double g_fields_per_second = 60000.0 / 1001.0;
+static uint32_t g_field_half_lines = 525;
 std::atomic<uint32_t> g_vi_retrace_count{0};
 std::atomic<uint32_t> g_vi_xfb_addr{0};
+
+static uint64_t field_ticks() { return (uint64_t)(TB_FREQ / g_fields_per_second); }
 
 static void vi_update_irq() {
     bool any = false;
@@ -35,11 +40,18 @@ static void vi_retrace() {
         if (hi & 0x1000) hi |= 0x8000;
     }
     vi_update_irq();
-    event_schedule(g_frame_start + FIELD_TICKS, vi_retrace);
+    event_schedule(g_frame_start + field_ticks(), vi_retrace);
+}
+
+void vi_set_tv_mode(uint32_t mode) {
+    // MPAL is a 60 Hz field like NTSC; only PAL scans 625 half-lines.
+    const bool pal = mode == 1;
+    g_fields_per_second = pal ? 50.0 : 60000.0 / 1001.0;
+    g_field_half_lines = pal ? 625 : 525;
 }
 
 void vi_init() {
-    event_schedule_in(FIELD_TICKS, vi_retrace);
+    event_schedule_in(field_ticks(), vi_retrace);
 }
 
 // The lines the VI scans out: ACV per field, two fields unless progressive (DCR.NIN).
@@ -50,17 +62,19 @@ uint32_t vi_display_height() {
 
 // Where the beam is, as the VI counts it: (vertical << 16) | horizontal, both from 1. A
 // line is two half-lines of HLW (HTR0) horizontal counts each, and a field is 525 half-lines
-// (524 progressive). An interlaced frame counts its lines through both fields, 1..525, so
-// the second field starts half way along line 263 -- where the SDK puts the display
-// interrupt that marks it, and how VIGetNextField tells the fields apart. Counting each
-// field from line 1 with the horizontal count fixed at 1 made every field the first, and
-// a movie player that waits for the second to start never did.
+// (524 progressive), 625 on PAL. An interlaced frame counts its lines through both fields,
+// 1..525, so the second field starts half way along line 263 -- where the SDK puts the
+// display interrupt that marks it, and how VIGetNextField tells the fields apart. Counting
+// each field from line 1 with the horizontal count fixed at 1 made every field the first,
+// and a movie player that waits for the second to start never did.
 static uint32_t beam_position() {
     uint32_t hlw = g_vi[0x06 >> 1] & 0x1FF;
     if (!hlw) hlw = 429;
-    uint64_t per_field = (uint64_t)(vi_progressive() ? 524 : 525) * hlw;
-    uint64_t t = std::min<uint64_t>(now_ticks() - g_frame_start, FIELD_TICKS - 1);
-    uint64_t pos = g_field * per_field + t * per_field / FIELD_TICKS;
+    uint64_t ticks = field_ticks();
+    uint64_t per_field = (uint64_t)(vi_progressive() ? g_field_half_lines - 1
+                                                     : g_field_half_lines) * hlw;
+    uint64_t t = std::min<uint64_t>(now_ticks() - g_frame_start, ticks - 1);
+    uint64_t pos = g_field * per_field + t * per_field / ticks;
     return (uint32_t)((pos / (2 * hlw) + 1) << 16 | (pos % (2 * hlw) + 1));
 }
 

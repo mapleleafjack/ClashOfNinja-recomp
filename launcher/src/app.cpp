@@ -3,6 +3,7 @@
 #include "dialog.h"
 #include "disc.h"
 #include "image.h"
+#include "shortcut.h"
 #include "tools_package.h"
 #include "util.h"
 
@@ -74,6 +75,10 @@ std::wstring box_art_url(const std::wstring& folder) {
         name = L"Naruto%20-%20Gekitou%20Ninja%20Taisen!%203%20(Japan).png";
     } else if (folder == L"gnt4") {
         name = L"Naruto%20-%20Gekitou%20Ninja%20Taisen!%204%20(Japan).png";
+    } else if (folder == L"narutoeu") {
+        name =
+            L"Naruto%20-%20Clash%20of%20Ninja%20-%20European%20Version%20(Europe)%20"
+            L"(En,Fr,De,Es,It).png";
     }
     if (name.empty()) return {};
     return kBoxArtBase + name;
@@ -645,7 +650,7 @@ void App::paint_games() {
         pill_state = Pill::Ok;
     } else if (!project_) {
         title = L"Set up your game folder";
-        detail = L"Pick a folder and the launcher writes the four game folders into it, then "
+        detail = L"Pick a folder and the launcher writes the game folders into it, then "
                  L"extracts your disc. It remembers the choice.";
         pill_text = L"setup";
         pill_state = Pill::Warn;
@@ -1287,7 +1292,37 @@ Id App::hit_at(float x, float y) const {
 
 void App::refresh() {
     if (project_) status_ = project_->status();
+    if (status_.built) write_game_entry();
     invalidate();
+}
+
+void App::write_game_entry() {
+    if (!project_ || headless_) return;
+    // The arguments mirror play()'s, but they are frozen into the entry, so a change to
+    // any of them has to rewrite it: the settings are part of the key.
+    std::wstring key = project_->game() + L"|" + std::to_wstring(settings_.scale) + L"|" +
+                       std::to_wstring(settings_.players) + L"|" +
+                       std::to_wstring(settings_.mute_music) + L"|" +
+                       std::to_wstring(settings_.input_log);
+    if (key == game_entry_for_) return;
+    auto folder = applications_folder();
+    if (folder.empty()) return;
+    std::vector<std::wstring> args = {
+        L"--scale=" + std::to_wstring(settings_.scale),
+    };
+    if (settings_.mute_music) args.push_back(L"--no-music");
+    if (!settings_.input_log) args.push_back(L"--no-input-log");
+    args.push_back(L"--players=" + std::to_wstring(std::clamp(settings_.players, 1, 4)));
+    args.push_back(L"--controls=" + project_->controls().wstring());
+    std::wstring error;
+    fs::path link = folder / game_entry_name(project_->game());
+    if (!create_shortcut(link, project_->binary(), project_->game_dir(), project_->title(),
+                         L"Starts " + project_->title(), args, &error)) {
+        append_log(L"[launcher] the menu entry was not written: " + error + L"\n");
+        return;
+    }
+    game_entry_for_ = key;
+    append_log(format(L"[launcher] menu entry: %ls\n", link.c_str()));
 }
 
 bool App::check_required_tools() {
@@ -1743,8 +1778,8 @@ void App::locate_project() {
 }
 
 std::vector<GameInfo> App::available_games() const {
-    // All four, always: the covers are the launcher's whole first page, and a game whose
-    // folder does not exist yet gets it when a disc is chosen for it.
+    // All of them, always: the covers are the launcher's whole first page, and a game
+    // whose folder does not exist yet gets it when a disc is chosen for it.
     if (!project_) return {};
     return std::vector<GameInfo>(Project::games());
 }

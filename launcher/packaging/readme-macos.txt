@@ -2,7 +2,7 @@ Naruto: Clash of Ninja - launcher (macOS)
 ========================================
 
 Drag Naruto Launcher.app wherever you like (Applications is fine) and open it.
-The four games appear as covers; click one and choose your own USA copy of the game.
+The games appear as covers; click one and choose your own copy of the game.
 The launcher writes the game folders, extracts the disc, builds the game and starts
 it. Nothing from the game is included here.
 
@@ -20,7 +20,7 @@ What you need
     and waits for it before carrying on. An Xcode installation (or a beta) brings
     the same compiler and SDK and counts too.
 
-    No game project: the launcher writes the four into its own folder, and dtk - which
+    No game project: the launcher writes them into its own folder, and dtk - which
     is inside the app, with CMake, Ninja, SDL2 and nodtool - makes each game's symbol map
     from your own disc. Nothing is fetched from anywhere.
 

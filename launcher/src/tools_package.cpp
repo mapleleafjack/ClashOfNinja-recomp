@@ -1,7 +1,10 @@
 #include "tools_package.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <thread>
 
 #include "tools.h"
 #include "util.h"
@@ -190,12 +193,89 @@ bool download(Job& job, const std::wstring& url, const fs::path& out, wstring* e
     return true;
 }
 
-#endif  // _WIN32
+#elif defined(__linux__)
+
+// The archive a Linux release ships beside the launcher. A tar, not a zip: the launcher
+// unpacks it with the tar every Linux has, rather than looking for an extractor.
+constexpr wchar_t kArchiveName[] = L"NarutoLauncher-tools.tar.xz";
+
+// sha256sum rather than an implementation of our own, the same way the rest of the
+// launcher leans on the tools the system already has.
+bool sha256_file(const fs::path& path, std::string& hex, wstring* error) {
+    auto sum = find_tool_from({L"/usr/bin/sha256sum", L"/bin/sha256sum"}, L"sha256sum");
+    if (sum.empty()) {
+        if (error)
+            *error = L"sha256sum was not found, and the launcher uses it to check the download";
+        return false;
+    }
+    std::string output;
+    int status = -1;
+    if (!capture_output(sum, {path.wstring()}, &output, &status) || status != 0) {
+        if (error) *error = L"cannot hash " + path.wstring();
+        return false;
+    }
+    // "<digest>  <name>"
+    auto space = output.find(' ');
+    if (space == std::string::npos || space != 64) {
+        if (error) *error = L"sha256sum gave no digest for " + path.wstring();
+        return false;
+    }
+    hex = output.substr(0, space);
+    return true;
+}
+
+// curl fetches it, with the growing file watched from here so the panel has a real bar.
+// curl's own progress goes to stderr as carriage returns, and the job's reader splits on
+// newlines, so it would only appear once the download had already ended.
+bool download(Job& job, const std::wstring& url, const fs::path& out, wstring* error) {
+    auto curl = curl_tool();
+    if (curl.empty()) {
+        if (error) *error = L"curl was not found, and the launcher uses it to fetch the tools";
+        return false;
+    }
+    std::error_code ec;
+    fs::remove(out, ec);
+
+    std::atomic_bool finished{false};
+    std::thread watcher([&job, &out, &finished] {
+        // A local, so the compiler does not fold a build with no pinned size into a
+        // division by zero.
+        const uint64_t total = kToolsBytes;
+        while (!finished.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            if (total == 0) continue;
+            uint64_t size = nla::file_size(out);
+            if (size > 0) {
+                uint64_t percent = size * 100 / total;
+                job.progress(static_cast<int>(percent > 100 ? 100 : percent));
+            }
+        }
+    });
+    int code = job.run_process(
+        curl,
+        {L"--location", L"--fail", L"--silent", L"--show-error", L"--retry", L"2",
+         L"--output", out.wstring(), url},
+        temp_dir());
+    finished.store(true);
+    watcher.join();
+
+    if (job.cancelled()) {
+        *error = L"cancelled";
+        return false;
+    }
+    if (code != 0) {
+        *error = format(L"curl exited with status %d while fetching the tools", code);
+        return false;
+    }
+    return true;
+}
+
+#endif
 
 }  // namespace
 
 bool tools_package_available() {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
     return kToolsUrl[0] != '\0' && kToolsSha256[0] != '\0';
 #else
     return false;
@@ -208,8 +288,12 @@ std::wstring tools_package_size() {
 }
 
 std::vector<Task> tools_package_tasks() {
+#if defined(_WIN32) || defined(__linux__)
 #if defined(_WIN32)
     fs::path archive = fs::path(temp_dir()) / L"NarutoLauncher-tools.zip";
+#else
+    fs::path archive = fs::path(temp_dir()) / kArchiveName;
+#endif
     std::wstring url = widen(kToolsUrl);
     std::string expected = kToolsSha256;
 
@@ -244,8 +328,13 @@ std::vector<Task> tools_package_tasks() {
     tasks.push_back({L"Unpacking the build tools…", [archive](Job& job) -> int {
                          auto tar = find_tool(L"tar" + wstring(exe_suffix()));
                          if (tar.empty()) {
+#if defined(_WIN32)
                              job.log(L"[launcher] tar.exe was not found; Windows 10 1803 "
                                      L"and later ship it\n");
+#else
+                             job.log(L"[launcher] tar was not found, and the launcher uses "
+                                     L"it to unpack the tools\n");
+#endif
                              return 127;
                          }
                          int code = job.run_process(

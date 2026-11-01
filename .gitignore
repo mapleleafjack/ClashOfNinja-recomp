@@ -10,10 +10,12 @@ naruto/
 naruto2/
 gnt3/
 gnt4/
+narutoeu/
 config/GNREDA/
 config/GNUEDA/
 config/G3NJDA/
 config/G4NJDA/
+config/GNUPDA/
 
 # Any disc image in any format nodtool reads.
 *.iso

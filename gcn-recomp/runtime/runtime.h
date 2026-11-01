@@ -166,6 +166,9 @@ const char* func_name(uint32_t addr);
 const char* func_containing(uint32_t addr, uint32_t* start);
 
 // ---- hw modules ----
+// The console's video format: 0 NTSC, 1 PAL, 2 MPAL, as the disc's region asks for. Set
+// before vi_init(), since it fixes the field rate and the lines a field scans out.
+void vi_set_tv_mode(uint32_t mode);
 void vi_init(); uint16_t vi_read16(uint32_t off); void vi_write16(uint32_t off, uint16_t v);
 void di_init(const char* iso_path); uint32_t di_read32(uint32_t off); void di_write32(uint32_t off, uint32_t v);
 void si_init(); uint32_t si_read32(uint32_t off); void si_write32(uint32_t off, uint32_t v);

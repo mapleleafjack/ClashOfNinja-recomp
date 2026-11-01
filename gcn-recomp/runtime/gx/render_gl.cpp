@@ -2790,7 +2790,9 @@ static void dump_xfb(const Xfb& x, uint32_t w) {
     write_png(path, flipped.data(), pw, ph);
 }
 
-// A display copy into its XFB. Returns the XFB when the copy completed a frame of it.
+// A display copy into its XFB. Returns the XFB when the copy completed a frame of it, which
+// is the copy the front end ended a batch at (EfbCopyCmd::completes_frame) or the one that
+// filled the last of its rows.
 static Xfb* xfb_write(const EfbCopyCmd& c) {
     uint32_t h = vi_display_height();
     if (!h || c.dst_h >= h) return nullptr;  // the copy is the whole frame: present it as such
@@ -2803,23 +2805,30 @@ static Xfb* xfb_write(const EfbCopyCmd& c) {
     glDisable(GL_SCISSOR_TEST);
     glBlitFramebuffer(c.src_x * g_scale, (EFB_H - c.src_y - c.src_h) * g_scale, (c.src_x + c.src_w) * g_scale, (EFB_H - c.src_y) * g_scale,
                       0, (h - row0 - rows) * g_scale, c.dst_w * g_scale, (h - row0) * g_scale, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    const uint32_t had_rows = x.written_rows;  // before this copy: the parts of the frame
     for (uint32_t r = row0; r < row0 + rows; r++)
         if (!x.written[r]) { x.written[r] = 1; x.written_rows++; }
-    if (x.written_rows < h) return nullptr;
+    // The FIFO decides whether this copy finished the frame, and says so; a picture shorter
+    // than the VI's line count is still the frame (see display_copy_ends_frame in xf.cpp).
+    if (!c.completes_frame && x.written_rows < h) return nullptr;
+    const bool had_parts = row0 != 0 || had_rows > 0;
     std::fill(x.written.begin(), x.written.end(), 0);
     x.written_rows = 0;
+    // A copy that is the whole frame itself, into a buffer nothing else has written this
+    // frame, is shown as the copy rather than through the assembled image.
+    if (!had_parts) return nullptr;
     return &x;
 }
 
 static void present(const EfbCopyCmd& c) {
-    // A copy that is part of a frame: into the XFB, and nothing to show unless it was the
-    // last part.
+    // A copy that is part of a frame: into the XFB, and nothing to show unless it completed
+    // it. A copy that is a whole frame of its own returns no XFB and is shown from the EFB.
     Xfb* xfb = nullptr;
     if (!g_pair_second) {
         uint32_t h = vi_display_height();
         if (h && c.dst_h < h) {
             xfb = xfb_write(c);
-            if (!xfb) return;
+            if (!xfb && !c.completes_frame) return;
         }
     }
     if (!g_pair_second) g_present_count++;

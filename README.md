@@ -2,10 +2,10 @@
 
 <a href="https://ko-fi.com/jack2438"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"></a>
 
-Native Windows and macOS builds of four GameCube games, made from your own disc. The PowerPC
+Native Windows and macOS builds of five GameCube games, made from your own disc. The PowerPC
 code is translated to C once and linked against a runtime that implements the GameCube's
 hardware, so this is not an emulator: it is an ordinary executable that runs the real game, at
-7× to 9.5× the console's 60 fps.
+6× to 9.5× the console's frame rate.
 
 | Game | Disc ID |
 | --- | --- |
@@ -13,13 +13,14 @@ hardware, so this is not an emulator: it is an ordinary executable that runs the
 | Naruto: Clash of Ninja 2 | `GNUEDA` |
 | Gekitou Ninja Taisen! 3 | `G3NJDA` |
 | Gekitou Ninja Taisen! 4 | `G4NJDA` |
+| Naruto: Clash of Ninja - European Version | `GNUPDA` |
 
 The game projects are not in this repository: each one's symbol map and steering tables come
-from the disc, so the launcher writes the four projects into its own folder and reads your own
+from the disc, so the launcher writes the projects into its own folder and reads your own
 disc for the symbol maps. A release carries no game folder — [Releases](docs/RELEASING.md)
 covers what it does carry.
 
-![The launcher with all four games](docs/screenshots/launcher.png)
+![The launcher with its covers](docs/screenshots/launcher.png)
 
 *Box art is fetched on first run, never shipped.*
 
@@ -39,7 +40,7 @@ v1.5.1).
    `C:\Games\NarutoLauncher` — MinGW-w64 will not run from one. Windows may also warn that the
    publisher is unknown, as the launcher is not code-signed yet: *More info → Run anyway*. On
    macOS, right-click → Open the app the first time (it is signed ad hoc, not notarised).
-2. **Start the launcher.** The four games appear as covers.
+2. **Start the launcher.** The games appear as covers.
 3. **Click a cover and choose your disc image.** The first click writes that game's folder
    into the launcher's own folder, extracts the disc and builds the game, which takes a few
    minutes; on Windows it first fetches about 190 MB of build tools, with a progress bar.
@@ -52,7 +53,7 @@ who would rather fetch it by hand than on the first build. You do not need it ot
 From a terminal instead of the launcher:
 
 ```sh
-tools/setup.sh --run "/path/to/your disc image"   # add naruto2, gnt3 or gnt4 as a second argument
+tools/setup.sh --run "/path/to/your disc image"   # second argument: naruto2, gnt3, gnt4, narutoeu
 ```
 
 You need your own disc image either way, in any format nodtool reads: ISO, CISO, RVZ, WIA, GCZ,

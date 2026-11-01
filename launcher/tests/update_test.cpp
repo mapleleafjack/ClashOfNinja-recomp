@@ -119,8 +119,14 @@ void swap() {
     fs::remove_all(root, ec);
     fs::create_directories(root, ec);
 
+#if defined(__APPLE__) || defined(_WIN32)
     auto target = root / L"Install" / L"Stand In.app";
     auto staged = root / L"Staged" / L"Stand In.app";
+#else
+    // Linux replaces the executable itself, so the install and the download are files.
+    auto target = root / L"Install" / L"NarutoLauncher";
+    auto staged = root / L"Staged" / L"NarutoLauncher";
+#endif
     auto work = root / L"Work";
     std::wstring error;
     bool written = true;
@@ -133,15 +139,24 @@ void swap() {
     written = nla::write_text_file(staged / L"new.txt", "new") && written;
     auto script = root / L"apply-update.ps1";
     written = nla::write_swap_script(script, &error) && written;
-#else
-    // The shell helper waits for a pid, then puts the staged folder in place of the
-    // install and starts the relaunch command on it.
+#elif defined(__APPLE__)
+    // The shell helper waits for a pid, then replaces the .app bundle with the staged one.
     fs::create_directories(target, ec);
     fs::create_directories(work, ec);
     fs::create_directories(staged / L"Contents" / L"MacOS", ec);
     written = nla::write_text_file(target / L"old-marker", "old");
     written = nla::write_text_file(staged / L"Contents" / L"MacOS" / L"new-marker", "new") &&
               written;
+    auto script = root / L"apply-update.sh";
+    written = nla::write_swap_script(script, &error) && written;
+#else
+    // Linux: the install is the executable, and the helper copies the downloaded one over
+    // it, so both sides are files.
+    fs::create_directories(target.parent_path(), ec);
+    fs::create_directories(staged.parent_path(), ec);
+    fs::create_directories(work, ec);
+    written = nla::write_text_file(target, "old");
+    written = nla::write_text_file(staged, "new") && written;
     auto script = root / L"apply-update.sh";
     written = nla::write_swap_script(script, &error) && written;
 #endif
@@ -185,7 +200,7 @@ void swap() {
     check(fs::exists(target / L"new.txt", ec), "the new copy is in place after the swap");
     check(!fs::exists(work, ec), "the helper removes what it downloaded");
     check(!fs::exists(script, ec), "the helper removes itself");
-#else
+#elif defined(__APPLE__)
     // A pid that is certainly gone, so the helper does not wait for anything.
     std::wstring gone = L"2147483647";
     auto command = nla::command_line(
@@ -195,6 +210,16 @@ void swap() {
     check(!fs::exists(target / L"old-marker", ec), "the old copy is gone after the swap");
     check(fs::exists(target / L"Contents" / L"MacOS" / L"new-marker", ec),
           "the new copy is in place after the swap");
+    check(!fs::exists(work, ec), "the helper removes what it downloaded");
+    check(!fs::exists(script, ec), "the helper removes itself");
+#else
+    // Linux: the helper copies the staged executable over the install.
+    std::wstring gone = L"2147483647";
+    auto command = nla::command_line(
+        L"/bin/sh", {script.wstring(), gone, target.wstring(), staged.wstring(),
+                     work.wstring(), L"/usr/bin/true"});
+    std::system(nla::narrow(command).c_str());
+    check(nla::read_text_file(target) == L"new", "the new copy is in place after the swap");
     check(!fs::exists(work, ec), "the helper removes what it downloaded");
     check(!fs::exists(script, ec), "the helper removes itself");
 #endif

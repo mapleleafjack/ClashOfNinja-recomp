@@ -17,6 +17,7 @@ const std::vector<GameInfo> kGames = {
     {L"naruto2", L"Naruto: Clash of Ninja 2", L"Clash of Ninja 2"},
     {L"gnt3", L"Naruto: Gekitou Ninja Taisen! 3", L"Ninja Taisen 3"},
     {L"gnt4", L"Naruto: Gekitou Ninja Taisen! 4", L"Ninja Taisen 4"},
+    {L"narutoeu", L"Naruto: Clash of Ninja - European Version", L"Clash of Ninja EU"},
 };
 
 bool has_game(const fs::path& root, const std::wstring& folder) {
@@ -181,7 +182,7 @@ bool Project::create(const fs::path& root, std::wstring* error) {
         }
     }
 
-    // The recompiler all four projects add, and the script the launcher looks for as the
+    // The recompiler every project adds, and the script the launcher looks for as the
     // project's marker, both travel with the launcher: beside it on Windows and Linux, in
     // Contents/Resources inside a macOS bundle. A development build finds them above
     // itself, in the checkout it was built from.

@@ -53,10 +53,10 @@ nothing else has to be installed for it to start.
   A `cover.png` beside the game still works, so art an earlier copy was given keeps being
   used. Without one, the tile names the game and says where the file goes.
 - **Games.** The outlined cover is the game the launcher works on: *Clash of Ninja*, *Clash of
-  Ninja 2*, *Gekitou Ninja Taisen! 3* or *Gekitou Ninja Taisen! 4*. Each has its own disc,
-  build and saves under its own folder, and the launcher remembers the last choice; the title
-  and window name follow the highlighted cover. A game folder that is not in the project does
-  not appear.
+  Ninja 2*, *Gekitou Ninja Taisen! 3*, *Gekitou Ninja Taisen! 4* or *Clash of Ninja European
+  Version*. Each has its own disc, build and saves under its own folder, and the launcher
+  remembers the last choice; the title and window name follow the highlighted cover. A game
+  folder that is not in the project does not appear.
 - **Game disc.** Reads ISO and CISO itself, including the FST offset shift that NKit and
   rebuilt images use. Other formats (RVZ, WIA, GCZ, WBFS, TGC, NFS) are converted with
   `nodtool` first. It checks `main.dol`'s SHA-1 before writing anything and puts the new tree
@@ -91,11 +91,12 @@ nothing else has to be installed for it to start.
   back to the release page. The check is the only network request the launcher makes, apart
   from box art and the dtk it fetches when it has none.
 - **Game source.** A package carries no game folder: the launcher writes `naruto\`,
-  `naruto2\`, `gnt3\` and `gnt4\` into the folder it lives in, with the recompiler and
-  `tools\extract_disc.py` beside them, when a disc is first chosen for a game, and dtk makes
-  that disc's symbol map. A release carries dtk in `tools\dtk`; a `-Lean` release, or a copy
-  the tool archive was never downloaded for, fetches the pinned build (about 8 MB) into
-  `tools\dtk` the first time a symbol map is needed, so nothing has to be installed by hand.
+  `naruto2\`, `gnt3\`, `gnt4\` and `narutoeu\` into the folder it lives in, with the
+  recompiler and `tools\extract_disc.py` beside them, when a disc is first chosen for a game,
+  and dtk makes that disc's symbol map. A release carries dtk in `tools\dtk`; a `-Lean`
+  release, or a copy the tool archive was never downloaded for, fetches the pinned build
+  (about 8 MB) into `tools\dtk` the first time a symbol map is needed, so nothing has to be
+  installed by hand.
   An update replaces the launcher only; the disc, the build and the saves stay where they are.
 - **Settings.** Three things, and nothing else: **Players…** (which controller and keyboard
   play as which pad), the window scale a game opens at, and the update check. Everything else

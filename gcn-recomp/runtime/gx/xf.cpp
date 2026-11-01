@@ -1687,6 +1687,9 @@ namespace {
 struct XfbRows {
     uint32_t base, stride, h, n;
     std::vector<uint8_t> written;
+    // A frame copied in parts writes them at different rows of one buffer, which is what
+    // this records. A buffer whose copies all start at row 0 is copied whole every frame.
+    bool parts = false;
 };
 std::vector<XfbRows> g_xfb_rows;
 }  // namespace
@@ -1705,9 +1708,17 @@ static bool display_copy_ends_frame(const EfbCopyCmd& cc) {
     }
     const uint32_t row0 = (cc.dest - x->base) / stride;
     const uint32_t rows = std::min(cc.dst_h, h - row0);
+    if (row0) x->parts = true;
     for (uint32_t r = row0; r < row0 + rows; r++)
         if (!x->written[r]) { x->written[r] = 1; x->n++; }
-    if (x->n < h) return false;
+    // The copy that fills the buffer ends the frame, as before. So does a copy of the whole
+    // picture into a buffer this game always copies whole, even when it is shorter than the
+    // VI's line count: the European release copies 640x480 while its VI is set to scan 574
+    // lines, so waiting for the remaining 94 rows to be written never finished a frame --
+    // the window stayed black with the game running behind it, at full speed and sound.
+    const bool filled = x->n >= h;
+    const bool whole_picture = row0 == 0 && !x->parts;
+    if (!filled && !whole_picture) return false;
     std::fill(x->written.begin(), x->written.end(), 0);
     x->n = 0;
     return true;
@@ -1832,11 +1843,15 @@ void renderer_efb_copy(uint32_t dest_addr, bool /*unused*/) {
         fprintf(stderr, "[cpy] after draw %u: xfb=%d tex=%u dst=%ux%u src=%ux%u@%u,%u clear=%d\n",
                 g_mtx_draw, cc.to_xfb, cc.tex_id, cc.dst_w, cc.dst_h, cc.src_w, cc.src_h,
                 cc.src_x, cc.src_y, cc.clear);
-    // For display copies the presentation must see the EFB before the copy's clear.
+    // For display copies the presentation must see the EFB before the copy's clear. Whether
+    // it completes the frame is decided here, once: the renderer needs the same answer to
+    // know whether to show the copy or wait for the rest of it.
+    const bool ends_frame = cc.to_xfb && display_copy_ends_frame(cc);
     if (cc.to_xfb) {
         Cmd pc{};
         pc.type = CmdType::Present;
         pc.copy = cc;
+        pc.copy.completes_frame = ends_frame;
         batch().cmds.push_back(pc);
     }
     cc.writeback = !cc.to_xfb && g_copy_writeback && g_renderer_writes_back.load() &&
@@ -1942,7 +1957,7 @@ void renderer_efb_copy(uint32_t dest_addr, bool /*unused*/) {
             debug_guest_check("frame");
             heap_trace_frame(g_frames_submitted.load());
         }
-        if (display_copy_ends_frame(cc)) {
+        if (ends_frame) {
             g_have_last_state = false;
             flush_batch();
         }

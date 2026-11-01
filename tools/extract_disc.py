@@ -12,7 +12,7 @@ Usage: extract_disc.py <image> [outdir] [--disc-id ID] [--dol-sha1 SHA]
 WBFS, TGC, NFS): those are converted through nodtool first, so one tool covers every
 image a user may have. `outdir` defaults to <project>/naruto/rom/disc, which is where
 gcn_add_game looks for it; pass <project>/naruto2/rom/disc, with that game's --disc-id and
---dol-sha1, for the second game.
+--dol-sha1, for the second game, and likewise for gnt3, gnt4 and narutoeu.
 """
 import argparse
 import hashlib

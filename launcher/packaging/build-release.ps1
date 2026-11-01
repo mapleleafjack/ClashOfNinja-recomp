@@ -5,8 +5,8 @@
 
 .DESCRIPTION
     The launcher finds cmake, ninja, the C++ compiler and Python beside itself in
-    tools\, or on PATH. A release made by this script carries portable copies of all
-    four, so a player can extract their own disc and build the game without installing
+    tools\, or on PATH. A release made by this script carries portable copies of them
+    all, so a player can extract their own disc and build the game without installing
     a toolchain. That is a large folder (about 1 GB unzipped, mostly MinGW); pass
     -Lean for a small launcher that uses an installed toolchain instead.
 
@@ -276,9 +276,9 @@ NarutoLauncher.exe writes the game folders, extracts your own disc image, builds
 the recompilation and starts the game. Nothing from the game is included here.
 
 First start
-    The four games appear as covers. Click one and choose Disc Image..., your own USA
-    copy of the game. The launcher writes naruto\, naruto2\, gnt3\ and gnt4\ into this
-    folder on that first click, extracts the disc into that game's rom\disc, reads the
+    The games appear as covers. Click one and choose Disc Image..., your own copy of
+    the game. The launcher writes naruto\, naruto2\, gnt3\, gnt4\ and narutoeu\ into
+    this folder on that first click, extracts the disc into that game's rom\disc, reads the
     symbol map from it with dtk, and configures and compiles the game. Later starts go
     straight to Play.
 

@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 // One of the games the project builds: its own folder under the project root, holding a
 // CMakeLists.txt that names the game and the disc it is checked against.
 struct GameInfo {
-    std::wstring folder;       // "naruto", "naruto2", "gnt3", "gnt4"
+    std::wstring folder;       // "naruto", "naruto2", "gnt3", "gnt4", "narutoeu"
     std::wstring title;        // the game's name, as the build calls it
     std::wstring short_title;  // what the launcher's game switch has room for
 };
@@ -59,7 +59,7 @@ class Project {
     // The disc's symbol map, which dtk makes from the DOL the launcher extracted.
     fs::path analysis_symbols() const;
 
-    // Writes the four game projects into `root`, copies in the recompiler and the tool
+    // Writes the game projects into `root`, copies in the recompiler and the tool
     // script the launcher travels with, and leaves whatever is already there alone. True
     // when `root` is a project afterwards; `error` says what went wrong when it is not.
     static bool create(const fs::path& root, std::wstring* error);

@@ -1,4 +1,4 @@
-// Generated from the four game projects: the files the launcher writes when it makes
+// Generated from the game projects: the files the launcher writes when it makes
 // a game folder, so a player needs no checkout. The symbol maps are not here -- dtk
 // makes those from the player's own disc.
 #include "project_templates.h"
@@ -276,7 +276,79 @@ const char kgnt4_recomp_special_calls_txt[] =
 801671B8 OSSaveContext
 )NLA";
 
-const std::array<GameTemplate, 4> kTemplates = {{
+const char knarutoeu_CMakeLists_txt[] =
+    R"NLA(cmake_minimum_required(VERSION 3.20)
+project(narutoeu C CXX)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
+# The runtime and the recompiler are shared with the other games' projects.
+add_subdirectory(../gcn-recomp gcn-recomp)
+gcn_enable_languages()
+
+gcn_add_game(
+  NAME narutoeu
+  TITLE "Naruto: Clash of Ninja - European Version"
+  LABEL "Naruto: Clash of Ninja European Version Recomp"
+  DISC_ID GNUPDA
+  DOL_SHA1 de0b6dfc9ec35d92240af51aad732d80beb9092d
+  SYMBOLS ${CMAKE_SOURCE_DIR}/analysis/symbols.txt
+  TABLES ${CMAKE_SOURCE_DIR}/recomp
+  FPS 50)
+
+# gcn-recomp links the MinGW runtime dynamically, so a built narutoeu.exe only starts when
+# libgcc_s_seh-1.dll, libstdc++-6.dll and libwinpthread-1.dll are on PATH — which they are
+# under the launcher, and not when the exe is run on its own. Static, as the launcher
+# already builds itself.
+if(MINGW)
+  foreach(game narutoeu narutoeu_bench)
+    if(TARGET ${game})
+      target_link_options(${game} PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
+  endforeach()
+endif()
+)NLA";
+
+const char knarutoeu_recomp_hle_txt[] =
+    R"NLA(# functions whose body is replaced by a runtime implementation (hle_<name>)
+OSSaveContext
+OSLoadContext
+OSReport
+OSPanic
+OSResetSystem
+)NLA";
+
+const char knarutoeu_recomp_idle_txt[] =
+    R"NLA(# Backward branches where the guest is only waiting for an interrupt, so the runtime may
+# skip guest time to the next event instead of iterating.
+# SelectThread starts at 800FBFF8; this is the two-instruction idle spin inside it, at the
+# same offset as 800E954C in the first game's SelectThread.
+800FC14C SelectThread
+)NLA";
+
+const char knarutoeu_recomp_names_txt[] =
+    R"NLA(# hand-named functions: ADDR name
+800F6E2C OSSaveContext
+800F758C OSPanic)NLA";
+
+const char knarutoeu_recomp_patches_txt[] =
+    R"NLA(# ADDR  <C statement> replaces the instruction at ADDR
+# __VIInit stores its own default TV mode (NTSC) in 0x800000CC before VIConfigure checks
+# that word against the mode the game asks for, and the check is what panics on a PAL disc
+# ("Tried to change mode from (0) to (1), which is forbidden"). This is that store: keep
+# the PAL mode the boot set from the disc, which is what a PAL console holds there.
+80103524 ST32(0x800000CCu, 1);)NLA";
+
+const char knarutoeu_recomp_special_calls_txt[] =
+    R"NLA(# call sites to these get setjmp treatment (context resume points)
+# (dtk leaves OSSaveContext unnamed; matched to the other games' function by its body.
+# This is the function address, as in the reference projects, not the address of the bl
+# that calls it)
+800F6E2C OSSaveContext
+)NLA";
+
+const std::array<GameTemplate, 5> kTemplates = {{
     {L"naruto",
      {{
          {L"CMakeLists.txt", knaruto_CMakeLists_txt},
@@ -312,6 +384,15 @@ const std::array<GameTemplate, 4> kTemplates = {{
          {L"recomp/names.txt", kgnt4_recomp_names_txt},
          {L"recomp/patches.txt", kgnt4_recomp_patches_txt},
          {L"recomp/special_calls.txt", kgnt4_recomp_special_calls_txt},
+     }}},
+    {L"narutoeu",
+     {{
+         {L"CMakeLists.txt", knarutoeu_CMakeLists_txt},
+         {L"recomp/hle.txt", knarutoeu_recomp_hle_txt},
+         {L"recomp/idle.txt", knarutoeu_recomp_idle_txt},
+         {L"recomp/names.txt", knarutoeu_recomp_names_txt},
+         {L"recomp/patches.txt", knarutoeu_recomp_patches_txt},
+         {L"recomp/special_calls.txt", knarutoeu_recomp_special_calls_txt},
      }}},
 }};
 

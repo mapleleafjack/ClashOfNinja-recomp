@@ -120,10 +120,11 @@ target_include_directories(NarutoLauncher PRIVATE
 # passes the URL, digest and size that `build-release.ps1 -Split` printed; a plain
 # configure leaves them empty, and then the launcher only ever looks for tools that are
 # already installed.
-set(NLA_TOOLS_URL "" CACHE STRING "URL of the Windows build-tools archive")
+set(NLA_TOOLS_URL "" CACHE STRING "URL of this platform's build-tools archive")
 set(NLA_TOOLS_SHA256 "" CACHE STRING "SHA-256 of that archive")
 set(NLA_TOOLS_BYTES 0 CACHE STRING "Size of that archive in bytes")
-if(WIN32)
+# Windows and Linux fetch it; a macOS release carries the tools inside the bundle instead.
+if(WIN32 OR (UNIX AND NOT APPLE))
   if(NLA_TOOLS_BYTES STREQUAL "")
     set(_nla_tools_bytes 0)
   else()

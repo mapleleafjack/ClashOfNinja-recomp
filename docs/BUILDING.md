@@ -22,6 +22,7 @@ tools/setup.sh "/path/to/clash of ninja.iso"            # naruto (the default)
 tools/setup.sh "/path/to/clash of ninja 2.iso" naruto2
 tools/setup.sh "/path/to/gekitou ninja taisen 3.iso" gnt3
 tools/setup.sh "/path/to/gekitou ninja taisen 4.iso" gnt4
+tools/setup.sh "/path/to/clash of ninja european version.iso" narutoeu
 ```
 
 That writes `<game>/rom/disc/` — `sys/main.dol`, `sys/fst.bin`, `files/…` and a
@@ -56,9 +57,9 @@ ninja -C build
 ./build/naruto            # or: ./build/naruto_bench --seconds=10
 ```
 
-`naruto2/`, `gnt3/` and `gnt4/` build the same way, each producing `./build/<game>` and
-`./build/<game>_bench`. All four share the runtime and recompiler in `gcn-recomp/`
-rather than copying them.
+`naruto2/`, `gnt3/`, `gnt4/` and `narutoeu/` build the same way, each producing
+`./build/<game>` and `./build/<game>_bench`. All of them share the runtime and recompiler in
+`gcn-recomp/` rather than copying them.
 
 `cmake` picks up `rom/disc` on its own. `-DGAME_ISO=/path/to/image.iso` also works, as does
 putting an `.iso`/`.ciso` in `rom/` instead of the extracted tree.
@@ -107,7 +108,8 @@ The game takes these; the launcher passes the play-related ones through.
 
 | Option | What it does |
 | --- | --- |
-| `--scale=N` | window scale, default 2 (640×480 × N) |
+| `--scale=N` | internal render scale, default 2 (640×528 × N); it does not size the window |
+| `--fullscreen` | start fullscreen; `F11` or `Alt+Enter` toggles it at any time |
 | `--no-music` | mute the game's background music |
 | `--no-input-log` | do not write input logs |
 | `--players=N` | controllers to poll, 1 to 4 |
@@ -129,6 +131,9 @@ Environment:
 
 ## Notes
 
+- The game opens a window sized to fit the display and letterboxes to 4:3 inside it, so a
+  screen that is not 4:3 shows black bars rather than a stretched picture. `--fullscreen`
+  starts that way instead, using the desktop's own resolution.
 - Each game's `saves/` holds its memory card image and input logs.
 - Dumps come from the present path, so they need a window: `--headless` never presents a frame
   (it discards each batch) and is for measuring, not looking. `--headless` runs until it is

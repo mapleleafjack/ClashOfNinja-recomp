@@ -52,6 +52,7 @@ $DTK dol config naruto/rom/disc/sys/main.dol -o config/GNREDA/config.yml    # on
 $DTK dol config naruto2/rom/disc/sys/main.dol -o config/GNUEDA/config.yml
 $DTK dol config gnt3/rom/disc/sys/main.dol -o config/G3NJDA/config.yml
 $DTK dol config gnt4/rom/disc/sys/main.dol -o config/G4NJDA/config.yml
+$DTK dol config narutoeu/rom/disc/sys/main.dol -o config/GNUPDA/config.yml
 
 # `dtk dol config` writes only the object and its hash. Add the two outputs to the file,
 # or `dtk dol split` has nowhere to put the symbols it makes:
@@ -62,6 +63,7 @@ $DTK dol split config/GNREDA/config.yml build/GNREDA                        # 0.
 $DTK dol split config/GNUEDA/config.yml build/GNUEDA                        # 0.7s
 $DTK dol split config/G3NJDA/config.yml build/G3NJDA                        # 0.7s
 $DTK dol split config/G4NJDA/config.yml build/G4NJDA                        # 0.7s
+$DTK dol split config/GNUPDA/config.yml build/GNUPDA                        # 0.7s
 ```
 
 The symbols for a game are `build/<ID>/symbols.txt`; each project's `analysis/symbols.txt` is
@@ -75,6 +77,7 @@ that file with the functions noted below named by hand.
 | Clash of Ninja 2 | `2440b77fad91e1892d1769ff8650852244e64415` | 4959 | trimmed ISO |
 | Gekitou Ninja Taisen! 3 | `e8e0a27f6a4a075a11ef322cf6a182c0b87c8d51` | 5062 | full-size ISO |
 | Gekitou Ninja Taisen! 4 | `0eb4cc3bd4c7363f8cb7baff79de7a964cbdeadb` | 5312 | full-size ISO |
+| Clash of Ninja European Version | `de0b6dfc9ec35d92240af51aad732d80beb9092d` | 4960 | NKit |
 
 Each hash is pinned in that game's `CMakeLists.txt`.
 
@@ -89,16 +92,31 @@ Each hash is pinned in that game's `CMakeLists.txt`.
   `fn_800E4184` and `OSPanic` as `fn_800E48E4`; both were identified from their disassembly
   (GQR/CR/LR/MSR saves into an `OSContext`; `OSDisableInterrupts` + `vprintf` + `OSReport` +
   `PPCHalt`) and renamed in `naruto/analysis/symbols.txt`.
-- **The other three games were confirmed rather than guessed.** dtk named the thread and report
+- **The other four games were confirmed rather than guessed.** dtk named the thread and report
   functions itself (`OSLoadContext`, `OSReport`, `OSResetSystem`, `SelectThread`) but left
-  `OSSaveContext` and `OSPanic` as `fn_…` in each. The SDK is unchanged across the four discs:
+  `OSSaveContext` and `OSPanic` as `fn_…` in each. The SDK is unchanged across the five discs:
   `OSSaveContext`'s body is byte-for-byte the same, and `OSPanic` sits directly after `OSReport`
   at `+0x80`, the same size, calling `OSDisableInterrupts`, `vprintf`, `OSReport` and `PPCHalt`.
   Each project names them in `analysis/symbols.txt` and lists the function in
-  `recomp/special_calls.txt`.
+  `recomp/special_calls.txt`. The European disc is the newest SDK of the five (`Nov 10 2004`)
+  and puts them at `800F6E2C` and `800F758C`.
 - **The idle spin is at the same offset in every game**: the backward branch inside
-  `SelectThread`, marked in each project's `recomp/idle.txt` (`800E954C`, `800FA2E0`,
-  `8013DB3C`, `8016C300`).
+  `SelectThread`, marked in each project's `recomp/idle.txt` (`800E954C`, `800FA434`,
+  `8013DB3C`, `8016C300`, `800FC14C`).
+- **The European disc is a PAL build, and the console it expects is the disc's.** The SDK's
+  `__VIInit` stores its own default TV mode in `0x800000CC` before `VIConfigure` compares that
+  word with the mode the game asked for, and on an NTSC default the comparison panics
+  (`vi.c:1979: VIConfigure(): Tried to change mode from (0) to (1), which is forbidden`) before
+  the VI is ever programmed. `runtime/boot.cpp` therefore reports the console the region byte
+  names, `runtime/hw/vi.cpp` scans 625 half-lines at 50 fields a second for it, and the game's
+  `recomp/patches.txt` keeps that mode through the `__VIInit` store.
+- **A PAL picture is 480 rows in a buffer the VI scans 574 lines of.** The front end ends a
+  batch, and the renderer shows a frame, at the display copy that fills its buffer; this disc
+  never writes the last 94 rows, so no frame was ever finished: the window stayed black with
+  the game running behind it, audible and responsive. Both now take the FIFO's answer about
+  which copy completes a frame (`EfbCopyCmd::completes_frame`), and a copy of the whole
+  picture into a buffer the game always copies whole is that frame, whatever the VI's line
+  count says. A game that copies its frame in parts still assembles them, as before.
 - **No disc has relocatable modules.** Each carries `audio`, `fpack` and `movie` plus
   `opening.bnr`; nothing is loaded with `OSLink`, so `RELS` and `REL_RUNTIME` are unused.
 
@@ -110,15 +128,17 @@ Each hash is pinned in that game's `CMakeLists.txt`.
 | Clash of Ninja 2 | yes | the same up to the Viz logo movie and title menu, scripted menu input through Single Player, and a Naruto vs Neji match with the HUD and arena in 3D |
 | Gekitou Ninja Taisen! 3 | yes | boot, SDK init, DVD/FST reads, the Eighting logo movie, the opening H4M movie, the title screen |
 | Gekitou Ninja Taisen! 4 | yes | boot, SDK init, DVD/FST reads, the Eighting logo movie, the title screen's live 3D attract scene behind `PRESS START BUTTON`, character select, the opening H4M movie |
+| Clash of Ninja European Version | yes | boot, SDK init, DVD/FST reads, the health-and-safety screen and Nintendo logo, and the menus through scripted input into a Naruto vs Kakashi match, drawn at 50 Hz |
 
 Headless, with the game at its title screen or in a match, measured with `<game>_bench`:
 
-| Game | Headless | Times the console's 60 fps |
+| Game | Headless | Times the console's frame rate |
 | --- | --- | --- |
 | Clash of Ninja (`GNREDA`) | ~570 fps | 9.5× |
 | Clash of Ninja 2 (`GNUEDA`) | ~467 fps | 7.8× |
 | Gekitou Ninja Taisen! 3 (`G3NJDA`) | ~420 fps | 7× |
 | Gekitou Ninja Taisen! 4 (`G4NJDA`) | ~420 fps, ~345 steady | 7× |
+| Clash of Ninja European Version (`GNUPDA`) | ~307 fps | 6× (50 Hz) |
 
 With a window, a Naruto vs Kakashi match in Clash of Ninja rendered at ~52 fps in 1280×960.
 

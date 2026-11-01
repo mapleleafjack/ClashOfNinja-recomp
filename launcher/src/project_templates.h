@@ -17,7 +17,7 @@ struct GameTemplate {
     std::array<TemplateFile, 6> files;
 };
 
-// The four game projects, as the launcher writes them into its own folder.
+// The game projects, as the launcher writes them into its own folder.
 const std::vector<GameTemplate>& game_templates();
 
 }  // namespace nla

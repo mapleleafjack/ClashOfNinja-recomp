@@ -88,8 +88,19 @@ std::wstring shortcut_name() {
 #endif
 }
 
+std::wstring game_entry_name(const std::wstring& game_folder) {
+#if defined(_WIN32)
+    return L"Naruto - " + game_folder + L".lnk";
+#elif defined(__APPLE__)
+    return L"Naruto - " + game_folder;
+#else
+    return L"naruto-" + game_folder + L".desktop";
+#endif
+}
+
 bool create_shortcut(const fs::path& link, const fs::path& target, const fs::path& working_dir,
-                     const std::wstring& description, std::wstring* error) {
+                     const std::wstring& name, const std::wstring& description,
+                     const std::vector<std::wstring>& args, std::wstring* error) {
 #if defined(_WIN32)
     IShellLinkW* shell_link = nullptr;
     HRESULT result =
@@ -102,6 +113,7 @@ bool create_shortcut(const fs::path& link, const fs::path& target, const fs::pat
     shell_link->SetPath(target.c_str());
     shell_link->SetWorkingDirectory(working_dir.c_str());
     shell_link->SetDescription(description.c_str());
+    if (!args.empty()) shell_link->SetArguments(join(args, L" ").c_str());
     shell_link->SetIconLocation(target.c_str(), 0);
 
     IPersistFile* file = nullptr;
@@ -136,9 +148,9 @@ bool create_shortcut(const fs::path& link, const fs::path& target, const fs::pat
     wstring text;
     text += L"[Desktop Entry]\n";
     text += L"Type=Application\n";
-    text += L"Name=Naruto: Clash of Ninja\n";
+    text += L"Name=" + name + L"\n";
     text += L"Comment=" + description + L"\n";
-    text += L"Exec=" + quote_arg(target.wstring()) + L"\n";
+    text += L"Exec=" + command_line(target.wstring(), args) + L"\n";
     text += L"Path=" + working_dir.wstring() + L"\n";
     text += L"Terminal=false\n";
     text += L"Categories=Game;\n";

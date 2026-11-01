@@ -4,7 +4,7 @@
 [Recompilation notes](RECOMPILATION.md)
 
 A release carries the launcher, the recompiler and as much of the toolchain as may be
-redistributed — and no game project and no game data. The launcher writes the four game
+redistributed — and no game project and no game data. The launcher writes the game
 folders into a folder a player chooses, and dtk makes each game's symbol map from that
 player's own disc, so a download needs no checkout. `.github/workflows/build.yml` builds it;
 the game itself is never built there, because it needs the user's own disc.
@@ -61,11 +61,11 @@ powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -L
 ```
 
 Both forms carry the same launcher folder: `NarutoLauncher.exe`, `gcn-recomp\` (the project's
-own recompiler, which all four game projects add), `tools\extract_disc.py` and
+own recompiler, which every game project adds), `tools\extract_disc.py` and
 `tools\setup.sh`, `covers\` if the machine had any, and the notices. There is no game folder:
-the launcher writes `naruto\`, `naruto2\`, `gnt3\` and `gnt4\` into the folder it was unzipped
-to when a cover is first clicked, copies the recompiler and the script in beside them, and runs
-dtk on that player's `main.dol` to make each game's `analysis\symbols.txt`. `-Lean` ships that
+the launcher writes `naruto\`, `naruto2\`, `gnt3\`, `gnt4\` and `narutoeu\` into the folder it
+was unzipped to when a cover is first clicked, copies the recompiler and the script in beside
+them, and runs dtk on that player's `main.dol` to make each game's `analysis\symbols.txt`. `-Lean` ships that
 and no toolchain, and fetches the pinned dtk itself the first time it needs a symbol map; a
 full release adds `tools\cmake`, `tools\ninja`, `tools\mingw64`, `tools\python`, `tools\sdl2`,
 `tools\nodtool` and `tools\dtk`.
@@ -111,7 +111,7 @@ prefers the bundled SDL2's CMake package over `pkg-config`.
 `NarutoLauncher-macOS-arm64-v<version>.zip` carries the launcher (SDL2 linked statically), the
 tools that build the game in `Contents/Resources/tools` — CMake, Ninja, the static SDL2 the game
 links, nodtool and dtk — and the recompiler in `Contents/Resources/gcn-recomp`. There is no game
-project: the launcher writes the four into the folder a player chooses and makes the symbol maps
+project: the launcher writes them into the folder a player chooses and makes the symbol maps
 from their disc.
 
 What is inside is kept small: CMake ships as the single `cmake` binary thinned to arm64 plus its

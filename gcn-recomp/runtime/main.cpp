@@ -289,6 +289,19 @@ static void update_pad() {
     }
 }
 
+// Set once the window exists, so the fullscreen toggle below can reach it: pump_events is
+// also handed to a VR frontend as a function pointer, so it cannot take it as a parameter.
+static SDL_Window* g_window = nullptr;
+static bool g_fullscreen = false;
+
+// Desktop fullscreen, not SDL_WINDOW_FULLSCREEN: a 4:3 game on a 16:10 screen keeps its
+// aspect and gets bars, and the desktop is left at the resolution the display had.
+static void set_fullscreen(bool on) {
+    if (!g_window) return;
+    g_fullscreen = on;
+    SDL_SetWindowFullscreen(g_window, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+}
+
 // The window's events. False once the user has asked to quit.
 static bool pump_events() {
     SDL_Event e;
@@ -299,6 +312,10 @@ static bool pump_events() {
         else if (e.type == SDL_CONTROLLERDEVICEADDED) open_controller(e.cdevice.which);
         else if (e.type == SDL_CONTROLLERDEVICEREMOVED) close_controller(e.cdevice.which);
         else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false;
+        else if (e.type == SDL_KEYDOWN && e.key.repeat == 0 &&
+                 (e.key.keysym.scancode == SDL_SCANCODE_F11 ||
+                  (e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT))))
+            set_fullscreen(!g_fullscreen);
     }
     return running;
 }
@@ -329,6 +346,7 @@ int main(int argc, char** argv) {
     // --telemetry[=host:port]: the game's motion to a motion platform (telemetry.h).
     const char* telemetry_to = getenv("GCN_TELEMETRY");
     int scale = 2;
+    bool fullscreen = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--log-all")) for (auto& e : g_log_enabled) e = true;
         else if (!strncmp(argv[i], "--log=", 6)) {
@@ -355,6 +373,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--hidden")) hidden = true;
         else if (!strcmp(argv[i], "--fast")) fast = true;
         else if (!strcmp(argv[i], "--cull-swap")) gx::g_cull_swap = true;
+        else if (!strcmp(argv[i], "--fullscreen")) fullscreen = true;
         else if (!strncmp(argv[i], "--scale=", 8)) scale = atoi(argv[i] + 8);
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
@@ -434,10 +453,27 @@ int main(int argc, char** argv) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG |
                                                   (gl_debug ? SDL_GL_CONTEXT_DEBUG_FLAG : 0));
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    // Open at the size the game wants, shrunk to fit the display. 1280x960 is taller than
+    // a 1280x800 Steam Deck screen, and the game would start with its bottom edge off it.
+    // The renderer letterboxes to 4:3 whatever the window is, so the fit keeps the aspect.
+    int win_w = 1280, win_h = 960;
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 0 && usable.h > 0 &&
+        (win_w > usable.w || win_h > usable.h)) {
+        win_w = usable.w;
+        win_h = win_w * 3 / 4;
+        if (win_h > usable.h) {
+            win_h = usable.h;
+            win_w = win_h * 4 / 3;
+        }
+    }
     SDL_Window* win = SDL_CreateWindow(GCN_APP_LABEL, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
-                                       (hidden ? SDL_WINDOW_HIDDEN : 0));
+                                       win_w, win_h, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
+                                       (hidden ? SDL_WINDOW_HIDDEN : 0) |
+                                       (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (!win) fatal("SDL_CreateWindow: %s", SDL_GetError());
+    g_window = win;
+    g_fullscreen = fullscreen;
     // Ask for the newest core profile first: the renderer needs only GCN_GL_MAJOR.MINOR, but an
     // OpenXR runtime may want more of the context it shares (Meta's wants 4.0), and drivers
     // hand back exactly the version asked for.

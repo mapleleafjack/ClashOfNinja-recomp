@@ -50,7 +50,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         LocalFree(argv);
         return code;
     }
-    // Writes the four game projects into a folder, which is what the window offers to do.
+    // Writes every game project into a folder, which is what the window offers to do.
     if (argv && argc >= 3 && wcscmp(argv[1], L"--make-project") == 0) {
         std::wstring error;
         bool ok = nla::Project::create(std::filesystem::path(argv[2]), &error);
