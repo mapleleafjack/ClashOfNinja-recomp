@@ -70,7 +70,6 @@ set(NLA_SOURCES
   src/app.cpp
   src/app_games.cpp
   src/app_jobs.cpp
-  src/app_mods.cpp
   src/app_paint.cpp
   src/app_state.cpp
   src/activity_panel.cpp
@@ -90,6 +89,7 @@ set(NLA_SOURCES
   src/picker_screen.cpp
   src/jobs.cpp
   src/mods.cpp
+  src/mods_screen.cpp
   src/patches.cpp
   # The delta reader is the runtime's own, so a patch the launcher says fits is read
   # exactly as the game will read it.
@@ -402,6 +402,46 @@ else()
   target_link_libraries(mods_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME mods-logic COMMAND $<TARGET_FILE:mods_test>)
+
+# What the Mods panel does: the ids it answers for, the stand-in table a render draws, what a
+# check stages and what Apply writes. The page holds a host of callbacks and the two pages it
+# shares work with, so this drives it with no window, no disc and no network.
+add_executable(mods_screen_test
+  tests/mods_screen_test.cpp
+  src/mods_screen.cpp
+  src/mods.cpp
+  src/catalog.cpp
+  src/codes.cpp
+  src/gecko.cpp
+  src/geckos_screen.cpp
+  src/patches.cpp
+  src/picker_screen.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  src/update.cpp
+  src/git.cpp
+  src/util.cpp
+  ../gcn-recomp/runtime/hw/patch.cpp
+)
+target_include_directories(mods_screen_test PRIVATE src ../gcn-recomp/runtime/hw)
+if(WIN32)
+  target_compile_definitions(mods_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(mods_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(mods_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(mods_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME mods-screen-logic COMMAND $<TARGET_FILE:mods_screen_test>)
 
 # The Gecko codes' half: codetypes become the operations the runtime runs and the words
 # recompilation applies, and what cannot be done is said rather than dropped.

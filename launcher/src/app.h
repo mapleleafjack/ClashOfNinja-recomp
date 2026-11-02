@@ -18,6 +18,7 @@
 #include "screen.h"
 #include "catalog.h"
 #include "geckos_screen.h"
+#include "mods_screen.h"
 #include "covers.h"
 #include "devices.h"
 #include "picker.h"
@@ -101,36 +102,9 @@ class App {
     void launch();
     void continue_launch();
     void play();
-    void open_path(const std::filesystem::path& path);
     // The controllers the game would see, and the pads they play as, from the game's
     // --list-devices. Row 0 is the keyboard.
     void open_players();
-    // The Mods panel: the mods this game's disc allows, from `mods.json` and the folders
-    // beside the games, with the ones that will be written when Apply is pressed.
-    void open_mods();
-    // The mods this disc allows and their state on disk, plus what is applied from settings.
-    void refresh_mods();
-    // Checks or unchecks a row. Nothing is written until apply_mods(): closing the panel
-    // without it leaves the game as it was.
-    void toggle_mod(const std::wstring& id);
-    // Whether a row can be applied at all: its files are here, or the catalog says where
-    // to get them.
-    std::wstring mods_summary() const;
-    // How many mod rows the panel draws, so a folder with a dozen mods still opens.
-    // Fetches the checked mods this machine does not have, then writes the overlay and
-    // the patch the runtime reads.
-    void apply_mods();
-    void apply_mods_now();
-    void commit_mods(const fs::path& delta, const PatchFit& fit);
-    void download_mods(const std::vector<std::wstring>& ids);
-    // Lays the applied mods' files over the extracted disc, as the list the runtime reads.
-    void write_mod_overlay();
-    // The disc patch this game is played with: what the tree carries, else what was chosen.
-    void refresh_patch();
-    void choose_patch();
-    // Adds a delta from this machine to the table, checked, without applying it.
-    void stage_patch(const fs::path& delta);
-
     // Asks the game which controllers it sees. Deciding who plays as whom is DeviceMap's.
     void refresh_devices();
     // The pads this picker owns, written to controls.txt beside the player's own mapping.
@@ -215,25 +189,13 @@ class App {
     bool forced_busy_ = false;
     bool forced_running_ = false;
 
-    // The Mods table: what this disc may play, and what is written against what is staged.
-    ModSelection mods_;
-    std::wstring mods_note_;   // the line under the table: why it is empty, or what Apply did
-    std::wstring mods_log_;    // what the Activity log already says about the mods
-    std::wstring catalog_log_; // the catalog error Activity already reported
-    // The disc patch the game is played with, and what checking it against the extracted
-    // disc found. The delta lives wherever the player keeps it; only its path is recorded.
-    fs::path patch_delta_;
-    PatchFit patch_fit_;
-    bool patch_checking_ = false;
-    std::wstring patch_note_;
-
-
     // What a screen may ask the window for, filled in before anything can ask. The screen
     // is declared after it, so it is handed a host that is already there.
     ScreenHost host_;
     UpdateScreen update_{host_};
     PickerScreen picker_{host_};
     GeckosScreen geckos_{host_};
+    ModsScreen mods_{host_, picker_, geckos_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;

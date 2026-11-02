@@ -52,6 +52,7 @@ App::App() {
         overlay_.mark_update();
     };
     host_.busy = [this] { return busy_; };
+    host_.status = [this]() -> const ProjectStatus& { return state_.status(); };
     host_.game_running = [this] { return game_.running(); };
     host_.settings = [this]() -> Settings& { return state_.settings(); };
     host_.settings_note = [this](const std::wstring& text) { settings_note_ = text; };
@@ -418,30 +419,11 @@ void App::activate(Id id) {
         return;
     }
 
-    if (overlay_.is(OverlayPage::Mods)) {
-        const int row = static_cast<int>(id) - static_cast<int>(Id::ModRow);
-        if (id >= Id::ModRow && id < Id::ModRowEnd && row < static_cast<int>(mods_.rows())) {
-            toggle_mod(mods_.entries()[static_cast<size_t>(row)].id);
-            return;
-        }
-        switch (id) {
-            case Id::ModsFolder:
-                if (state_.project()) open_path(state_.project()->mods_dir());
-                invalidate();
-                return;
-            case Id::ModChoose:
-                choose_patch();
-                return;
-            case Id::ModApply:
-                apply_mods();
-                return;
-            case Id::OverlayAction:
-                // Anything checked but not applied goes with it: the game is as it was.
-                close_overlay();
-                return;
-            default:
-                return;
-        }
+    // The panel answers for its own ids and lets the overlay's own buttons through, which is
+    // how Done closes it with whatever was checked left unapplied.
+    if (overlay_.is(OverlayPage::Mods) && mods_.handles(id)) {
+        mods_.activate(id);
+        return;
     }
 
     if (overlay_.is(OverlayPage::Players)) {
@@ -581,7 +563,7 @@ void App::activate(Id id) {
             break;
         case Id::Play: launch(); break;
         case Id::Mods:
-            if (state_.project()) open_mods();
+            if (state_.project()) mods_.open();
             else locate_project();
             break;
         case Id::Geckos:

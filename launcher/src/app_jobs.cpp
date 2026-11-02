@@ -489,7 +489,7 @@ void App::play() {
     }
     // The runtime reads the mod list at boot, so it is brought up to date first: the disc
     // may have been extracted, or a mod switched on, since the last refresh.
-    write_mod_overlay();
+    mods_.write_overlay();
     std::vector<std::wstring> args = {
         L"--scale=" + std::to_wstring(state_.settings().scale),
     };
@@ -533,21 +533,6 @@ void App::play() {
         play_status_ = L"Press Stop the game to end it.";
     }
     refresh();
-}
-
-void App::open_path(const fs::path& path) {
-    if (path.empty()) return;
-    std::error_code ec;
-    if (!fs::exists(path, ec)) {
-        show_message(L"Not there yet", L"Nothing at:\n\n" + path.wstring());
-        return;
-    }
-    std::wstring error;
-    if (!nla::open_path(path, &error)) {
-        show_message(L"Cannot open", error.empty() ? L"This system could not open:\n\n" +
-                                                         path.wstring()
-                                                   : error);
-    }
 }
 
 // Who plays as whom: a row per console pad, and the device that plays as it.

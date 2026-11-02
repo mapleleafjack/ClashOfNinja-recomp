@@ -59,8 +59,9 @@ struct ScreenHost {
 
     std::function<bool()> busy;
     std::function<bool()> game_running;
-    // The project in use, for a page that reads the disc it is about.
+    // The project in use and what its files say, for a page that reads the disc it is about.
     std::function<const std::optional<Project>&()> project;
+    std::function<const ProjectStatus&()> status;
     // A render, which has no disk to write and no network to ask.
     std::function<bool()> rendering;
     // The whole re-sync, for a page whose Apply changes what the runtime reads.

@@ -11,11 +11,11 @@ namespace nla {
 void App::refresh() {
     // The mods come first: their files and codes are what the game's status is measured
     // against, so the status is read after they have been written.
-    refresh_mods();
+    mods_.refresh();
     // The codes chosen on their own are read back here too: the program the runtime runs
     // holds the mods' codes and these, so both lists must be current before it is written.
     geckos_.refresh();
-    write_mod_overlay();
+    mods_.write_overlay();
     state_.reload_status();
     invalidate();
 }
