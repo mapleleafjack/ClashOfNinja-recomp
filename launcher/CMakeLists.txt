@@ -235,7 +235,7 @@ if(WIN32)
   target_link_libraries(NarutoLauncher PRIVATE
     ${NLA_SDL2}
     dwmapi comctl32 shell32 shlwapi ole32 uuid user32 gdi32 advapi32 propsys
-    winhttp bcrypt
+    winhttp
   )
 else()
   target_compile_options(NarutoLauncher PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -715,6 +715,29 @@ else()
   target_link_libraries(settings_screen_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME settings-screen-logic COMMAND $<TARGET_FILE:settings_screen_test>)
+
+# The two digests the launcher takes: SHA-1 of a disc's main executable, which says which
+# disc a project was built from, and SHA-256 of the tools archive, which says whether a
+# download is the one a release published. Neither had a check before this, and there was no
+# SHA-256 in the tree on Linux or macOS at all.
+add_executable(hash_test
+  tests/hash_test.cpp
+  src/tools_package.cpp
+  src/jobs.cpp
+  src/util.cpp
+)
+target_include_directories(hash_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(hash_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(hash_test PRIVATE shell32 ole32 advapi32 user32 winhttp)
+  if(MINGW)
+    target_link_options(hash_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(hash_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME hash-logic COMMAND $<TARGET_FILE:hash_test>)
 
 # Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
 # so the check is made against the tree the patch decodes from. The runtime has no test

@@ -11,7 +11,6 @@
 
 #if defined(_WIN32)
 #include <windows.h>
-#include <bcrypt.h>
 #include <winhttp.h>
 #endif
 
@@ -42,47 +41,6 @@ struct WinHttpHandle {
         if (handle) WinHttpCloseHandle(handle);
     }
 };
-
-// SHA-256 through CNG, so the check does not depend on a tool being installed or on the
-// wording of an English-only command.
-bool sha256_file(const fs::path& path, std::string& hex, wstring* error) {
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-    BCRYPT_HASH_HANDLE hash = nullptr;
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        *error = L"cannot open " + path.wstring();
-        return false;
-    }
-    bool ok = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0;
-    if (ok) ok = BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) >= 0;
-    if (ok) {
-        std::vector<char> buffer(1 << 16);
-        while (file) {
-            file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-            auto read = static_cast<ULONG>(file.gcount());
-            if (read == 0) break;
-            if (BCryptHashData(hash, reinterpret_cast<PUCHAR>(buffer.data()), read, 0) < 0) {
-                ok = false;
-                break;
-            }
-        }
-    }
-    unsigned char digest[32] = {};
-    if (ok) ok = BCryptFinishHash(hash, digest, sizeof(digest), 0) >= 0;
-    if (hash) BCryptDestroyHash(hash);
-    if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
-    if (!ok) {
-        *error = L"cannot hash " + path.wstring();
-        return false;
-    }
-    static const wchar_t* digits = L"0123456789abcdef";
-    hex.clear();
-    for (unsigned char byte : digest) {
-        hex.push_back(static_cast<char>(digits[byte >> 4]));
-        hex.push_back(static_cast<char>(digits[byte & 0xF]));
-    }
-    return true;
-}
 
 bool download(Job& job, const std::wstring& url, const fs::path& out, wstring* error) {
     URL_COMPONENTS parts{};
@@ -199,31 +157,6 @@ bool download(Job& job, const std::wstring& url, const fs::path& out, wstring* e
 // unpacks it with the tar every Linux has, rather than looking for an extractor.
 constexpr wchar_t kArchiveName[] = L"NarutoLauncher-tools.tar.xz";
 
-// sha256sum rather than an implementation of our own, the same way the rest of the
-// launcher leans on the tools the system already has.
-bool sha256_file(const fs::path& path, std::string& hex, wstring* error) {
-    auto sum = find_tool_from({L"/usr/bin/sha256sum", L"/bin/sha256sum"}, L"sha256sum");
-    if (sum.empty()) {
-        if (error)
-            *error = L"sha256sum was not found, and the launcher uses it to check the download";
-        return false;
-    }
-    std::string output;
-    int status = -1;
-    if (!capture_output(sum, {path.wstring()}, &output, &status) || status != 0) {
-        if (error) *error = L"cannot hash " + path.wstring();
-        return false;
-    }
-    // "<digest>  <name>"
-    auto space = output.find(' ');
-    if (space == std::string::npos || space != 64) {
-        if (error) *error = L"sha256sum gave no digest for " + path.wstring();
-        return false;
-    }
-    hex = output.substr(0, space);
-    return true;
-}
-
 // curl fetches it, with the growing file watched from here so the panel has a real bar.
 // curl's own progress goes to stderr as carriage returns, and the job's reader splits on
 // newlines, so it would only appear once the download had already ended.
@@ -274,6 +207,21 @@ bool download(Job& job, const std::wstring& url, const fs::path& out, wstring* e
 
 }  // namespace
 
+// The check itself has nothing platform about it, so it sits outside the two blocks above:
+// what differs between Windows and Linux is how the archive is fetched and unpacked, not
+// what makes a good one. The digest is taken here rather than by the system's sha256sum or
+// by a library, so the answer is the same on every machine.
+bool check_archive(const fs::path& archive, const std::wstring& expected,
+                   std::wstring* error) {
+    const wstring hex = sha256_file(archive, error);
+    if (hex.empty()) return false;
+    if (hex == expected) return true;
+    *error = format(L"the archive hashes to %ls, not %ls", hex.c_str(), expected.c_str());
+    std::error_code ec;
+    fs::remove(archive, ec);
+    return false;
+}
+
 bool tools_package_available() {
 #if defined(_WIN32) || defined(__linux__)
     return kToolsUrl[0] != '\0' && kToolsSha256[0] != '\0';
@@ -295,7 +243,7 @@ std::vector<Task> tools_package_tasks() {
     fs::path archive = fs::path(temp_dir()) / kArchiveName;
 #endif
     std::wstring url = widen(kToolsUrl);
-    std::string expected = kToolsSha256;
+    const std::wstring expected = widen(kToolsSha256);
 
     std::vector<Task> tasks;
     tasks.push_back({L"Downloading the build tools…", [archive, url](Job& job) -> int {
@@ -309,17 +257,9 @@ std::vector<Task> tools_package_tasks() {
                          return 0;
                      }});
     tasks.push_back({L"Checking the download…", [archive, expected](Job& job) -> int {
-                         std::string hex;
                          wstring error;
-                         if (!sha256_file(archive, hex, &error)) {
+                         if (!check_archive(archive, expected, &error)) {
                              job.log(error + L"\n");
-                             return 1;
-                         }
-                         if (hex != expected) {
-                             job.log(format(L"[launcher] the archive hashes to %ls, not %ls\n",
-                                            widen(hex).c_str(), widen(expected).c_str()));
-                             std::error_code ec;
-                             fs::remove(archive, ec);
                              return 1;
                          }
                          job.log(L"[launcher] the checksum matches\n");
