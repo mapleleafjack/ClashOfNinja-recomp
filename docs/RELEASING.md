@@ -135,6 +135,14 @@ ad hoc, exactly like a local build — an unsigned arm64 bundle will not start, 
 would need an identity this project does not have — so the download needs right-click → Open the
 first time.
 
+Every run checks the zip the way a player receives it:
+`launcher/packaging/check-release-macos.sh` extracts it afresh and confirms the folder name, the
+version in `Info.plist`, the icon it names, the ad-hoc seal, the arm64 slice and the statically
+linked SDL2; then it runs the launcher itself from the extracted copy to write all five game
+projects and draw a frame, and fails if the bundle carries a project, box art, a save or a disc
+image. Run it by hand against a local bundle — `--app launcher/build-ci/NarutoLauncher.app
+--version 0.0.0` — to see what a build would ship.
+
 Nothing derived from a disc is in the bundle: there is no game project in it at all.
 
 ## The Linux release

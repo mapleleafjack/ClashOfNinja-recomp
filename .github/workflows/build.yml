@@ -186,6 +186,17 @@ jobs:
           ditto -c -k --norsrc --keepParent "$stage" "$zip"
           shasum -a 256 "$zip"
 
+      - name: The package works as downloaded
+        shell: bash
+        # The zip is what a player gets, so it is what is checked: a fresh unzip, the
+        # version the tag names, a seal that survived the archive, and a launcher that
+        # draws a frame and writes every game project -- all from the extracted copy, so a
+        # resource that only exists in the build tree cannot hide here.
+        run: |
+          bash launcher/packaging/check-release-macos.sh \
+            "launcher/build-ci/NarutoLauncher-macOS-arm64-v${{ steps.version.outputs.value }}.zip" \
+            --version "${{ steps.version.outputs.value }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64
