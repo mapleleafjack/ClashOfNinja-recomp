@@ -44,9 +44,9 @@ void App::refresh_geckos() {
         return;
     }
 
-    if (!project_) return;
-    const std::wstring disc_id = project_->disc_id();
-    codes_.entries() = read_codes(project_->root(), disc_id);
+    if (!state_.project()) return;
+    const std::wstring disc_id = state_.project()->disc_id();
+    codes_.entries() = read_codes(state_.project()->root(), disc_id);
 
     CodeSource source;
     const bool has_guide = online_code_source(disc_id, &source);
@@ -63,7 +63,7 @@ void App::refresh_geckos() {
     // asks for nothing.
     if (has_guide && !codes_fetch_tried_) {
         std::error_code ec;
-        const fs::path cache = online_code_file(project_->root(), disc_id);
+        const fs::path cache = online_code_file(state_.project()->root(), disc_id);
         if (!fs::is_regular_file(cache, ec)) {
             codes_fetch_tried_ = true;
             fetch_online_codes();
@@ -72,8 +72,8 @@ void App::refresh_geckos() {
 
     // What settings remembers, in the order it was switched on so a later code wins where
     // two write the same address.
-    auto saved = settings_.codes.find(project_->game());
-    if (saved == settings_.codes.end()) return;
+    auto saved = state_.settings().codes.find(state_.project()->game());
+    if (saved == state_.settings().codes.end()) return;
     for (const auto& name : saved->second) {
         for (const auto& entry : codes_.entries()) {
             if (entry.name != name) continue;
@@ -99,21 +99,21 @@ void App::open_geckos() {
     window_.set_text_input(false);
     if (codes_.entries().empty() && !rendering_) {
         CodeSource source;
-        if (!project_) {
+        if (!state_.project()) {
             codes_note_ = L"Set up the game folder first: the codes are kept beside it.";
-        } else if (!online_code_source(project_->disc_id(), &source)) {
+        } else if (!online_code_source(state_.project()->disc_id(), &source)) {
             // Saying so outright matters: without a guide there is nothing for Refresh list
             // to fetch, and a bare "no codes yet" would send a player looking for one.
             codes_note_ = format(L"No code guide is known for %ls. Paste a code below to add "
                                  L"one.",
-                                 project_->disc_id().c_str());
+                                 state_.project()->disc_id().c_str());
         } else {
             codes_note_ = L"No codes for this disc yet. Paste one below, or press Refresh "
                           L"list.";
         }
     }
     overlay_.show_panel(OverlayPage::Geckos,
-                        project_ ? L"Geckos — " + project_->title() : L"Geckos");
+                        state_.project() ? L"Geckos — " + state_.project()->title() : L"Geckos");
     close_popups();
 
     invalidate();
@@ -135,8 +135,8 @@ void App::toggle_code(const std::wstring& name) {
 
 std::vector<CodeEntry> App::enabled_code_entries() const {
     std::vector<CodeEntry> chosen;
-    if (!project_ || rendering_ || codes_.enabled().empty()) return chosen;
-    const auto mine = read_codes(project_->root(), project_->disc_id());
+    if (!state_.project() || rendering_ || codes_.enabled().empty()) return chosen;
+    const auto mine = read_codes(state_.project()->root(), state_.project()->disc_id());
     for (const auto& name : codes_.enabled()) {
         for (const auto& entry : mine) {
             if (entry.name != name) continue;
@@ -148,7 +148,7 @@ std::vector<CodeEntry> App::enabled_code_entries() const {
 }
 
 void App::apply_geckos() {
-    if (!project_ || busy_) return;
+    if (!state_.project() || busy_) return;
     if (rendering_) {
         // A render has no disk to write: it checks that the click reaches the button.
         codes_note_ = L"Applied in a render check only.";
@@ -161,7 +161,7 @@ void App::apply_geckos() {
     std::vector<std::wstring> warnings;
     auto pasted = parse_pasted_codes(gecko_edit_, &warnings);
     if (!pasted.empty()) {
-        const fs::path path = code_file(project_->root(), project_->disc_id());
+        const fs::path path = code_file(state_.project()->root(), state_.project()->disc_id());
         auto mine = read_code_file(path, false);
         for (const auto& code : pasted) {
             bool replaced = false;
@@ -186,9 +186,9 @@ void App::apply_geckos() {
 
     codes_.commit();
     if (codes_.enabled().empty()) {
-        settings_.codes.erase(project_->game());
+        state_.settings().codes.erase(state_.project()->game());
     } else {
-        settings_.codes[project_->game()] = codes_.enabled();
+        state_.settings().codes[state_.project()->game()] = codes_.enabled();
     }
     save_settings();
 
@@ -215,9 +215,9 @@ void App::apply_geckos() {
 
 void App::fetch_online_codes() {
     // A render has no network to ask and nothing to keep an answer in.
-    if (!project_ || rendering_ || codes_fetching_) return;
+    if (!state_.project() || rendering_ || codes_fetching_) return;
 
-    const std::wstring disc_id = project_->disc_id();
+    const std::wstring disc_id = state_.project()->disc_id();
     CodeSource source;
     if (!online_code_source(disc_id, &source)) {
         codes_note_ = disc_id.empty()
@@ -234,7 +234,7 @@ void App::fetch_online_codes() {
         return;
     }
 
-    const fs::path cache = online_code_file(project_->root(), disc_id);
+    const fs::path cache = online_code_file(state_.project()->root(), disc_id);
     std::error_code ec;
     fs::create_directories(cache.parent_path(), ec);
     if (ec) {

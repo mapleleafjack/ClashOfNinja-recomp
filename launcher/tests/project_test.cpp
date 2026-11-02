@@ -4,6 +4,7 @@
 // and needs no game.
 
 #include "project.h"
+#include "project_state.h"
 #include "util.h"
 
 #include <cstdio>
@@ -130,6 +131,38 @@ void setup(const fs::path& root) {
     fs::remove_all(root, ec);
 }
 
+// The three things that have to agree: the project in use, the settings, and what the
+// project's files say. The status used to be re-read wherever a caller happened to remember,
+// which is what this replaces.
+void state(const fs::path& root) {
+    nla::ProjectState ps;
+    ps.load_settings();
+    check(!ps.project(), "a state with nothing loaded has no project");
+    check(!ps.status().disc.extracted && !ps.status().built,
+          "and no status to go with it");
+
+    ps.set_project(root, L"gnt4");
+    check(ps.project().has_value(), "taking a project keeps it");
+    check(ps.project()->game() == L"gnt4", "and the game asked for is the one in use");
+    check(!ps.status().disc.extracted,
+          "and its status is read with it: no disc extracted, so nothing is offered");
+    check(!ps.status().built, "and nothing is built");
+
+    const std::wstring settings_game = ps.settings().game;
+    ps.set_project(root, L"naruto");
+    check(ps.settings().game == settings_game, "taking a project leaves the settings alone");
+
+    ps.select_game(L"gnt4");
+    check(ps.project().has_value() && ps.project()->game() == L"gnt4",
+          "selecting a game changes the game");
+    check(ps.project()->root() == root, "and keeps the folder it was working in");
+
+    ps.clear_project();
+    check(!ps.project(), "clearing forgets the project");
+    check(!ps.status().disc.extracted && !ps.status().built,
+          "and its status goes with it, so the page cannot offer a build that is not there");
+}
+
 int run() {
     std::error_code ec;
     fs::path root = fs::temp_directory_path(ec) / L"NarutoLauncher-project-test";
@@ -140,6 +173,7 @@ int run() {
         return 1;
     }
     older_project(root);
+    state(root);
     choosing(root);
     games();
     setup(root / L"setup");

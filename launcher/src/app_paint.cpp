@@ -97,11 +97,11 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                    int window_width, int window_height) {
     rendering_ = true;
     headless_ = true;
-    settings_ = Settings::load();
+    state_.load_settings();
     tools_ = check_tools();
-    if (auto root = Project::locate()) project_.emplace(*root, settings_.game);
-    if (project_) settings_.game = project_->game();
-    status_ = project_ ? project_->status() : ProjectStatus{};
+    if (auto root = Project::locate()) state_.set_project(*root, state_.settings().game);
+    if (state_.project()) state_.settings().game = state_.project()->game();
+    state_.reload_status();
     append_log(L"[launcher] render check");
 
     std::wstring error;
@@ -209,10 +209,11 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         std::error_code ec;
         fs::create_directories(scratch, ec);
         for (const wchar_t* game : {L"naruto", L"gnt4"}) {
-            project_.emplace(scratch, game);
+            state_.set_project(scratch, game);
             // A disc stands extracted, or the page would not offer the button at all.
-            status_ = ProjectStatus{};
-            status_.disc.extracted = true;
+            ProjectStatus stand_in;
+            stand_in.disc.extracted = true;
+            state_.set_status(stand_in);
             paint();
             Rect mods{};
             bool found = false;
@@ -297,10 +298,11 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         std::error_code ec;
         fs::create_directories(scratch, ec);
         for (const wchar_t* game : {L"naruto", L"gnt4"}) {
-            project_.emplace(scratch, game);
+            state_.set_project(scratch, game);
             // A disc stands extracted, or the page would not offer the button at all.
-            status_ = ProjectStatus{};
-            status_.disc.extracted = true;
+            ProjectStatus stand_in;
+            stand_in.disc.extracted = true;
+            state_.set_status(stand_in);
             paint();
             Rect geckos{};
             bool found = false;
@@ -350,7 +352,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         // The scratch folder stands in for a project, and borrows this checkout's box art
         // when there is any, so a frame of the map does not show placeholder tiles.
         const std::optional<fs::path> covers =
-            project_ ? std::optional<fs::path>(project_->covers_dir()) : std::nullopt;
+            state_.project() ? std::optional<fs::path>(state_.project()->covers_dir()) : std::nullopt;
         const std::size_t colon = view.find(':', 6);
         const std::string state =
             view.substr(6, colon == std::string::npos ? std::string::npos : colon - 6);
@@ -368,21 +370,22 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                          "not-built|mods-changed|ready[:details]\n");
             return 1;
         }
-        project_.emplace(scratch, settings_.game);
+        state_.set_project(scratch, state_.settings().game);
         if (covers) {
             std::error_code link_ec;
             fs::create_directory_symlink(*covers, scratch / L"covers", link_ec);
         }
-        status_ = ProjectStatus{};
         // A game with its disc extracted stands behind everything but `setup` and
         // `needs-disc`; the two live states are that page with a step in flight.
         const bool installed = state != "setup" && state != "needs-disc";
-        status_.disc.extracted = installed;
+        ProjectStatus stand_in;
+        stand_in.disc.extracted = installed;
         // A wrong disc is one that was extracted and did not match.
-        status_.disc.verified = installed && state != "wrong-disc";
-        status_.built = state == "mods-changed" || state == "ready";
-        status_.stale_code = state == "mods-changed";
-        if (state == "setup") project_.reset();
+        stand_in.disc.verified = installed && state != "wrong-disc";
+        stand_in.built = state == "mods-changed" || state == "ready";
+        stand_in.stale_code = state == "mods-changed";
+        state_.set_status(stand_in);
+        if (state == "setup") state_.clear_project();
         if (state == "working") forced_busy_ = true;
         if (state == "running") forced_running_ = true;
         if (with_details && !click_control(Id::LogToggle)) return 1;
@@ -397,7 +400,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         if (!click_control(Id::PadRow, last ? kPads - 1 : 0)) return 1;
     } else if (view == "picker") {
         picker_.choose_path(PickerKind::Image, L"Choose your own disc image",
-                            project_ ? project_->root() : home_dir(),
+                            state_.project() ? state_.project()->root() : home_dir(),
                             [](const fs::path&) {});
     } else if (view == "update") {
         fake_update();
@@ -445,8 +448,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         // the page falls back to only exists when one does.
         fs::create_directories(scratch / L"naruto", ec);
         write_text_file(scratch / L"naruto" / L"CMakeLists.txt", "# stand-in\n");
-        project_.emplace(scratch, settings_.game);
-        status_ = project_->status();
+        state_.set_project(scratch, state_.settings().game);
 
         auto games = available_games();
         if (index < 0 || index >= static_cast<int>(games.size())) {
@@ -477,9 +479,9 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             if (!click(point)) return 1;
         }
         const auto& wanted = games[static_cast<size_t>(index)];
-        if (!project_ || project_->game() != wanted.folder) {
+        if (!state_.project() || state_.project()->game() != wanted.folder) {
             std::fprintf(stderr, "cover-click: the page is on %s, not %s\n",
-                         project_ ? narrow(project_->game()).c_str() : "no game",
+                         state_.project() ? narrow(state_.project()->game()).c_str() : "no game",
                          narrow(wanted.folder).c_str());
             return 1;
         }
@@ -569,31 +571,31 @@ void App::paint_games() {
         detail = L"It opens in its own window. Close that window, or stop it here.";
         pill_text = L"running";
         pill_state = Pill::Ok;
-    } else if (!project_) {
+    } else if (!state_.project()) {
         title = L"Set up your game folder";
         detail = L"Pick a folder and the launcher writes the game folders into it, then "
                  L"extracts your disc. It remembers the choice.";
         pill_text = L"setup";
         pill_state = Pill::Warn;
-    } else if (!status_.disc.extracted) {
+    } else if (!state_.status().disc.extracted) {
         title = L"Choose your disc image";
         detail = L"Click a cover and pick your own disc image. The launcher extracts the "                 L"files the build and runtime read; nothing from the disc is included in "
                  L"the launcher.";
         pill_text = L"needs disc";
         pill_state = Pill::Warn;
-    } else if (!status_.disc.verified) {
+    } else if (!state_.status().disc.verified) {
         title = L"This is not the supported disc";
         detail = L"The extracted main.dol does not match the supported USA release. Click "
                  L"the cover and pick the correct image.";
         pill_text = L"wrong disc";
         pill_state = Pill::Bad;
-    } else if (!status_.built) {
+    } else if (!state_.status().built) {
         title = L"Ready to build";
         detail = L"A cover builds that game first, then starts it. A first build takes a "
                  L"few minutes.";
         pill_text = L"not built";
         pill_state = Pill::Warn;
-    } else if (status_.stale_code) {
+    } else if (state_.status().stale_code) {
         title = L"Ready to rebuild";
         detail = L"A mod's codes changed, and they are compiled into the game: a cover "
                  L"builds it again, then starts it.";
@@ -633,10 +635,10 @@ void App::paint_games() {
     // Play asks for a disc when there is no verified tree, which is what launch() does: the
     // button says so rather than starting and then asking.
     const std::wstring play_label =
-        (!project_ || !status_.disc.verified) ? L"Set up the disc\u2026" : L"Play";
+        (!state_.project() || !state_.status().disc.verified) ? L"Set up the disc\u2026" : L"Play";
     // The mods and the codes change what an extracted disc plays. Before there is one there
     // is nothing to change, so the page offers Play on its own.
-    const bool changeable = project_ != std::nullopt && status_.disc.extracted;
+    const bool changeable = state_.project() != std::nullopt && state_.status().disc.extracted;
 
     constexpr float kButtonGap = 12.0f;
     constexpr float kButtonHeight = 50.0f;
@@ -811,7 +813,7 @@ void App::paint_games() {
     float x = left;
     for (int index = 0; index < count; ++index) {
         const auto& game = games[static_cast<size_t>(index)];
-        bool selected = project_ && project_->game() == game.folder;
+        bool selected = state_.project() && state_.project()->game() == game.folder;
         Rect tile{x, top, tile_width, tile_height};
         paint_cover(static_cast<Id>(static_cast<int>(Id::GameCover) + index), tile, game,
                     selected, can_launch);
@@ -1060,7 +1062,7 @@ void App::paint_settings() {
     section(L"RESOLUTION");
     painter_.text(L"Window scale", RectF(left, y + 8, left + 96, y + 28), Face::Small,
                   rgb(theme::Muted));
-    ui_.combo(Id::Scale, Rect{left + 96, y, 180, 32}, scale_label(settings_.scale), !busy_);
+    ui_.combo(Id::Scale, Rect{left + 96, y, 180, 32}, scale_label(state_.settings().scale), !busy_);
     y += 36;
     separator();
 
@@ -1093,7 +1095,7 @@ void App::paint_settings() {
     }
     y += 36;
     ui_.checkbox(Id::SettingsToggleUpdates, left, y + 4, L"Check when the launcher starts",
-             settings_.check_updates, !busy_);
+             state_.settings().check_updates, !busy_);
     y += 24;
 
     if (!settings_note_.empty()) {
@@ -1260,7 +1262,7 @@ void App::paint_overlay() {
         const float source_left = right - 96;
         float y = panel.y + 58;
         const std::wstring lead =
-            project_ ? L"Only codes written for this disc are listed. Each is switched on by "
+            state_.project() ? L"Only codes written for this disc are listed. Each is switched on by "
                        L"itself."
                      : L"Set up the game folder first: the codes are kept beside it.";
         painter_.text(ui_.elide(lead, Face::Tiny, right - left),
@@ -1271,7 +1273,7 @@ void App::paint_overlay() {
             second = L"Fetching what the guide for this disc holds\u2026";
         } else if (!online_label_.empty()) {
             second = L"The guide's list is here (" + online_label_ + L").";
-        } else if (project_) {
+        } else if (state_.project()) {
             second = L"Fetch to see the codes the community's guide holds for this disc.";
         }
         if (!second.empty()) {
@@ -1370,7 +1372,7 @@ void App::paint_overlay() {
         const std::wstring refresh = codes_fetching_ ? L"Fetching…" : L"Refresh list";
         const float refresh_w = ui_.text_width(refresh, Face::Tiny) + 10.0f;
         ui_.link(Id::CodeRefresh, Rect{right - refresh_w, panel.y + panel.h - 86, refresh_w, 18},
-             refresh, project_ != std::nullopt && !codes_fetching_);
+             refresh, state_.project() != std::nullopt && !codes_fetching_);
         painter_.text(ui_.elide(note, Face::Small, right - left - refresh_w - 16.0f),
                       RectF(left, panel.y + panel.h - 84, right - refresh_w - 12.0f,
                             panel.y + panel.h - 66),
@@ -1378,7 +1380,7 @@ void App::paint_overlay() {
         const bool staged = codes_.pending() != codes_.enabled() || !gecko_edit_.empty();
         ui_.button(Id::CodeApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
-               L"Apply", true, !busy_ && project_ != std::nullopt && staged);
+               L"Apply", true, !busy_ && state_.project() != std::nullopt && staged);
     } else {
         painter_.text(overlay_.text(), RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
                                                  panel.y + panel.h - 66),
@@ -1446,7 +1448,7 @@ void App::paint_scale_menu() {    Rect menu{scale_anchor_.x, scale_anchor_.y + s
         painter_.text(scale_label(index + 1),
                       RectF(item.x + 10, item.y, item.x + item.w - 10, item.y + item.h),
                       Face::Small,
-                      settings_.scale == index + 1 ? rgb(theme::Accent) : rgb(theme::Text),
+                      state_.settings().scale == index + 1 ? rgb(theme::Accent) : rgb(theme::Text),
                       TextAlign::Leading, TextVAlign::Center,
                       false);
         ui_.register_hit(id, item);

@@ -73,6 +73,7 @@ set(NLA_SOURCES
   src/app_jobs.cpp
   src/app_mods.cpp
   src/app_paint.cpp
+  src/app_state.cpp
   src/activity_panel.cpp
   src/catalog.cpp
   src/codes.cpp
@@ -94,6 +95,7 @@ set(NLA_SOURCES
   # exactly as the game will read it.
   ../gcn-recomp/runtime/hw/patch.cpp
   src/project.cpp
+  src/project_state.cpp
   src/project_templates.cpp
   src/settings.cpp
   src/tools.cpp
@@ -518,7 +520,9 @@ add_test(NAME picker-screen-logic COMMAND $<TARGET_FILE:picker_screen_test>)
 add_executable(project_test
   tests/project_test.cpp
   src/project.cpp
+  src/project_state.cpp
   src/project_templates.cpp
+  src/settings.cpp
   src/util.cpp
 )
 target_include_directories(project_test PRIVATE src)

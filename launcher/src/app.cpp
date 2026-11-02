@@ -53,7 +53,7 @@ App::App() {
     };
     host_.busy = [this] { return busy_; };
     host_.game_running = [this] { return game_.running(); };
-    host_.settings = [this]() -> Settings& { return settings_; };
+    host_.settings = [this]() -> Settings& { return state_.settings(); };
     host_.settings_note = [this](const std::wstring& text) { settings_note_ = text; };
     host_.start_job = [this](std::vector<Task> tasks, JobOptions options) {
         start_job(std::move(tasks), std::move(options));
@@ -99,18 +99,18 @@ App::~App() {
 }
 
 bool App::create() {
-    settings_ = Settings::load();
+    state_.load_settings();
     tools_ = check_tools();
     // What an earlier update could not remove once its helper had finished.
     clean_up_after_update();
 
     auto root = Project::locate();
-    if (root) project_.emplace(*root, settings_.game);
-    if (project_) settings_.game = project_->game();
+    if (root) state_.set_project(*root, state_.settings().game);
+    if (state_.project()) state_.settings().game = state_.project()->game();
 
     std::wstring error;
     std::wstring window_title = current_title() + L" — Launcher";
-    if (!window_.create(window_title, settings_.window_width, settings_.window_height,
+    if (!window_.create(window_title, state_.settings().window_width, state_.settings().window_height,
                         &error)) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Naruto: Clash of Ninja",
                                  narrow(error).c_str(), nullptr);
@@ -134,18 +134,18 @@ bool App::create() {
     window_.show();
     invalidate();
 
-    if (settings_.check_updates) update_.start(false);
+    if (state_.settings().check_updates) update_.start(false);
     // Art for a game that has none, so the page is not bare on a fresh install.
     fetch_covers();
 
     // Which folder is in use, so the log never leaves where the games are a guess.
-    if (project_) {
-        append_log(format(L"[launcher] project: %ls\n", project_->root().c_str()));
+    if (state_.project()) {
+        append_log(format(L"[launcher] project: %ls\n", state_.project()->root().c_str()));
     }
-    if (!project_) {
+    if (!state_.project()) {
         append_log(L"[launcher] project folder not located yet; Launch the game asks "
                    L"for it.\n");
-    } else if (!status_.disc.verified) {
+    } else if (!state_.status().disc.verified) {
         append_log(L"[launcher] Launch the game asks for your own disc image, then "
                    L"extracts and builds the game.\n");
     }
@@ -177,8 +177,8 @@ int App::run() {
     int pixel_width = 0, pixel_height = 0;
     window_.pixel_size(&pixel_width, &pixel_height);
     float scale = window_.scale();
-    settings_.window_width = static_cast<int>(std::lround(pixel_width / scale));
-    settings_.window_height = static_cast<int>(std::lround(pixel_height / scale));
+    state_.settings().window_width = static_cast<int>(std::lround(pixel_width / scale));
+    state_.settings().window_height = static_cast<int>(std::lround(pixel_height / scale));
     save_settings();
     job_.shutdown();
     game_.shutdown();
@@ -308,7 +308,7 @@ void App::handle_event(const SDL_Event& event) {
             std::error_code ec;
             if (dropped.empty()) return;
             if (fs::is_directory(dropped, ec)) {
-                Project candidate(dropped, settings_.game);
+                Project candidate(dropped, state_.settings().game);
                 if (!candidate.complete()) {
                     std::wstring error;
                     if (!Project::create(dropped, &error)) {
@@ -317,13 +317,13 @@ void App::handle_event(const SDL_Event& event) {
                     }
                     append_log(format(L"[launcher] wrote the game folders in %ls\n",
                                       dropped.wstring().c_str()));
-                    candidate = Project(dropped, settings_.game);
+                    candidate = Project(dropped, state_.settings().game);
                 }
                 if (candidate.valid()) {
-                    project_.emplace(dropped, settings_.game);
+                    state_.set_project(dropped, state_.settings().game);
                     art_.clear();
                     fetch_covers();
-                    settings_.game = project_->game();
+                    state_.settings().game = state_.project()->game();
                     play_status_.clear();
                     save_settings();
                     auto text = dropped.wstring();
@@ -487,7 +487,7 @@ void App::activate(Id id) {
         }
         switch (id) {
             case Id::ModsFolder:
-                if (project_) open_path(project_->mods_dir());
+                if (state_.project()) open_path(state_.project()->mods_dir());
                 invalidate();
                 return;
             case Id::ModChoose:
@@ -555,7 +555,7 @@ void App::activate(Id id) {
             // "Not now" on the update prompt is remembered for that version only, so a
             // later release asks again.
             if (overlay_.update() && !update_.version().empty()) {
-                settings_.skipped_update = update_.version();
+                state_.settings().skipped_update = update_.version();
                 save_settings();
             }
             close_overlay();
@@ -570,7 +570,7 @@ void App::activate(Id id) {
                 refresh();
                 break;
             case Id::SettingsToggleUpdates:
-                settings_.check_updates = !settings_.check_updates;
+                state_.settings().check_updates = !state_.settings().check_updates;
                 save_settings();
                 break;
             case Id::SettingsCheckNow:
@@ -588,7 +588,7 @@ void App::activate(Id id) {
             case Id::Scale2:
             case Id::Scale3:
             case Id::Scale4:
-                settings_.scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
+                state_.settings().scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
                 overlay_.set_scale_menu(false);
                 save_settings();
                 break;
@@ -604,7 +604,7 @@ void App::activate(Id id) {
 
     if (overlay_.scale_menu()) {
         if (id >= Id::Scale1 && id <= Id::Scale4) {
-            settings_.scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
+            state_.settings().scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
             overlay_.set_scale_menu(false);
             save_settings();
             invalidate();
@@ -642,11 +642,11 @@ void App::activate(Id id) {
             break;
         case Id::Play: launch(); break;
         case Id::Mods:
-            if (project_) open_mods();
+            if (state_.project()) open_mods();
             else locate_project();
             break;
         case Id::Geckos:
-            if (project_) open_geckos();
+            if (state_.project()) open_geckos();
             else locate_project();
             break;
         default: {
@@ -704,6 +704,6 @@ void App::close_popups() {
     device_map_.set_menu_row(-1);
 }
 
-void App::save_settings() { settings_.save(); }
+void App::save_settings() { state_.settings().save(); }
 
 }  // namespace nla

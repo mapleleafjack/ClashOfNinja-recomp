@@ -25,6 +25,7 @@
 #include "jobs.h"
 #include "mods.h"
 #include "project.h"
+#include "project_state.h"
 #include "settings.h"
 #include "tools.h"
 #include "update_screen.h"
@@ -193,9 +194,9 @@ class App {
     Overlay overlay_;
     DeviceMap device_map_;
 
-    Settings settings_;
-    std::optional<Project> project_;
-    ProjectStatus status_;
+    // The game in use, the settings it remembers, and what the project's files say. The three
+    // move together, so they are held together.
+    ProjectState state_;
     CoverCache art_;
     // The box art download, and whether one is in flight. Quitting sets the stop flag so
     // the worker does not hold the exit up for the rest of its downloads.

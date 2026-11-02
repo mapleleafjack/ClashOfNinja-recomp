@@ -45,25 +45,11 @@ std::wstring box_art_url(const std::wstring& folder) {
 
 }  // namespace
 
-// -- state -----------------------------------------------------------------
-
-void App::refresh() {
-    // The mods come first: their files and codes are what the game's status is measured
-    // against, so the status is read after they have been written.
-    refresh_mods();
-    // The codes chosen on their own are read back here too: the program the runtime runs
-    // holds the mods' codes and these, so both lists must be current before it is written.
-    refresh_geckos();
-    write_mod_overlay();
-    if (project_) status_ = project_->status();
-    invalidate();
-}
-
 void App::locate_project() {
-    fs::path start = project_ ? project_->root() : home_dir();
+    fs::path start = state_.project() ? state_.project()->root() : home_dir();
     picker_.choose_path(PickerKind::Folder, L"Choose the folder to put the game folders in", start,
                 [this](const fs::path& chosen) {
-                    Project candidate(chosen, settings_.game);
+                    Project candidate(chosen, state_.settings().game);
                     auto text = chosen.wstring();
                     if (!candidate.complete()) {
                         // An empty folder is the normal case: the projects are the
@@ -76,13 +62,13 @@ void App::locate_project() {
                         }
                         append_log(format(L"[launcher] wrote the game folders in %ls\n",
                                           text.c_str()));
-                        candidate = Project(chosen, settings_.game);
+                        candidate = Project(chosen, state_.settings().game);
                     }
                     if (candidate.valid()) {
-                        project_.emplace(chosen, settings_.game);
+                        state_.set_project(chosen, state_.settings().game);
                         art_.clear();
                         fetch_covers();
-                        settings_.game = project_->game();
+                        state_.settings().game = state_.project()->game();
                         play_status_.clear();
                         save_settings();
                         append_log(format(L"[launcher] project: %ls\n", text.c_str()));
@@ -104,27 +90,27 @@ void App::locate_project() {
 std::vector<GameInfo> App::available_games() const {
     // All of them, always: the covers are the launcher's whole first page, and a game
     // whose folder does not exist yet gets it when a disc is chosen for it.
-    if (!project_) return {};
+    if (!state_.project()) return {};
     return std::vector<GameInfo>(Project::games());
 }
 
 const Cover* App::cover(const std::wstring& folder) {
-    if (!project_) return nullptr;
+    if (!state_.project()) return nullptr;
     // The key carries the project root, so a moved or newly chosen project folder does not
     // pick up art from the old one.
-    std::wstring key = (project_->root() / folder).wstring();
+    std::wstring key = (state_.project()->root() / folder).wstring();
     // covers/ holds one file per game, named after its folder. A cover.png inside the game
     // folder is where art lived before covers/ existed, and still works.
     std::vector<fs::path> candidates;
     for (const wchar_t* extension : {L".png", L".jpg", L".jpeg"})
-        candidates.push_back(project_->covers_dir() / (folder + extension));
+        candidates.push_back(state_.project()->covers_dir() / (folder + extension));
     for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"})
-        candidates.push_back(project_->root() / folder / name);
+        candidates.push_back(state_.project()->root() / folder / name);
     return art_.load(key, candidates);
 }
 
 void App::fetch_covers() {
-    if (!project_ || rendering_ || covers_fetching_) return;
+    if (!state_.project() || rendering_ || covers_fetching_) return;
     std::vector<std::pair<std::wstring, std::wstring>> wanted;
     for (const auto& game : available_games()) {
         if (cover(game.folder)) continue;
@@ -135,7 +121,7 @@ void App::fetch_covers() {
     auto curl = curl_tool();
     if (curl.empty()) return;
 
-    fs::path folder = project_->covers_dir();
+    fs::path folder = state_.project()->covers_dir();
     std::error_code ec;
     fs::create_directories(folder, ec);
     if (ec) return;
@@ -176,12 +162,12 @@ void App::fetch_covers() {
 }
 
 std::wstring App::current_title() const {
-    return project_ ? project_->title() : std::wstring(kTitle);
+    return state_.project() ? state_.project()->title() : std::wstring(kTitle);
 }
 
 void App::select_game(const std::wstring& folder) {
-    if (!project_ || busy_ || game_.running()) return;
-    if (folder == project_->game()) return;
+    if (!state_.project() || busy_ || game_.running()) return;
+    if (folder == state_.project()->game()) return;
     if (Project::game_info(folder).folder != folder) return;
     // A game the launcher has not set up yet is still a game: it is offered on the cover
     // grid, and its folder is written as it is chosen, so the disc it is given has
@@ -189,25 +175,25 @@ void App::select_game(const std::wstring& folder) {
     // project an older launcher made gets the games it is missing.
     std::error_code ec;
     if (!rendering_ && !headless_ &&
-        !fs::is_regular_file(project_->root() / folder / L"CMakeLists.txt", ec)) {
+        !fs::is_regular_file(state_.project()->root() / folder / L"CMakeLists.txt", ec)) {
         std::wstring error;
-        if (!Project::create(project_->root(), &error))
+        if (!Project::create(state_.project()->root(), &error))
             append_log(format(L"[launcher] the game folders were not written: %ls\n",
                               error.c_str()));
     }
-    project_ = Project(project_->root(), folder);
-    settings_.game = project_->game();
+    state_.select_game(folder);
+    state_.settings().game = state_.project()->game();
     play_status_.clear();
     // A render only paints the result: it must not remember the game a check clicked.
     if (!rendering_) save_settings();
     window_.set_title(current_title() + L" — Launcher");
-    append_log(format(L"[launcher] game: %ls\n", project_->title().c_str()));
+    append_log(format(L"[launcher] game: %ls\n", state_.project()->title().c_str()));
     refresh();
 }
 
 void App::launch_game(const std::wstring& folder) {
     if (busy_ || game_.running()) return;
-    if (!project_) {
+    if (!state_.project()) {
         launch();
         return;
     }

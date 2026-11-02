@@ -58,11 +58,11 @@ void App::on_job_done(int code) {
         activity_.fold();
         // What the mods' codes were when this build went in: a later change says the game
         // has to be built again.
-        if (built && project_) {
+        if (built && state_.project()) {
             std::error_code ec;
-            fs::create_directories(project_->build_dir(), ec);
-            write_text_file(project_->code_stamp(),
-                            narrow(read_text_file(project_->disc() / L"mods.code")));
+            fs::create_directories(state_.project()->build_dir(), ec);
+            write_text_file(state_.project()->code_stamp(),
+                            narrow(read_text_file(state_.project()->disc() / L"mods.code")));
         }
     } else if (code == 130) {
         append_log(L"[launcher] cancelled\n");
@@ -179,34 +179,34 @@ std::vector<Task> App::apple_tools_tasks() {
 }
 
 bool App::repair_project() {
-    if (!project_) return false;
-    if (project_->complete()) return true;
+    if (!state_.project()) return false;
+    if (state_.project()->complete()) return true;
     std::wstring error;
-    if (!Project::create(project_->root(), &error)) {
+    if (!Project::create(state_.project()->root(), &error)) {
         show_message(L"Could not set the folder up", error);
         return false;
     }
-    auto root = project_->root();
-    auto game = project_->game();
-    project_.emplace(root, game);
+    auto root = state_.project()->root();
+    auto game = state_.project()->game();
+    state_.set_project(root, game);
     save_settings();
     append_log(format(L"[launcher] wrote the game folders in %ls\n",
-                      project_->root().wstring().c_str()));
+                      state_.project()->root().wstring().c_str()));
     refresh();
     return true;
 }
 
 // Asking for a disc image starts where the last one was, or at the project it is for.
 void App::choose_image() {
-    if (!project_) return;
+    if (!state_.project()) return;
     fs::path start =
-        settings_.last_image.empty() ? project_->root() : fs::path(settings_.last_image);
+        state_.settings().last_image.empty() ? state_.project()->root() : fs::path(state_.settings().last_image);
     picker_.choose_path(PickerKind::Image, L"Choose your own disc image", start,
                         [this](const fs::path& chosen) { start_setup(chosen); });
 }
 
 void App::start_setup(const fs::path& image) {
-    if (!project_ || busy_) return;
+    if (!state_.project() || busy_) return;
     bool then_launch = launch_wanted_;
     launch_wanted_ = false;
     std::error_code ec;
@@ -218,10 +218,10 @@ void App::start_setup(const fs::path& image) {
     // disc chosen for a game sets it up where the launcher lives. A folder that is missing
     // the recompiler or the tool script -- one an earlier setup left half-written -- is
     // topped up here too, rather than skipped because its game folders happen to be there.
-    if (!project_->complete()) {
+    if (!state_.project()->complete()) {
         if (!repair_project()) return;
     }
-    if (fs::exists(project_->dol(), ec)) {
+    if (fs::exists(state_.project()->dol(), ec)) {
         show_confirm(L"Replace the extracted disc?",
                      L"A disc is already extracted. Extract again from this image and "
                      L"replace it?",
@@ -232,14 +232,14 @@ void App::start_setup(const fs::path& image) {
 }
 
 void App::begin_setup(const fs::path& image, bool then_launch) {
-    if (!project_ || busy_) return;
-    settings_.last_image = image.wstring();
+    if (!state_.project() || busy_) return;
+    state_.settings().last_image = image.wstring();
     save_settings();
     append_log(format(L"[launcher] image: %ls\n", image.c_str()));
 
-    fs::path disc_dir = project_->disc();
-    std::wstring disc_id = project_->disc_id();
-    std::wstring expected = project_->expected_sha1();
+    fs::path disc_dir = state_.project()->disc();
+    std::wstring disc_id = state_.project()->disc_id();
+    std::wstring expected = state_.project()->expected_sha1();
     bool convert = needs_nodtool(image);
 
     auto converted = std::make_shared<std::wstring>();
@@ -263,7 +263,7 @@ void App::begin_setup(const fs::path& image, bool then_launch) {
                         L"\n");
                 int code = job.run_process(nodtool, {L"convert", image.wstring(),
                                                      output.wstring()},
-                                           project_ ? project_->root() : fs::path());
+                                           state_.project() ? state_.project()->root() : fs::path());
                 if (code == 0) *converted = output.wstring();
                 return code;
             }});
@@ -316,14 +316,14 @@ void App::begin_setup(const fs::path& image, bool then_launch) {
 
 std::vector<Task> App::build_tasks() {
     std::vector<Task> tasks;
-    if (!project_) return tasks;
+    if (!state_.project()) return tasks;
     auto cmake = find_tool(L"cmake" + wstring(exe_suffix()));
     auto ninja = find_tool(L"ninja" + wstring(exe_suffix()));
     if (cmake.empty() || ninja.empty()) return tasks;
 
-    fs::path game_dir = project_->game_dir();
-    fs::path build = project_->build_dir();
-    fs::path root = project_->root();
+    fs::path game_dir = state_.project()->game_dir();
+    fs::path build = state_.project()->build_dir();
+    fs::path root = state_.project()->root();
     std::vector<std::wstring> configure = {
         L"-S", game_dir.wstring(), L"-B", build.wstring(), L"-G", L"Ninja",
         L"-DCMAKE_BUILD_TYPE=RelWithDebInfo",
@@ -353,9 +353,9 @@ std::vector<Task> App::build_tasks() {
     // in its config against the working directory and misreads a Windows drive letter, so
     // everything is relative to the game folder, which is where it runs.
     std::error_code symbols_ec;
-    if (!fs::is_regular_file(project_->analysis_symbols(), symbols_ec)) {
-        auto game_dir = project_->game_dir();
-        auto hash = project_->expected_sha1();
+    if (!fs::is_regular_file(state_.project()->analysis_symbols(), symbols_ec)) {
+        auto game_dir = state_.project()->game_dir();
+        auto hash = state_.project()->expected_sha1();
         // A release carries dtk; a -Lean release or a checkout does not, and then the
         // pinned build is fetched once, so the first build needs nothing installed by hand.
         auto dtk = std::make_shared<std::wstring>(find_tool(L"dtk" + wstring(exe_suffix())));
@@ -416,7 +416,7 @@ std::vector<Task> App::build_tasks() {
 }
 
 void App::start_build(bool then_launch) {
-    if (!project_ || busy_) return;
+    if (!state_.project() || busy_) return;
     if (!check_required_tools()) return;
     // A folder set up by an older launcher can be missing the recompiler, and CMake then
     // fails on `add_subdirectory(../gcn-recomp)` before it reads a line of the game. That is
@@ -427,7 +427,7 @@ void App::start_build(bool then_launch) {
         show_message(L"Cannot build", L"cmake and ninja were not found.");
         return;
     }
-    if (!status_.disc.extracted) {
+    if (!state_.status().disc.extracted) {
         show_message(L"Build the game",
                      L"The build needs the extracted disc. Press Launch the game to choose "
                      L"your disc image first.");
@@ -456,13 +456,13 @@ void App::launch() {
         game_.stop();
         return;
     }
-    if (!project_) {
+    if (!state_.project()) {
         launch_wanted_ = true;
         locate_project();
         return;
     }
     refresh();
-    if (!status_.disc.verified) {
+    if (!state_.status().disc.verified) {
         launch_wanted_ = true;
         choose_image();
         return;
@@ -471,10 +471,10 @@ void App::launch() {
 }
 
 void App::continue_launch() {
-    if (!project_ || busy_) return;
+    if (!state_.project() || busy_) return;
     refresh();
-    if (!status_.disc.verified) return;
-    if (status_.built && !status_.stale_code) {
+    if (!state_.status().disc.verified) return;
+    if (state_.status().built && !state_.status().stale_code) {
         play();
         return;
     }
@@ -482,8 +482,8 @@ void App::continue_launch() {
 }
 
 void App::play() {
-    if (!project_ || busy_ || game_.running()) return;
-    if (!status_.built || !status_.disc.verified) {
+    if (!state_.project() || busy_ || game_.running()) return;
+    if (!state_.status().built || !state_.status().disc.verified) {
         refresh();
         return;
     }
@@ -491,23 +491,23 @@ void App::play() {
     // may have been extracted, or a mod switched on, since the last refresh.
     write_mod_overlay();
     std::vector<std::wstring> args = {
-        L"--scale=" + std::to_wstring(settings_.scale),
+        L"--scale=" + std::to_wstring(state_.settings().scale),
     };
-    if (settings_.mute_music) args.push_back(L"--no-music");
-    if (!settings_.input_log) args.push_back(L"--no-input-log");
+    if (state_.settings().mute_music) args.push_back(L"--no-music");
+    if (!state_.settings().input_log) args.push_back(L"--no-input-log");
     // One pad per controller, and never fewer than the pads the picker names.
-    int players = settings_.players;
+    int players = state_.settings().players;
     for (const auto& device : device_map_.devices())
         players = std::max(players, device.pad);
     args.push_back(L"--players=" + std::to_wstring(std::clamp(players, 1, 4)));
-    args.push_back(L"--controls=" + project_->controls().wstring());
+    args.push_back(L"--controls=" + state_.project()->controls().wstring());
 
-    settings_.game = project_->game();
+    state_.settings().game = state_.project()->game();
     save_settings();
-    append_log(L"\n$ " + command_line(project_->binary().wstring(), args) + L"\n");
+    append_log(L"\n$ " + command_line(state_.project()->binary().wstring(), args) + L"\n");
     play_status_ = L"Starting…";
     bool started =
-        game_.start(project_->binary().wstring(), args, project_->game_dir(),
+        game_.start(state_.project()->binary().wstring(), args, state_.project()->game_dir(),
                     [this](const std::wstring& text) {
                         post([this, text] { append_log(text); });
                     },
@@ -570,14 +570,14 @@ void App::refresh_devices() {
     std::error_code ec;
     // The game answers for itself: its own SDL sees the devices, and it names them exactly
     // as the pad pins in controls.txt do.
-    if (!project_ || !fs::exists(project_->binary(), ec)) {
+    if (!state_.project() || !fs::exists(state_.project()->binary(), ec)) {
         device_map_.set_note(
             L"Build the game first: the launcher asks it which controllers it sees.");
         return;
     }
     std::string out;
-    if (!capture_output(project_->binary().wstring(),
-                        {L"--list-devices", L"--controls=" + project_->controls().wstring()}, &out))
+    if (!capture_output(state_.project()->binary().wstring(),
+                        {L"--list-devices", L"--controls=" + state_.project()->controls().wstring()}, &out))
         return;
     device_map_.load(widen(out));
     if (device_map_.devices().empty())
@@ -591,8 +591,8 @@ void App::refresh_devices() {
 void App::write_pad_pins() {
     // A render checks the panel, not the player's disk: it runs with no game to read back
     // from, so its device list is a stand-in and must not reach controls.txt.
-    if (!project_ || rendering_) return;
-    const fs::path path = project_->controls();
+    if (!state_.project() || rendering_) return;
+    const fs::path path = state_.project()->controls();
     std::wstring text;
     std::error_code ec;
     if (fs::exists(path, ec)) text = read_text_file(path);
@@ -635,7 +635,7 @@ void App::write_pad_pins() {
         return;
     }
     // A pad past the cap would be ignored by the game, so the cap follows the picks.
-    settings_.players = std::max(settings_.players, highest);
+    state_.settings().players = std::max(state_.settings().players, highest);
     save_settings();
     append_log(L"[launcher] players: keyboard is player " +
                std::to_wstring(device_map_.keyboard_pad()) + L"\n");
