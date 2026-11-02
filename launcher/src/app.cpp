@@ -53,7 +53,7 @@ App::App() {
     };
     host_.busy = [this] { return busy_; };
     host_.game_running = [this] { return game_.running(); };
-    host_.settings_note = [this](const std::wstring& text) { settings_note_ = text; };
+    host_.settings_note = [this](const std::wstring& text) { settings_.note(text); };
     host_.start_job = [this](std::vector<Task> tasks, JobOptions options) {
         start_job(std::move(tasks), std::move(options));
     };
@@ -372,8 +372,8 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
 
     switch (key.keysym.sym) {
         case SDLK_ESCAPE:
-            if (overlay_.scale_menu()) {
-                overlay_.set_scale_menu(false);
+            if (settings_.menu_open()) {
+                settings_.close_menu();
                 invalidate();
             } else if (overlay_.is_overlay()) {
                 // The players panel is opened from Settings, so Escape lands back there;
@@ -382,8 +382,7 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
                 close_overlay();
                 if (back_to_settings) open_settings();
             } else if (overlay_.is(OverlayPage::Settings)) {
-                overlay_.close();
-                invalidate();
+                close_overlay();
             }
             return;
         default:
@@ -403,10 +402,6 @@ void App::handle_text(const SDL_TextInputEvent& text) {
 
 void App::activate(Id id) {
     if (id == Id::None) return;
-
-    auto anchor_scale = [this] {
-        if (const auto rect = ui_.rect_of(Id::Scale)) scale_anchor_ = *rect;
-    };
 
     // The picker is the topmost page: while it is open it takes every id, the way the block
     // this replaces took them before the launcher had more than one page.
@@ -463,34 +458,26 @@ void App::activate(Id id) {
     }
 
     if (overlay_.is(OverlayPage::Settings)) {
+        // The page answers for what it owns: the one setting the panel shows as a checkbox,
+        // and the scale. The rest of the panel's buttons are drawn here but are somebody
+        // else's to answer - Done leaves the page, the two update buttons are the update
+        // page's, and Players… opens that panel.
+        if (settings_.handles(id)) {
+            settings_.activate(id);
+            return;
+        }
         switch (id) {
             case Id::SettingsClose:
-                overlay_.close();
+                close_overlay();
                 refresh();
-                break;
-            case Id::SettingsToggleUpdates:
-                state_.settings().check_updates = !state_.settings().check_updates;
-                save_settings();
                 break;
             case Id::SettingsCheckNow:
                 update_.start(true);
                 return;
             case Id::SettingsInstallUpdate:
-                overlay_.close();
+                close_overlay();
                 update_.begin();
                 return;
-            case Id::Scale:
-                overlay_.set_scale_menu(!overlay_.scale_menu());
-                if (overlay_.scale_menu()) anchor_scale();
-                break;
-            case Id::Scale1:
-            case Id::Scale2:
-            case Id::Scale3:
-            case Id::Scale4:
-                state_.settings().scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
-                overlay_.set_scale_menu(false);
-                save_settings();
-                break;
             case Id::SettingsPlayers:
                 players_.open();
                 return;
@@ -499,17 +486,6 @@ void App::activate(Id id) {
         }
         invalidate();
         return;
-    }
-
-    if (overlay_.scale_menu()) {
-        if (id >= Id::Scale1 && id <= Id::Scale4) {
-            state_.settings().scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
-            overlay_.set_scale_menu(false);
-            save_settings();
-            invalidate();
-            return;
-        }
-        overlay_.set_scale_menu(false);
     }
 
     // A screen answers for the ids it owns, so this switch only has the page's own.
@@ -535,10 +511,6 @@ void App::activate(Id id) {
             activity_.clear();
             break;
         case Id::OpenSettings: open_settings(); break;
-        case Id::Scale:
-            overlay_.set_scale_menu(!overlay_.scale_menu());
-            if (overlay_.scale_menu()) anchor_scale();
-            break;
         case Id::Play: launch(); break;
         case Id::Mods:
             if (state_.project()) mods_.open();
@@ -588,19 +560,20 @@ void App::close_overlay() {
     geckos_.stop_editing();
     window_.set_text_input(false);
     players_.close_menu();
+    settings_.close_menu();
     invalidate();
 }
 
 void App::open_settings() {
     overlay_.show_page(OverlayPage::Settings);
     close_popups();
-    settings_note_.clear();
+    settings_.clear_note();
     invalidate();
 }
 
 void App::close_popups() {
-    overlay_.set_scale_menu(false);
     players_.close_menu();
+    settings_.close_menu();
 }
 
 void App::save_settings() { state_.settings().save(); }

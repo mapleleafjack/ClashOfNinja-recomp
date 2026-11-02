@@ -4,8 +4,6 @@
 #include "app.h"
 #include "app_shared.h"
 
-#include "util.h"
-
 #include <algorithm>
 #include <cstdio>
 
@@ -14,10 +12,6 @@ namespace nla {
 namespace {
 
 constexpr wchar_t kSubtitle[] = L"GameCube static recompilation";
-
-std::wstring scale_label(int factor) {
-    return format(L"%d×   %d × %d", factor, 640 * factor, 480 * factor);
-}
 
 // How many lines `text` takes when Painter draws it wrapped into `width`: words break at
 // spaces and each newline starts a paragraph. A block that sizes itself to this before
@@ -68,7 +62,7 @@ void App::paint() {
         paint_overlay();
     }
     if (picker_.chooser().is_open()) picker_.paint(ctx);
-    if (overlay_.scale_menu()) paint_scale_menu();
+    if (settings_.menu_open()) settings_.paint_menu(ctx);
     if (players_.menu_open()) players_.paint_menu(ctx);
 
     painter_.end();
@@ -479,82 +473,16 @@ void App::paint_settings() {
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
 
     painter_.text(L"Settings", RectF(panel.x + 26, panel.y + 18, panel.x + 300,
-                                            panel.y + 48),
+                                     panel.y + 48),
                   Face::CardTitle, rgb(theme::Text));
-    ui_.link(Id::SettingsClose, Rect{panel.x + panel.w - 26 - 40, panel.y + 20, 40, 20}, L"Close");
+    ui_.link(Id::SettingsClose, Rect{panel.x + panel.w - 26 - 40, panel.y + 20, 40, 20},
+             L"Close");
 
-    float left = panel.x + 26;
-    float content_w = panel.w - 52;
-    float right = panel.x + panel.w - 26;
-    float y = panel.y + 56;
+    settings_.paint(canvas(), panel, update_, busy_);
 
-    // The sections are laid out tight enough that the whole panel fits below the header
-    // at the window's smallest size.
-    auto section = [&](const std::wstring& text) {
-        painter_.text(text, RectF(left, y, left + content_w, y + 18), Face::Tiny,
-                      rgb(theme::Accent));
-        y += 18;
-    };
-    auto separator = [&] {
-        painter_.line(left, y, left + content_w, y, rgb(theme::Border));
-        y += 10;
-    };
-
-    section(L"CONTROLLERS");
-    painter_.text(ui_.elide(L"Which controller plays as which player.", Face::Small,
-                        content_w - 130),
-                  RectF(left, y + 7, left + content_w - 130, y + 29), Face::Small,
-                  rgb(theme::Muted));
-    ui_.button(Id::SettingsPlayers, Rect{right - 110, y, 110, 32}, L"Players…", false, !busy_);
-    y += 36;
-    separator();
-
-    section(L"RESOLUTION");
-    painter_.text(L"Window scale", RectF(left, y + 8, left + 96, y + 28), Face::Small,
-                  rgb(theme::Muted));
-    ui_.combo(Id::Scale, Rect{left + 96, y, 180, 32}, scale_label(state_.settings().scale), !busy_);
-    y += 36;
-    separator();
-
-    section(L"UPDATES");
-    // The words are the screen's; only the colour they are read in is the page's.
-    const std::wstring update_line = update_.line();
-    Color update_color = rgb(theme::Muted);
-    switch (update_.state()) {
-        case UpdateScreen::State::UpToDate:
-            update_color = rgb(theme::Ok);
-            break;
-        case UpdateScreen::State::Available:
-            update_color = rgb(theme::Accent);
-            break;
-        case UpdateScreen::State::Failed:
-            update_color = rgb(theme::Warn);
-            break;
-        case UpdateScreen::State::Checking:
-        case UpdateScreen::State::Never:
-            break;
-    }
-    painter_.text(ui_.elide(update_line, Face::Small, content_w - 250),
-                  RectF(left, y + 7, left + content_w - 250, y + 29), Face::Small,
-                  update_color);
-    ui_.button(Id::SettingsCheckNow, Rect{right - 100, y, 100, 32}, L"Check now", false,
-           !busy_ && update_.state() != UpdateScreen::State::Checking);
-    if (update_.state() == UpdateScreen::State::Available) {
-        ui_.button(Id::SettingsInstallUpdate, Rect{right - 100 - 8 - 128, y, 128, 32},
-               L"Install update", true, !busy_);
-    }
-    y += 36;
-    ui_.checkbox(Id::SettingsToggleUpdates, left, y + 4, L"Check when the launcher starts",
-             state_.settings().check_updates, !busy_);
-    y += 24;
-
-    if (!settings_note_.empty()) {
-        painter_.text(settings_note_, RectF(left, y, left + content_w, y + 22),
-                      Face::Tiny, rgb(theme::Ok));
-    }
-
-    ui_.button(Id::SettingsClose, Rect{right - 110, panel.y + panel.h - 54, 110, 36}, L"Done",
-           true, true);
+    ui_.button(Id::SettingsClose, Rect{panel.x + panel.w - 26 - 110, panel.y + panel.h - 54,
+                                       110, 36},
+               L"Done", true, true);
 }
 
 void App::paint_overlay() {
@@ -624,26 +552,6 @@ void App::paint_overlay() {
         button_right -= 8 + second_w;
         ui_.button(Id::OverlaySecondary, Rect{button_right, button_y, second_w, 36},
                overlay_.second(), false, true);
-    }
-}
-
-// What a player row offers: nothing, the keyboard, then each controller the game sees. A
-// row near the bottom of the panel opens its menu upwards, so the panel hides nothing.
-
-void App::paint_scale_menu() {    Rect menu{scale_anchor_.x, scale_anchor_.y + scale_anchor_.h + 6, scale_anchor_.w, 4 * 32 + 8};
-    painter_.fill_round(menu.box(), 10, rgb(0x1b1e25));
-    painter_.stroke_round(menu.box(), 10, rgb(theme::BorderStrong), 1);
-    for (int index = 0; index < 4; ++index) {
-        Rect item{menu.x + 4, menu.y + 4 + index * 32.0f, menu.w - 8, 32};
-        Id id = static_cast<Id>(static_cast<int>(Id::Scale1) + index);
-        if (ui_.hover() == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
-        painter_.text(scale_label(index + 1),
-                      RectF(item.x + 10, item.y, item.x + item.w - 10, item.y + item.h),
-                      Face::Small,
-                      state_.settings().scale == index + 1 ? rgb(theme::Accent) : rgb(theme::Text),
-                      TextAlign::Leading, TextVAlign::Center,
-                      false);
-        ui_.register_hit(id, item);
     }
 }
 

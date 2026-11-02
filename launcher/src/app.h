@@ -21,6 +21,7 @@
 #include "geckos_screen.h"
 #include "mods_screen.h"
 #include "players_screen.h"
+#include "settings_screen.h"
 #include "covers.h"
 #include "devices.h"
 #include "picker.h"
@@ -74,7 +75,6 @@ class App {
                      bool enabled);
     void paint_settings();
     void paint_overlay();
-    void paint_scale_menu();
 
     void refresh();
     // Asks for a disc image for the project in use. The chooser itself is PickerScreen's;
@@ -154,8 +154,6 @@ class App {
     std::wstring play_status_;
     std::uint32_t next_frame_ = 0;
 
-    Rect scale_anchor_{};
-    std::wstring settings_note_;
     std::vector<ToolInfo> tools_;
 
     bool rendering_ = false;  // --render: no game to ask, so the rows are stand-ins
@@ -173,6 +171,7 @@ class App {
     ModsScreen mods_{host_, state_, picker_, geckos_};
     GamesScreen games_{host_, state_, picker_};
     PlayersScreen players_{host_, state_};
+    SettingsScreen settings_{host_, state_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;

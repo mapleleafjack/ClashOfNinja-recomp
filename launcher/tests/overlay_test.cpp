@@ -66,30 +66,11 @@ int main() {
               "opening Players closes Geckos");
     }
 
-    // The scale menu is drawn over a page rather than being one, so it survives nothing:
-    // a page opening, or closing, takes it with it.
+    // Closing leaves nothing showing, which is what puts the main page back.
     {
         nla::Overlay overlay;
-        overlay.set_scale_menu(true);
-        check(overlay.scale_menu() && !overlay.showing(), "the menu can sit over the main page");
-        overlay.set_scale_menu(false);
-        check(!overlay.scale_menu(), "the menu closes on its own");
-
-        overlay.set_scale_menu(true);
         overlay.show_page(nla::OverlayPage::Settings);
-        check(!overlay.scale_menu(), "opening Settings closes the menu that was over the old page");
-
-        overlay.set_scale_menu(true);
-        overlay.show_panel(nla::OverlayPage::Mods, L"Mods");
-        check(!overlay.scale_menu(), "opening a table closes the menu");
-
-        overlay.set_scale_menu(true);
-        overlay.show_message(L"Updates", L"Something happened", L"OK");
-        check(!overlay.scale_menu(), "a message closes the menu");
-
-        overlay.set_scale_menu(true);
         overlay.close();
-        check(!overlay.scale_menu(), "closing the page closes the menu with it");
         check(!overlay.showing(), "closing leaves no page showing");
     }
 

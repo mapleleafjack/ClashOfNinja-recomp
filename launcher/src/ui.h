@@ -184,10 +184,6 @@ class Overlay {
                page_ == OverlayPage::Players;
     }
     bool is(OverlayPage page) const { return page_ == page; }
-    // The scale menu is not a page of its own: it is drawn over whichever page is showing,
-    // and a page opening or closing takes it with it.
-    void set_scale_menu(bool open) { scale_menu_ = open; }
-    bool scale_menu() const { return scale_menu_; }
     bool confirm() const { return confirm_; }
     bool update() const { return update_; }
     const std::wstring& title() const { return title_; }
@@ -204,7 +200,6 @@ class Overlay {
     OverlayPage page_ = OverlayPage::None;
     bool confirm_ = false;
     bool update_ = false;
-    bool scale_menu_ = false;
     std::wstring title_;
     std::wstring text_;
     std::wstring action_;

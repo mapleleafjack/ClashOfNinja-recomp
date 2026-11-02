@@ -89,6 +89,7 @@ set(NLA_SOURCES
   src/picker.cpp
   src/picker_screen.cpp
   src/players_screen.cpp
+  src/settings_screen.cpp
   src/jobs.cpp
   src/mods.cpp
   src/mods_screen.cpp
@@ -683,6 +684,37 @@ else()
   target_link_libraries(players_screen_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME players-screen-logic COMMAND $<TARGET_FILE:players_screen_test>)
+
+# What the Settings page does: the ids it answers for, the scale list the combo opens, and
+# the two settings it writes. It reads the update page's line, so it is linked beside it -
+# and built as a development version, so nothing here can reach the network.
+add_executable(settings_screen_test
+  tests/settings_screen_test.cpp
+  src/settings_screen.cpp
+  src/update_screen.cpp
+  src/settings.cpp
+  src/update.cpp
+  src/git.cpp
+  src/tools.cpp
+  src/jobs.cpp
+  src/util.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/ui.cpp
+)
+target_include_directories(settings_screen_test PRIVATE src)
+target_compile_definitions(settings_screen_test PRIVATE NLA_VERSION="0.0.0")
+if(WIN32)
+  target_compile_definitions(settings_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(settings_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(settings_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(settings_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME settings-screen-logic COMMAND $<TARGET_FILE:settings_screen_test>)
 
 # Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
 # so the check is made against the tree the patch decodes from. The runtime has no test
