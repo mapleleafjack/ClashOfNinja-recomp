@@ -1,7 +1,7 @@
 name: Build
 
 # A tag publishes a release; every other event is a build check. The game itself cannot
-# be built here — it needs the user's own disc image — so only the launcher is built, and
+# be built here â€” it needs the user's own disc image â€” so only the launcher is built, and
 # only the launcher's windowless render tests run. `tools/check_publish.py` is the guard
 # that nothing derived from the disc is in the tree being built.
 
@@ -70,8 +70,10 @@ jobs:
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
-        # update_test is a ctest case of its own, so it has to exist before ctest runs.
-        run: ninja -C launcher/build-ci NarutoLauncher update_test
+        # The tests are ctest cases of their own, so they have to exist before ctest runs - and
+        # ctest fails one whose binary was never built, so the default target builds every
+        # one of them, including a test added later.
+        run: ninja -C launcher/build-ci
 
       - name: Test
         run: ctest --test-dir launcher/build-ci --output-on-failure
@@ -146,6 +148,8 @@ jobs:
           cp -R gcn-recomp "$res/gcn-recomp"
           mkdir -p "$res/tools"
           cp tools/extract_disc.py tools/setup.sh "$res/tools/"
+          # The mods the launcher knows before any is downloaded, and where each comes from.
+          cp launcher/mods.json "$res/mods.json"
 
       - name: The bundled tools run
         shell: bash
@@ -158,6 +162,7 @@ jobs:
           test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
           test -f "$res/gcn-recomp/CMakeLists.txt"
           test -f "$res/tools/extract_disc.py"
+          test -f "$res/mods.json"
           test ! -e "$res/project"
 
       - name: Sign ad hoc and package
@@ -182,6 +187,17 @@ jobs:
           zip="launcher/build-ci/NarutoLauncher-macOS-arm64-v${version}.zip"
           ditto -c -k --norsrc --keepParent "$stage" "$zip"
           shasum -a 256 "$zip"
+
+      - name: The package works as downloaded
+        shell: bash
+        # The zip is what a player gets, so it is what is checked: a fresh unzip, the
+        # version the tag names, a seal that survived the archive, and a launcher that
+        # draws a frame and writes every game project -- all from the extracted copy, so a
+        # resource that only exists in the build tree cannot hide here.
+        run: |
+          bash launcher/packaging/check-release-macos.sh \
+            "launcher/build-ci/NarutoLauncher-macOS-arm64-v${{ steps.version.outputs.value }}.zip" \
+            --version "${{ steps.version.outputs.value }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -227,15 +243,17 @@ jobs:
       - name: Build the tool archive
         shell: bash
         # The archive a player downloads on a machine with no toolchain, which is what
-        # SteamOS is. Written here so the packaging script is exercised on every run, not
-        # only when a release is cut.
+        # SteamOS is. Written by the same script that assembles the release, and here so
+        # that path is exercised on every run, not only when a release is cut.
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.value }}"
           stage="$RUNNER_TEMP/tool-stage"
           mkdir -p "$stage/archive"
-          ./launcher/packaging/build-tools-linux.sh "$stage/tools" \
-            "$stage/archive/NarutoLauncher-tools-linux-x64-v${version}.tar.xz"
+          bash launcher/packaging/build-release-linux.sh \
+            --version "$version" \
+            --out "$stage/archive" \
+            --tools-only
 
       - name: Pin the tool archive
         shell: bash
@@ -275,8 +293,10 @@ jobs:
           -DNLA_TOOLS_BYTES="$NLA_TOOLS_BYTES"
 
       - name: Build
-        # update_test is a ctest case of its own, so it has to exist before ctest runs.
-        run: ninja -C launcher/build-ci NarutoLauncher update_test
+        # The tests are ctest cases of their own, so they have to exist before ctest runs - and
+        # ctest fails one whose binary was never built, so the default target builds every
+        # one of them, including a test added later.
+        run: ninja -C launcher/build-ci
 
       - name: Test
         # The render and click cases draw a frame, so they need a display. Xvfb gives them
@@ -297,21 +317,19 @@ jobs:
 
       - name: Package
         shell: bash
+        # One implementation, shared with a developer's own packaging run, so what CI ships
+        # cannot drift from what build-release-linux.sh makes. The tarball carries the
+        # recompiler, extract_disc.py and the static SDL2 prefix: without them a downloaded
+        # copy cannot set up or build a game, and SteamOS has no SDL2 development package
+        # to fall back on.
         run: |
           set -euo pipefail
-          version="${{ steps.version.outputs.value }}"
-          stage="launcher/build-ci/package/NarutoLauncher Linux ${version}"
-          mkdir -p "$stage/tools"
-          cp launcher/build-ci/NarutoLauncher "$stage/"
-          # The recompiler and the disc script the launcher looks for beside itself before
-          # it will write a game project, the same as the Windows zip carries.
-          cp -R gcn-recomp "$stage/gcn-recomp"
-          cp tools/extract_disc.py tools/setup.sh "$stage/tools/"
-          cp LICENSE THIRD-PARTY-NOTICES.md "$stage/"
-          cp -R licenses "$stage/licenses"
-          tar -cJf "launcher/build-ci/NarutoLauncher-Linux-x64-v${version}.tar.xz" \
-            -C launcher/build-ci/package "NarutoLauncher Linux ${version}"
-          sha256sum launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+          bash launcher/packaging/build-release-linux.sh \
+            --version "${{ steps.version.outputs.value }}" \
+            --build-dir launcher/build-ci \
+            --out launcher/build-ci/package \
+            --sdl2-prefix "$RUNNER_TEMP/sdl2" \
+            --skip-build
 
       - name: The package carries what a build needs
         shell: bash
@@ -322,7 +340,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.value }}"
-          archive="launcher/build-ci/NarutoLauncher-Linux-x64-v${version}.tar.xz"
+          archive="launcher/build-ci/package/NarutoLauncher-Linux-x64-v${version}.tar.xz"
           members="$RUNNER_TEMP/package-members.txt"
           tar -tJf "$archive" > "$members"
           for want in "NarutoLauncher" "gcn-recomp/CMakeLists.txt" \
@@ -335,12 +353,24 @@ jobs:
           done
           echo "the package carries the launcher, the recompiler and the disc script"
 
+      - name: The package works as downloaded
+        shell: bash
+        # The tarball is what a player gets, so it is what is checked: a fresh unpack, the
+        # folder name the update check reads, the version the tag names, an x86-64 launcher
+        # with SDL2 linked statically, and one that writes every game project and draws a
+        # frame -- all from the extracted copy, so a file that only exists in the build
+        # tree cannot hide here.
+        run: |
+          bash launcher/packaging/check-release-linux.sh \
+            "launcher/build-ci/package/NarutoLauncher-Linux-x64-v${{ steps.version.outputs.value }}.tar.xz" \
+            --version "${{ steps.version.outputs.value }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
           # The launcher, and the tool archive a release publishes beside it.
           path: |
-            launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+            launcher/build-ci/package/NarutoLauncher-Linux-x64-*.tar.xz
             ${{ runner.temp }}/tool-stage/archive/NarutoLauncher-tools-linux-x64-*.tar.xz
           if-no-files-found: error
 
@@ -433,7 +463,9 @@ jobs:
           -DNLA_TOOLS_BYTES="${{ env.NLA_TOOLS_BYTES }}"
 
       - name: Build
-        run: ninja -C launcher/build-release NarutoLauncher update_test
+        # Every test target, not a list a new one falls off: ctest fails a test whose binary
+        # was never built.
+        run: ninja -C launcher/build-release
 
       - name: Test
         run: ctest --test-dir launcher/build-release --output-on-failure
@@ -496,7 +528,7 @@ jobs:
           # launcher writes them into the folder a player chooses, and dtk makes each one's
           # symbol map from that player's own disc, so nothing derived from a disc is here.
           $out = Join-Path 'launcher/dist' 'NarutoLauncher'
-          foreach ($needed in 'NarutoLauncher.exe', 'gcn-recomp\CMakeLists.txt',
+          foreach ($needed in 'NarutoLauncher.exe', 'mods.json', 'gcn-recomp\CMakeLists.txt',
                              'tools\extract_disc.py', 'tools\setup.sh') {
             if (-not (Test-Path (Join-Path $out $needed))) {
               throw "the release is missing $needed"
@@ -505,6 +537,18 @@ jobs:
           foreach ($path in 'naruto', 'naruto2', 'gnt3', 'gnt4', 'config', 'covers') {
             if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
           }
+
+      - name: The zip works as downloaded
+        shell: pwsh
+        # The zip is what a player gets, so it is what is checked: a fresh unpack, the name
+        # the update check reads, the version the tag names, an x64 launcher with SDL2
+        # linked statically, and one that writes every game project and draws a frame --
+        # all from the extracted copy, so a file that only exists in the build tree cannot
+        # hide here.
+        run: |
+          ./launcher/packaging/check-release-windows.ps1 `
+            -Archive "launcher/dist/NarutoLauncher-Windows-x64-v${{ steps.version.outputs.value }}.zip" `
+            -Version "${{ steps.version.outputs.value }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -547,7 +591,10 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" --generate-notes
+            # A tag with a suffix - v1.7.0-rc.1 - is a pre-release: GitHub keeps it out of
+            # the latest release, so no launcher is offered it as an update.
+            create=(--title "$TAG" --generate-notes)
+            [[ "$TAG" == *-* ]] && create+=(--prerelease)
+            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" "${create[@]}"
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets

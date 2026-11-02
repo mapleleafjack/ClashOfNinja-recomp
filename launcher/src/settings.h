@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <string>
+#include <vector>
 
 namespace nla {
 
@@ -20,6 +22,17 @@ struct Settings {
     bool check_updates = true;
     // A version the player said "not now" to, so the prompt does not return every start.
     std::wstring skipped_update;
+    // The mods enabled for each game folder, by the mod's folder under mods/. A game only
+    // offers the mods whose manifest names its disc ID, so this cannot carry one across
+    // builds: a GNT4 mod never runs on another game's addresses.
+    std::map<std::wstring, std::vector<std::wstring>> mods;
+    // The disc patch each game folder is played with, by the delta's path. Empty for none:
+    // a patch replaces the whole disc, so one is chosen rather than accumulated.
+    std::map<std::wstring, std::wstring> patches;
+    // The Gecko codes switched on for each game folder, by a code's `$Name`. Codes are
+    // chosen one at a time, so this is a list rather than a folder: the order is the order
+    // they were switched on, and a later one wins where two write the same address.
+    std::map<std::wstring, std::vector<std::wstring>> codes;
 
     static Settings load();
     void save() const;

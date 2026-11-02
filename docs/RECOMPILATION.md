@@ -8,7 +8,18 @@
 gcn-recomp's runtime answers the console's DVD reads *by disc offset*, so an extracted
 directory alone is not enough: `tools/extract_disc.py` also writes `disc.manifest`, one line
 per file giving its disc offset, and `runtime/hw/di.cpp` serves `iso_read()` from the tree —
-files from their own extents, the padding between them as zeroes.
+files from their own extents, the padding between them as zeroes. A `mods.manifest` beside it
+serves a mod's files in place of the disc's at the same offsets, which is how a mod needs no
+rebuild and no re-extraction: see [Mods](MODS.md). A `mods.gecko` beside it is the program the
+runtime runs once a frame, and a `mods.code` is the instruction words a mod's Gecko codes write
+into code — those are laid over the DOL before it is translated (`recomp/modspatch.py`),
+because an instruction that has been recompiled cannot be changed by a write to memory.
+
+A `patch.manifest` beside `disc.manifest` makes the disc the game reads the target of an
+xdelta instead (see [Mods](MODS.md)), decoded window by window as the game asks for its
+files. A patch is a whole disc of its own, and a hack may rename the ID it carries — SCON4 is
+`SG4JDA` over a `G4NJDA` disc — so while one is on, `boot.cpp` checks the disc the build was
+recompiled from against the tree's own header rather than the patch's.
 
 The result is checked, not assumed. After extracting, the setup reads the tree back through the
 manifest and compares it with the image, and the guest's read sequence from the tree and from
@@ -167,5 +178,6 @@ What is not done yet:
 | each project's `recomp/*.txt` | steering tables: which functions to replace at runtime, and so on. Not committed |
 | each project's `rom/disc/` | the extracted disc. Derived from the user's disc; not committed |
 | `covers/` | box art, one file per game. Belongs to the publisher; not committed |
+| `mods/` | a folder per mod, holding the files it serves in place of the disc's. Game data; not committed |
 | `config/<disc ID>/`, `build/<disc ID>/` | dtk project config and split output, when you generate them. Not committed |
 | `<game>/build/<game>`, `<game>/build/<game>_bench` | the apps and their headless benchmarks |

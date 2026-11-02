@@ -59,6 +59,10 @@ const char* kReleaseJson = R"({
     {
       "name": "NarutoLauncher-Windows-x64-lean-v1.1.0.zip",
       "browser_download_url": "https://github.com/owner/repo/releases/download/v1.1.0/NarutoLauncher-Windows-x64-lean-v1.1.0.zip"
+    },
+    {
+      "name": "NarutoLauncher-Linux-x64-v1.1.0.tar.xz",
+      "browser_download_url": "https://github.com/owner/repo/releases/download/v1.1.0/NarutoLauncher-Linux-x64-v1.1.0.tar.xz"
     }
   ]
 })";
@@ -105,8 +109,23 @@ void releases() {
     check(tools_only.asset_url.empty(), "a tools-only release has no download for Windows");
 
     auto linux = nla::parse_release(json, L"linux");
-    check(linux.version == L"1.1.0", "a release without this platform still names its version");
-    check(linux.asset_url.empty(), "a release without a linux zip has no download for it");
+    check_text(linux.asset_name, L"NarutoLauncher-Linux-x64-v1.1.0.tar.xz",
+               "Linux picks its own tar.xz, which is not a zip");
+    check(linux.asset_url == L"https://github.com/owner/repo/releases/download/v1.1.0/"
+                             L"NarutoLauncher-Linux-x64-v1.1.0.tar.xz",
+          "Linux takes the download link of that tar.xz");
+
+    // A release that publishes only the other platforms' archives leaves this copy with
+    // nothing to download.
+    auto windows_only = nla::parse_release(
+        L"{\"tag_name\":\"v1.1.0\",\"assets\":[{\"name\":\"NarutoLauncher-Windows-x64-"
+        L"v1.1.0.zip\",\"browser_download_url\":\"https://github.com/owner/repo/releases/"
+        L"download/v1.1.0/NarutoLauncher-Windows-x64-v1.1.0.zip\"}]}",
+        L"linux");
+    check(windows_only.version == L"1.1.0",
+          "a release without this platform still names its version");
+    check(windows_only.asset_url.empty(),
+          "a release without a linux archive has no download for it");
 
     auto rubbish = nla::parse_release(L"<html>not json</html>", L"macos");
     check(rubbish.version.empty(), "rubbish answers no release");
@@ -312,9 +331,136 @@ void project() {
     fs::remove_all(root, ec);
 }
 
+// Appends `value` little-endian in `bytes` bytes: the field order a zip's headers use.
+void put_le(std::string* out, unsigned long value, int bytes) {
+    for (int index = 0; index < bytes; ++index) {
+        out->push_back(static_cast<char>((value >> (8 * index)) & 0xFF));
+    }
+}
+
+unsigned long crc32_of(const std::string& data) {
+    unsigned long crc = 0xFFFFFFFFu;
+    for (unsigned char byte : data) {
+        crc ^= byte;
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc & 1) ? ((crc >> 1) ^ 0xEDB88320u) : (crc >> 1);
+        }
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
+// A zip holding one stored (uncompressed) file, written here so the check needs no
+// archiver: what is under test is the launcher's unpacking, not the tool that made the
+// archive. A stored entry is what a mod release may carry, and the shape is the same
+// whichever compression a real one uses.
+std::string stored_zip(const std::string& name, const std::string& data) {
+    const unsigned long crc = crc32_of(data);
+    const unsigned long local_size = 30 + name.size() + data.size();
+    const unsigned long directory_size = 46 + name.size();
+    std::string zip;
+    put_le(&zip, 0x04034b50, 4);  // local file header
+    put_le(&zip, 20, 2);          // version needed
+    put_le(&zip, 0, 2);           // flags
+    put_le(&zip, 0, 2);           // method: stored
+    put_le(&zip, 0, 2);           // time
+    put_le(&zip, 0, 2);           // date
+    put_le(&zip, crc, 4);
+    put_le(&zip, data.size(), 4);
+    put_le(&zip, data.size(), 4);
+    put_le(&zip, name.size(), 2);
+    put_le(&zip, 0, 2);           // extra field
+    zip += name;
+    zip += data;
+    put_le(&zip, 0x02014b50, 4);  // central directory entry
+    put_le(&zip, 20, 2);          // version made by
+    put_le(&zip, 20, 2);          // version needed
+    put_le(&zip, 0, 2);           // flags
+    put_le(&zip, 0, 2);           // method
+    put_le(&zip, 0, 2);           // time
+    put_le(&zip, 0, 2);           // date
+    put_le(&zip, crc, 4);
+    put_le(&zip, data.size(), 4);
+    put_le(&zip, data.size(), 4);
+    put_le(&zip, name.size(), 2);
+    put_le(&zip, 0, 2);           // extra field
+    put_le(&zip, 0, 2);           // comment
+    put_le(&zip, 0, 2);           // disk
+    put_le(&zip, 0, 2);           // internal attributes
+    put_le(&zip, 0, 4);           // external attributes
+    put_le(&zip, 0, 4);           // offset of the local header
+    zip += name;
+    put_le(&zip, 0x06054b50, 4);  // end of central directory
+    put_le(&zip, 0, 2);           // this disk
+    put_le(&zip, 0, 2);           // disk with the directory
+    put_le(&zip, 1, 2);           // entries on this disk
+    put_le(&zip, 1, 2);           // entries in all
+    put_le(&zip, directory_size, 4);
+    put_le(&zip, local_size, 4);
+    put_le(&zip, 0, 2);           // comment length
+    return zip;
+}
+
+// What a download is unpacked with: a mod release is a zip, which a Linux tar cannot open,
+// and a release for this platform is a tar, which every tar can.
+void unpacking() {
+    std::error_code ec;
+    auto root = nla::temp_dir() / (L"nla-unpack-test-" + std::to_wstring(nla::process_id()));
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+
+    nla::Job job;
+    const std::string contents = "the mod's own text";
+    auto zip = root / L"mod.zip";
+    check(nla::write_text_file(zip, stored_zip("mod.txt", contents)),
+          "the test zip is written");
+    auto from_zip = root / L"from-zip";
+    fs::create_directories(from_zip, ec);
+    std::wstring error;
+    bool opened = nla::unpack_archive(zip, from_zip, job, &error);
+    if (!opened) std::printf("     %s\n", nla::narrow(error).c_str());
+    check(opened, "a zip unpacks, whatever the system's tar is");
+    check(nla::trim(nla::read_text_file(from_zip / L"mod.txt")) == nla::widen(contents),
+          "the file inside the zip is in place");
+
+    auto tar = nla::find_tool(L"tar" + std::wstring(nla::exe_suffix()));
+    check(!tar.empty(), "tar is installed");
+    if (!tar.empty()) {
+        auto payload = root / L"payload";
+        fs::create_directories(payload, ec);
+        nla::write_text_file(payload / L"launcher", "a launcher");
+        auto tarball = root / L"release.tar.gz";
+        check(job.run_process(tar,
+                              {L"-czf", tarball.wstring(), L"-C", payload.wstring(),
+                               L"launcher"},
+                              fs::path()) == 0,
+              "the test tarball is written");
+        auto from_tar = root / L"from-tar";
+        fs::create_directories(from_tar, ec);
+        std::wstring tar_error;
+        bool tar_opened = nla::unpack_archive(tarball, from_tar, job, &tar_error);
+        if (!tar_opened) std::printf("     %s\n", nla::narrow(tar_error).c_str());
+        check(tar_opened, "a tarball unpacks");
+        check(nla::trim(nla::read_text_file(from_tar / L"launcher")) == L"a launcher",
+              "the file inside the tarball is in place");
+    }
+
+    // A download that is not an archive at all: the caller hears why, and keeps the files
+    // it had, which is what stops a broken download from emptying mods/.
+    auto rubbish = root / L"rubbish.bin";
+    nla::write_text_file(rubbish, "this was a web page, not an archive");
+    auto from_rubbish = root / L"from-rubbish";
+    fs::create_directories(from_rubbish, ec);
+    std::wstring rubbish_error;
+    check(!nla::unpack_archive(rubbish, from_rubbish, job, &rubbish_error) &&
+              !rubbish_error.empty(),
+          "a download that is not an archive is reported");
+    fs::remove_all(root, ec);
+}
+
 int run(bool live) {
     versions();
     releases();
+    unpacking();
     swap();
     project();
 

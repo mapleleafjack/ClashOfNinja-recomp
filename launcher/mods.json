@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "mods": [
+    {
+      "id": "scon4",
+      "name": "SCON4",
+      "version": "2.1.0",
+      "author": "SCON4 team",
+      "description": "Super Clash of Ninja 4: rebalanced characters, new stages and menus, played as a patch over a retail GNT4 disc.",
+      "disc_id": ["G4NJDA"],
+      "kind": "patch",
+      "release": {
+        "owner": "NicholasMoser",
+        "repo": "SCON4-Releases",
+        "asset": "patches.zip",
+        "file": "vanilla.xdelta"
+      }
+    }
+  ]
+}

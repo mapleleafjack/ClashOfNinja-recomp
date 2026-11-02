@@ -6,7 +6,14 @@ cmake_minimum_required(VERSION 3.20)
 if(NOT NLA_VERSION)
   set(NLA_VERSION "0.0.0")
 endif()
-project(NarutoLauncher VERSION ${NLA_VERSION} LANGUAGES CXX)
+# project(VERSION) takes numbers only, so a pre-release tag - v1.7.0-rc.1 - feeds it its
+# numeric part while NLA_VERSION keeps the suffix the launcher reports and compares.
+set(NLA_VERSION_NUMBERS "${NLA_VERSION}")
+string(REGEX REPLACE "^v?([0-9]+(\\.[0-9]+)*).*$" "\\1" NLA_VERSION_NUMBERS "${NLA_VERSION}")
+if(NOT NLA_VERSION_NUMBERS MATCHES "^[0-9]+(\\.[0-9]+)*$")
+  set(NLA_VERSION_NUMBERS "0.0.0")
+endif()
+project(NarutoLauncher VERSION ${NLA_VERSION_NUMBERS} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,24 +68,62 @@ else()
   set(NLA_SDL2 SDL2::SDL2-static)
 endif()
 
+# The util layer is four files, not one: text, paths, processes and digests. Almost every
+# target here needs some of it, and the tests that need none of the platform half would
+# still rather link the lot than keep a list of their own in step.
+set(NLA_UTIL_SOURCES
+  src/text.cpp
+  src/paths.cpp
+  src/proc.cpp
+  src/crypto.cpp
+)
+
 set(NLA_SOURCES
   src/main.cpp
+  # The launcher's window class, split by what each part of it does: the shell and its
+  # input, the drawing, the file picker, the jobs it runs, the games it lists, the mods it
+  # applies, and its own updates. The window draws through ui.cpp, which holds the widgets
+  # and the hit list, so nothing it paints has to be an App.
   src/app.cpp
+  src/app_jobs.cpp
+  src/app_paint.cpp
+  src/app_render.cpp
+  src/app_state.cpp
+  src/activity_panel.cpp
+  src/catalog.cpp
+  src/codes.cpp
+  src/covers.cpp
   src/dialog.cpp
+  src/devices.cpp
   src/disc.cpp
   src/font.cpp
+  src/games_screen.cpp
+  src/gecko.cpp
+  src/geckos_screen.cpp
   src/git.cpp
   src/image.cpp
   src/painter.cpp
+  src/picker.cpp
+  src/picker_screen.cpp
+  src/players_screen.cpp
+  src/settings_screen.cpp
   src/jobs.cpp
+  src/mods.cpp
+  src/mods_screen.cpp
+  src/patches.cpp
+  # The delta reader is the runtime's own, so a patch the launcher says fits is read
+  # exactly as the game will read it.
+  ../gcn-recomp/runtime/hw/patch.cpp
   src/project.cpp
+  src/project_state.cpp
   src/project_templates.cpp
   src/settings.cpp
-  src/shortcut.cpp
   src/tools.cpp
   src/tools_package.cpp
+  src/ui.cpp
   src/update.cpp
-  src/util.cpp
+  src/update_screen.cpp
+  ${NLA_UTIL_SOURCES}
   src/window.cpp
 )
 
@@ -102,17 +147,18 @@ else()
 endif()
 
 # The mark next to the title, so a single executable still shows it.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/logo.png" _logo_hex HEX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/assets/logo.png" _logo_hex HEX)
 string(LENGTH "${_logo_hex}" _logo_hex_length)
 math(EXPR _logo_bytes "${_logo_hex_length} / 2")
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _logo_array "${_logo_hex}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/logo_data.h"
-  "// Generated from src/logo.png by CMake. Do not edit.\n"
+  "// Generated from assets/logo.png by CMake. Do not edit.\n"
   "static const unsigned char kLogoPng[] = {${_logo_array}};\n"
   "static const unsigned long kLogoPngSize = ${_logo_bytes};\n")
 
 target_include_directories(NarutoLauncher PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../gcn-recomp/runtime/hw"
   "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -165,11 +211,11 @@ endif()
 # NLA_VERSION is the version of the copy of the game's sources a macOS bundle lays down,
 # so an updated launcher replaces its own sources and nothing else.
 target_compile_definitions(NarutoLauncher PRIVATE
-  SDL_MAIN_HANDLED NLA_VERSION="${PROJECT_VERSION}" NLA_SOURCE="${NLA_SOURCE}"
+  SDL_MAIN_HANDLED NLA_VERSION="${NLA_VERSION}" NLA_SOURCE="${NLA_SOURCE}"
   NLA_SOURCE_TIME=${NLA_SOURCE_TIME})
 
 if(WIN32)
-  configure_file(src/launcher.rc.in ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc @ONLY)
+  configure_file(assets/launcher.rc.in ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc @ONLY)
   target_sources(NarutoLauncher PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc)
 
   target_compile_definitions(NarutoLauncher PRIVATE
@@ -206,7 +252,7 @@ if(WIN32)
   target_link_libraries(NarutoLauncher PRIVATE
     ${NLA_SDL2}
     dwmapi comctl32 shell32 shlwapi ole32 uuid user32 gdi32 advapi32 propsys
-    winhttp bcrypt
+    winhttp
   )
 else()
   target_compile_options(NarutoLauncher PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -217,12 +263,20 @@ else()
 endif()
 
 if(APPLE)
+  # Finder, the Dock and Launchpad take the icon from the bundle, so the .icns is copied
+  # into Resources and named in Info.plist. It is the same mark the window draws; remake
+  # it with iconutil from assets/logo.png at 16, 32, 64, 128, 256, 512 and 1024 pixels.
+  set(NLA_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/AppIcon.icns")
+  set_source_files_properties("${NLA_ICON}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+  target_sources(NarutoLauncher PRIVATE "${NLA_ICON}")
+
   set_target_properties(NarutoLauncher PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "Naruto Launcher"
     MACOSX_BUNDLE_GUI_IDENTIFIER "local.naruto.launcher"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/Info.plist.in"
+    MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
   )
 endif()
 
@@ -248,10 +302,36 @@ add_test(NAME click-details
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,665)
 add_test(NAME render-players
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-players.bmp" players)
-# Picks a pad for the second controller on the panel: opens its menu, then takes item 2.
+# Picks the first controller for player 1: opens its menu, then takes item 2.
 add_test(NAME click-players
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-players.bmp"
-                 "players-click:735,433;690,510")
+                 "players-click:739,358;739,471")
+# The Mods panel, and checking its first row and pressing Apply: the rows are drawn from
+# stand-ins in a render, so the drawing and the click path are the same on every machine.
+add_test(NAME render-mods
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-mods.bmp" mods)
+add_test(NAME click-mods
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-mods.bmp"
+                 "mods-click:255,350;671,548")
+# The Mods button belongs to the game's page: it opens that game's panel, and Escape closes
+# it back to the page rather than to Settings.
+add_test(NAME mods-from-game
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render
+                 "${CMAKE_CURRENT_BINARY_DIR}/mods-from-game.bmp" mods-from-game)
+# The Geckos panel: one code switched on by itself, a block pasted into the box, and the
+# panel the game page opens. The rows are stand-ins in a render, so these are the same on
+# every machine.
+add_test(NAME render-geckos
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-geckos.bmp" geckos)
+add_test(NAME click-geckos
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-geckos.bmp"
+                 "geckos-click:300,340;691,577")
+# The box takes the click and the text the window hands it, which is the path a paste takes.
+add_test(NAME geckos-paste
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/geckos-paste.bmp" geckos-paste)
+add_test(NAME geckos-from-game
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render
+                 "${CMAKE_CURRENT_BINARY_DIR}/geckos-from-game.bmp" geckos-from-game)
 add_test(NAME render-update
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-update.bmp" update)
 add_test(NAME render-update-banner
@@ -259,6 +339,12 @@ add_test(NAME render-update-banner
 # Clicks the Update button in the header, which must open the prompt.
 add_test(NAME click-update
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-update.bmp" update-click:871,41)
+# Clicks a cover: the page must leave the game it is on for the one clicked, whether or not
+# that game's folder is set up yet, so choosing a game cannot land on another one.
+foreach(game_index RANGE 0 4)
+  add_test(NAME click-cover-${game_index}
+           COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-cover-${game_index}.bmp" cover-click:${game_index})
+endforeach()
 
 # The update check's offline half: version comparison, reading a release out of GitHub's
 # JSON, and the helper that swaps a downloaded version in. It runs the helper for real
@@ -269,7 +355,7 @@ add_executable(update_test
   src/jobs.cpp
   src/tools.cpp
   src/update.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(update_test PRIVATE src)
 if(WIN32)
@@ -284,6 +370,440 @@ else()
 endif()
 add_test(NAME update-logic COMMAND $<TARGET_FILE:update_test>)
 
+# What the update screen does with what a check finds, and what the Settings page says about
+# it. The screen holds a host of callbacks instead of the window, so a test fills them in and
+# drives the page with no window, no network and no thread.
+add_executable(update_screen_test
+  tests/update_screen_test.cpp
+  src/update_screen.cpp
+  src/settings.cpp
+  src/update.cpp
+  src/git.cpp
+  src/tools.cpp
+  src/jobs.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(update_screen_test PRIVATE src)
+# A development version, so the check is a build that cannot ask GitHub: the test needs no
+# network, and what a build with no release tag does is worth checking anyway.
+target_compile_definitions(update_screen_test PRIVATE NLA_VERSION="0.0.0")
+if(WIN32)
+  target_compile_definitions(update_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(update_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(update_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(update_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME update-screen-logic COMMAND $<TARGET_FILE:update_screen_test>)
+
+# The mod loader's offline half: reading a mod.txt and laying its files over an extracted
+# disc's manifest. Needs no game and no network.
+add_executable(mods_test
+  tests/mods_test.cpp
+  src/catalog.cpp
+  src/codes.cpp
+  src/gecko.cpp
+  src/mods.cpp
+  ${NLA_UTIL_SOURCES}
+  ../gcn-recomp/runtime/hw/patch.cpp
+)
+target_include_directories(mods_test PRIVATE src ../gcn-recomp/runtime/hw)
+if(WIN32)
+  target_compile_definitions(mods_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(mods_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(mods_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(mods_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME mods-logic COMMAND $<TARGET_FILE:mods_test>)
+
+# What the Mods panel does: the ids it answers for, the stand-in table a render draws, what a
+# check stages and what Apply writes. The page holds a host of callbacks and the two pages it
+# shares work with, so this drives it with no window, no disc and no network.
+add_executable(mods_screen_test
+  tests/mods_screen_test.cpp
+  src/mods_screen.cpp
+  src/mods.cpp
+  src/catalog.cpp
+  src/codes.cpp
+  src/gecko.cpp
+  src/geckos_screen.cpp
+  src/patches.cpp
+  src/picker_screen.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/ui.cpp
+  src/font.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  src/update.cpp
+  src/git.cpp
+  ${NLA_UTIL_SOURCES}
+  ../gcn-recomp/runtime/hw/patch.cpp
+)
+target_include_directories(mods_screen_test PRIVATE src ../gcn-recomp/runtime/hw)
+if(WIN32)
+  target_compile_definitions(mods_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(mods_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(mods_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(mods_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME mods-screen-logic COMMAND $<TARGET_FILE:mods_screen_test>)
+
+# The Gecko codes' half: codetypes become the operations the runtime runs and the words
+# recompilation applies, and what cannot be done is said rather than dropped.
+add_executable(gecko_test
+  tests/gecko_test.cpp
+  src/gecko.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(gecko_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(gecko_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(gecko_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(gecko_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(gecko_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME gecko-logic COMMAND $<TARGET_FILE:gecko_test>)
+
+# What the Geckos panel does: the ids it answers for, the stand-in list a render draws, what
+# switching a code on does, and what the paste box takes while it has the keyboard. The page
+# holds a host of callbacks instead of the window, so this drives it with no window, no disc
+# and no network.
+add_executable(geckos_screen_test
+  tests/geckos_screen_test.cpp
+  src/geckos_screen.cpp
+  src/codes.cpp
+  src/gecko.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+src/painter.cpp
+src/font.cpp
+src/ui.cpp
+  src/tools.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(geckos_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(geckos_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(geckos_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(geckos_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(geckos_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME geckos-screen-logic COMMAND $<TARGET_FILE:geckos_screen_test>)
+
+# Which game a project folder answers with: a game the launcher knows is the game asked
+# for even before its folder is written, so the cover grid cannot silently land on another
+# game. Needs no disc and no network.
+# What the Activity panel keeps: every rule for splitting and trimming a job's output, which
+# used to live inside the window where nothing could reach it.
+add_executable(activity_test
+  tests/activity_test.cpp
+  src/activity_panel.cpp
+  src/jobs.cpp
+  src/ui.cpp
+  src/painter.cpp
+  src/font.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(activity_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(activity_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(activity_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(activity_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(activity_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME activity-logic COMMAND $<TARGET_FILE:activity_test>)
+
+# What the launcher's own picker lists: the order, and what it leaves out. Needs no window,
+# only a folder made for the purpose.
+# What the box art cache keeps: the stand-in tile it draws, and that a game's folder is read
+# once including when the answer is "no art here".
+add_executable(covers_test
+  tests/covers_test.cpp
+  src/covers.cpp
+  src/image.cpp
+  src/painter.cpp
+  src/font.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(covers_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(covers_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(covers_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(covers_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(covers_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME covers-logic COMMAND $<TARGET_FILE:covers_test>)
+
+add_executable(picker_test
+  tests/picker_test.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/font.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(picker_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(picker_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(picker_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(picker_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(picker_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME picker-logic COMMAND $<TARGET_FILE:picker_test>)
+
+# What asking for a folder or a file does: the keys the list takes, what a typed path
+# appends to, which row descends, and what is handed back when the answer is accepted or
+# given up. The page holds a host of callbacks instead of the window, so this drives it with
+# no window and no system chooser.
+add_executable(picker_screen_test
+  tests/picker_screen_test.cpp
+  src/picker_screen.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/ui.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(picker_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(picker_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(picker_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(picker_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(picker_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME picker-screen-logic COMMAND $<TARGET_FILE:picker_screen_test>)
+
+add_executable(project_test
+  tests/project_test.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(project_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(project_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(project_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(project_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(project_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME project-logic COMMAND $<TARGET_FILE:project_test>)
+
+# What the game page does: the ids it answers for, what a cover click chooses, what a project
+# folder answers with, and what the stand-in tile says. The page holds a host of callbacks and
+# the project state it changes, so this drives it with no window, no disc and no network.
+add_executable(games_screen_test
+  tests/games_screen_test.cpp
+  src/games_screen.cpp
+  src/covers.cpp
+  src/image.cpp
+  src/picker_screen.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/ui.cpp
+  src/font.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(games_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(games_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(games_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(games_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(games_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME games-screen-logic COMMAND $<TARGET_FILE:games_screen_test>)
+
+# What the Players panel does: the ids it answers for, the stand-in device list a render
+# uses, which pad a pick lands on, and when a row's list opens. The page holds a host of
+# callbacks and the project state, so this drives it with no window, no game and no
+# controllers plugged in.
+add_executable(players_screen_test
+  tests/players_screen_test.cpp
+  src/players_screen.cpp
+  src/devices.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  ${NLA_UTIL_SOURCES}
+  src/painter.cpp
+  src/font.cpp
+  src/ui.cpp
+)
+target_include_directories(players_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(players_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(players_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(players_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(players_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME players-screen-logic COMMAND $<TARGET_FILE:players_screen_test>)
+
+# What the Settings page does: the ids it answers for, the scale list the combo opens, and
+# the two settings it writes. It reads the update page's line, so it is linked beside it -
+# and built as a development version, so nothing here can reach the network.
+add_executable(settings_screen_test
+  tests/settings_screen_test.cpp
+  src/settings_screen.cpp
+  src/update_screen.cpp
+  src/settings.cpp
+  src/update.cpp
+  src/git.cpp
+  src/tools.cpp
+  src/jobs.cpp
+  ${NLA_UTIL_SOURCES}
+  src/painter.cpp
+  src/font.cpp
+  src/ui.cpp
+)
+target_include_directories(settings_screen_test PRIVATE src)
+target_compile_definitions(settings_screen_test PRIVATE NLA_VERSION="0.0.0")
+if(WIN32)
+  target_compile_definitions(settings_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(settings_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(settings_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(settings_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME settings-screen-logic COMMAND $<TARGET_FILE:settings_screen_test>)
+
+# The two digests the launcher takes: SHA-1 of a disc's main executable, which says which
+# disc a project was built from, and SHA-256 of the tools archive, which says whether a
+# download is the one a release published. Neither had a check before this, and there was no
+# SHA-256 in the tree on Linux or macOS at all.
+add_executable(hash_test
+  tests/hash_test.cpp
+  src/tools_package.cpp
+  src/tools.cpp
+  src/jobs.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(hash_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(hash_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(hash_test PRIVATE shell32 ole32 advapi32 user32 winhttp)
+  if(MINGW)
+    target_link_options(hash_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(hash_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME hash-logic COMMAND $<TARGET_FILE:hash_test>)
+
+# Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
+# so the check is made against the tree the patch decodes from. The runtime has no test
+# project of its own, and this one needs nothing but its header.
+add_executable(boot_test
+  tests/boot_test.cpp
+)
+target_include_directories(boot_test PRIVATE ../gcn-recomp/runtime)
+if(WIN32)
+  target_compile_definitions(boot_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  if(MINGW)
+    target_link_options(boot_test PRIVATE -static -municode)
+  endif()
+endif()
+add_test(NAME boot-logic COMMAND $<TARGET_FILE:boot_test>)
+
+# Which page covers the main one, and what it takes with it. The overlay is a plain value
+# with no window or painter, so the rule that only one page is ever showing is checked here
+# rather than through the drawing.
+add_executable(overlay_test
+  tests/overlay_test.cpp
+  src/ui.cpp
+  src/painter.cpp
+  src/font.cpp
+  ${NLA_UTIL_SOURCES}
+)
+target_include_directories(overlay_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(overlay_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(overlay_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(overlay_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(overlay_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME overlay-logic COMMAND $<TARGET_FILE:overlay_test>)
+
+# The recompiler's side of the same file: the words a mod's codes write into code are laid
+# over the DOL before it is translated, and words for data are left to the runtime.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME mods-patches
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../gcn-recomp/recomp/modspatch.py)
+endif()
+
 install(TARGETS NarutoLauncher
   BUNDLE DESTINATION .
   RUNTIME DESTINATION .
@@ -294,7 +814,7 @@ install(TARGETS NarutoLauncher
 add_executable(extract_test EXCLUDE_FROM_ALL
   tests/extract_test.cpp
   src/disc.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(extract_test PRIVATE src)
 if(WIN32)

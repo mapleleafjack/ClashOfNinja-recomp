@@ -3,6 +3,7 @@
 #include "tools.h"
 #include "tools_package.h"
 #include "util.h"
+#include "version.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -29,6 +30,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     nla::initialise_environment();
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    // The version the launcher compares releases against: the release checks read it to
+    // confirm a download reports the version its tag names.
+    if (argv && argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
+        std::printf("%s\n", nla::narrow(nla::launcher_version()).c_str());
+        LocalFree(argv);
+        return 0;
+    }
     if (argv && argc >= 3 && wcscmp(argv[1], L"--render") == 0) {
         nla::App app;
         std::string view = argc >= 4 ? nla::narrow(argv[3]) : std::string("main");
@@ -65,6 +73,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 #else
 int main(int argc, char** argv) {
     nla::initialise_environment();
+    if (argc >= 2 && std::strcmp(argv[1], "--version") == 0) {
+        std::printf("%s\n", nla::narrow(nla::launcher_version()).c_str());
+        return 0;
+    }
     if (argc >= 3 && std::strcmp(argv[1], "--render") == 0) {
         nla::App app;
         std::string view = argc >= 4 ? argv[3] : "main";

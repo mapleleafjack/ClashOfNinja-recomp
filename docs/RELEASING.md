@@ -28,9 +28,9 @@ gh workflow run build.yml -f bundle=true     # exercise the bundle without a rel
 | Asset | Holds |
 | --- | --- |
 | `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the build tools and the recompiler inside, plus the notices |
-| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, `gcn-recomp\`, `tools\extract_disc.py` and the notices; no game folder |
+| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, `mods.json`, `gcn-recomp\`, `tools\extract_disc.py` and the notices; no game folder |
 | `NarutoLauncher-tools-windows-x64-v<version>.zip` | the toolchain the launcher downloads on first use |
-| `NarutoLauncher-Linux-x64-v<version>.tar.xz` | the launcher and the notices; no game folder |
+| `NarutoLauncher-Linux-x64-v<version>.tar.xz` | the launcher, `mods.json`, `gcn-recomp/`, `tools/` and the notices; no game folder |
 | `NarutoLauncher-tools-linux-x64-v<version>.tar.xz` | the toolchain the launcher downloads on first use |
 
 The tag also names the version: the workflow passes it as `NLA_VERSION`, which becomes the
@@ -41,6 +41,12 @@ before the launcher is configured, so its URL, digest and size are pinned into t
 the configure step also records the commit and its date alongside it. A lean Windows zip is
 uploaded as a workflow artifact on every run.
 
+A tag with a suffix — `v1.7.0-rc.1` — publishes a pre-release, which GitHub keeps out of the
+latest release so no launcher is offered it as an update. The tag may point at any commit: a
+pre-release does not need `main` first. `CFBundleShortVersionString` is numbers only, so the
+macOS bundle carries `1.7.0` while the launcher inside reports the whole tag; the release
+checks accept either for a tag with a suffix.
+
 Windows has no prebuilt SDL2 for every target, so a launcher build needs a prefix first.
 `launcher/packaging/build-sdl2.ps1` builds one from source into
 `%LOCALAPPDATA%\gcn-recomp\SDL2-<version>-<tag>`, the same prefix gcn-recomp builds and the
@@ -49,10 +55,10 @@ is how CI's use of it is checked.
 
 Linux has neither of those shortcuts: SteamOS, which a Steam Deck runs, is immutable and ships
 no C++ compiler, and a distribution's gcc is not relocatable. So
-`launcher/packaging/build-tools-linux.sh` writes the Linux archive from pinned releases —
-Kitware's standalone CMake, Ninja, a static SDL2 and Zig, which `zig cc` uses to target glibc
-without needing anything installed on the player's machine. It fails rather than ship an SDL2
-without its X11 or audio backends, and it prints the digest and size to pin with
+`launcher/packaging/build-release-linux.sh --tools-only` writes the Linux archive from pinned
+releases — Kitware's standalone CMake, Ninja, a static SDL2 and Zig, which `zig cc` uses to
+target glibc without needing anything installed on the player's machine. It fails rather than
+ship an SDL2 without its X11 or audio backends, and it prints the digest and size to pin with
 `NLA_TOOLS_SHA256` and `NLA_TOOLS_BYTES`. The player's machine still needs `python3` for the
 recompiler and `xz` for the archive, both of which SteamOS provides.
 
@@ -71,7 +77,8 @@ powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -S
 powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Lean -SkipBuild -Zip -Version 1.0.1
 ```
 
-Both forms carry the same launcher folder: `NarutoLauncher.exe`, `gcn-recomp\` (the project's
+Both forms carry the same launcher folder: `NarutoLauncher.exe`, `mods.json` (the mods the
+launcher can offer before they are downloaded), `gcn-recomp\` (the project's
 own recompiler, which every game project adds), `tools\extract_disc.py` and
 `tools\setup.sh`, `covers\` if the machine had any, and the notices. There is no game folder:
 the launcher writes `naruto\`, `naruto2\`, `gnt3\`, `gnt4\` and `narutoeu\` into the folder it
@@ -104,6 +111,15 @@ against the tree and the script fails if the two disagree, then prints the SHA-2
 release notes. They are written with the `tar` that ships with Windows (bsdtar) rather than
 `Compress-Archive`, which left a 4 KB archive and no error after minutes on this tree.
 
+Every run checks the zip the way a player receives it:
+`launcher/packaging/check-release-windows.ps1` unpacks it afresh and confirms the folder holds
+the launcher, the recompiler and the tools, that the executable is an x64 PE that links SDL2
+statically and starts without a console, and that it reports the version the tag names; then it
+runs the launcher itself from the extracted copy to write all five game projects and draw a
+frame, and fails if the folder carries a project, a save or a disc image. Run it by hand against
+a local folder — `-Dir launcher\dist\NarutoLauncher -Version 0.0.0` — to see what a build would
+ship.
+
 The launcher ships no game data: the extracted tree is created in the folder the player chose on
 first use, and `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
 The workflow fails the build if the release ever carries a game folder, any game's `rom/`,
@@ -134,7 +150,82 @@ ad hoc, exactly like a local build — an unsigned arm64 bundle will not start, 
 would need an identity this project does not have — so the download needs right-click → Open the
 first time.
 
+Every run checks the zip the way a player receives it:
+`launcher/packaging/check-release-macos.sh` extracts it afresh and confirms the folder name, the
+version in `Info.plist`, the icon it names, the ad-hoc seal, the arm64 slice and the statically
+linked SDL2; then it runs the launcher itself from the extracted copy to write all five game
+projects and draw a frame, and fails if the bundle carries a project, box art, a save or a disc
+image. Run it by hand against a local bundle — `--app launcher/build-ci/NarutoLauncher.app
+--version 0.0.0` — to see what a build would ship.
+
 Nothing derived from a disc is in the bundle: there is no game project in it at all.
+
+## The Linux release
+
+`NarutoLauncher-Linux-x64-v<version>.tar.xz` carries the launcher (SDL2 linked statically),
+`mods.json`, `gcn-recomp/`, `tools/extract_disc.py`, `tools/setup.sh` and the static SDL2
+prefix in `tools/sdl2`, plus the notices. There is no game project in it, as on the other two
+platforms: the launcher writes those from its templates and makes each symbol map from the
+player's own disc.
+
+The tarball is the installer, because a Linux player has no launcher store: it is extracted
+where the games should live and `NarutoLauncher` is run from there. `--make-project DIR` does
+headlessly what clicking a cover does. `launcher/packaging/build-release-linux.sh` writes it,
+and the workflow calls the same script, so a developer's package and CI's cannot drift.
+
+Every run checks the tarball the way a player receives it:
+`launcher/packaging/check-release-linux.sh` unpacks it afresh and confirms the folder name, the
+version the launcher reports, the x86-64 ELF with statically linked SDL2, and that `tools/sdl2`
+travels; then it runs the launcher itself from the extracted copy to write all five game
+projects and draw a frame, and fails if the folder carries a project, box art, a save or a disc
+image. Run it by hand against a local folder — `--dir "launcher/dist/NarutoLauncher Linux 0.0.0"
+--version 0.0.0` — to see what a build would ship.
+
+Three things about the Linux desktop shape the format:
+
+- **A tar, not a zip.** A Linux copy unpacks with `/usr/bin/tar`, which is GNU tar and reads
+  only tar archives, and `update.cpp` matches a release asset against the archive type its
+  platform publishes — so the asset's name has to end in `.tar.xz` for an update to be
+  offered at all.
+- **SDL2 travels in the tarball.** SteamOS has a read-only root and no SDL2 development
+  package, so the game build is pointed at `tools/sdl2` rather than at `pkg-config`. A static
+  prefix built by `launcher/packaging/build-sdl2.ps1` is what that directory holds.
+- **The launcher's own folder has to be writable.** Game folders go beside it by default,
+  which a read-only image — an AppImage, say — cannot take, so such a copy needs a folder
+  chosen in the window. The tools archive unpacks into the launcher's folder for the same
+  reason.
+
+A compiler is the one thing a lean tarball does not settle: nothing on SteamOS provides one.
+`tools.cpp` searches `tools/toolchain/bin` and `tools/gcc/bin` before `PATH`, so a release
+that carries a toolchain needs nothing installed, and it lists Linuxbrew's directories as the
+fallback that needs no root and survives an OS update. Pass that tree with `--tools`, and
+`--split` to keep the launcher small:
+
+```sh
+bash launcher/packaging/build-release-linux.sh --version 1.0.1 \
+  --tools /path/to/linux-tools --split
+```
+
+`--split` writes `NarutoLauncher-tools-linux-x64-v<version>.tar.xz`, holding `tools/` at its
+root, and prints the SHA-256 and size to pin, exactly as the Windows tools archive is pinned.
+`--tools-only` makes that archive on its own, from the pinned releases, with no launcher build
+and no tree to pass in; it is what the workflow publishes:
+
+```sh
+bash launcher/packaging/build-release-linux.sh --version 1.0.1 --out dist --tools-only
+```
+
+Pin it when configuring the launcher:
+
+```sh
+cmake -S launcher -B launcher/build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DNLA_VERSION=1.0.1 \
+  -DNLA_TOOLS_URL=https://github.com/<owner>/<repo>/releases/download/v1.0.1/NarutoLauncher-tools-linux-x64-v1.0.1.tar.xz \
+  -DNLA_TOOLS_SHA256=<hex> -DNLA_TOOLS_BYTES=<bytes>
+```
+
+The script refuses a game folder, an extracted disc tree, a disc image or `covers/`, and it
+drops any build output a local recompiler copy carries.
 
 ## Publishing
 

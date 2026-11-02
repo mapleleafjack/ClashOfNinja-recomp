@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -27,6 +29,35 @@ struct DiscStatus {
 struct ProjectStatus {
     DiscStatus disc;
     bool built = false;
+    // The mods' instruction words changed since the build that is there: what the
+    // recompiler made no longer matches the mods that are on, so the game has to be built
+    // again before it is played.
+    bool stale_code = false;
+};
+
+// A file's SHA-1, kept against the file it was taken from.
+//
+// A project's status is asked for on every refresh - a build finishing, a game switch, a
+// window regaining focus - and the DOL is a couple of megabytes, so hashing it each time is
+// the most expensive thing the launcher does on a path that usually finds nothing new. The
+// file's size and modification time are the check, so a rebuilt DOL is hashed again and one
+// nothing has touched is not read at all.
+class DigestCache {
+  public:
+    // The file's digest, taken again only when the file is not the one it was taken from.
+    // Empty when the file cannot be read.
+    std::wstring of(const fs::path& file);
+    // How many times a file has actually been hashed. A test asks, so it can see that the
+    // second ask did not read the file again.
+    std::size_t taken() const { return taken_; }
+
+  private:
+    fs::path file_;
+    std::wstring sha1_;
+    std::uintmax_t size_ = 0;
+    fs::file_time_type mtime_{};
+    bool valid_ = false;
+    std::size_t taken_ = 0;
 };
 
 class Project {
@@ -38,6 +69,13 @@ class Project {
     static std::wstring default_game();
 
     bool valid() const;
+    // Every folder a build reads is there: the recompiler beside the game folders, the tool
+    // script the launcher travels with, this game's own project file, and the tables in
+    // recomp\ that steer the recompiler. A project a failed setup left half-written is valid
+    // but not complete, which is how Play knows to repair it instead of handing CMake a
+    // subdirectory that is not there -- or building a game whose recompiled code has no
+    // orig_* body for the runtime's hle_* wrappers to call.
+    bool complete() const;
 
     fs::path root() const { return root_; }
     std::wstring game() const { return game_; }
@@ -50,8 +88,14 @@ class Project {
     fs::path disc() const;
     fs::path dol() const;
     fs::path manifest() const;
+    // The mods the launcher offers: one folder each, beside the games.
+    fs::path mods_dir() const;
     fs::path build_dir() const;
     fs::path binary() const;
+    // What the build last compiled in: the mods' instruction words (`mods.code` beside the
+    // disc) as they were when the game was built. Written after a build that worked, so a
+    // mod whose codes changed says the game needs building again.
+    fs::path code_stamp() const;
     fs::path controls() const;
     fs::path saves() const;
     fs::path extract_script() const;
@@ -77,6 +121,9 @@ class Project {
   private:
     fs::path root_;
     std::wstring game_;
+    // The DOL's digest, kept across asks: status() is const and called on every refresh, and
+    // re-hashing the executable is the expensive part of it.
+    mutable DigestCache disc_digest_;
 };
 
 }  // namespace nla

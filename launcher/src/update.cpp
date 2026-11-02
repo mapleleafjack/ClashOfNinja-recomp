@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
 #include <initializer_list>
 
 namespace nla {
@@ -16,15 +17,6 @@ constexpr wchar_t kRepository[] = L"mapleleafjack/ClashOfNinja-recomp";
 
 std::wstring latest_release_url() {
     return std::wstring(L"https://api.github.com/repos/") + kRepository + L"/releases/latest";
-}
-
-// bsdtar reads zip on all three systems, so unpacking needs no second tool.
-std::wstring tar_tool() {
-#if defined(_WIN32)
-    return find_tool_from({L"C:\\Windows\\System32\\tar.exe"}, L"tar.exe");
-#else
-    return find_tool_from({L"/usr/bin/tar", L"/usr/local/bin/tar"}, L"tar");
-#endif
 }
 
 // The string value of `key`, searched from `from`. `after` receives the offset just past
@@ -112,6 +104,15 @@ std::wstring platform_asset_tag() {
 #endif
 }
 
+// The archive a release publishes for a platform: the Linux job writes a tar.xz, because
+// GNU tar is all a Linux copy has to unpack with, and the macOS and Windows jobs write a
+// zip, which their bsdtar reads. Comparing only against ".zip" left a Linux copy with
+// nothing to download.
+std::wstring_view launcher_archive_suffix(std::wstring_view platform) {
+    return platform == L"linux" ? std::wstring_view(L".tar.xz")
+                                : std::wstring_view(L".zip");
+}
+
 fs::path find_payload(const fs::path& root) {
     std::error_code ec;
     if (!fs::is_directory(root, ec)) return {};
@@ -136,6 +137,113 @@ fs::path find_payload(const fs::path& root) {
 
 }  // namespace
 
+namespace {
+
+// The tar the launcher unpacks with. It is bsdtar on Windows and macOS, which reads a zip
+// as well; a Linux /usr/bin/tar is GNU tar and reads only tar archives.
+std::wstring tar_tool() {
+#if defined(_WIN32)
+    return find_tool_from({L"C:\\Windows\\System32\\tar.exe"}, L"tar.exe");
+#else
+    return find_tool_from({L"/usr/bin/tar", L"/usr/local/bin/tar"}, L"tar");
+#endif
+}
+
+// The interpreter Settings already lists as needed on every platform, and the last tool
+// that can open a zip where neither bsdtar nor unzip is installed.
+std::wstring python_tool() {
+    auto python = find_tool(L"python3" + std::wstring(exe_suffix()));
+    if (python.empty()) python = find_tool(L"python" + std::wstring(exe_suffix()));
+    return python;
+}
+
+// The bytes a zip starts with: a local file header, an empty archive's end record, or a
+// record of a spanned one. A tar, compressed or not, begins with something else.
+bool looks_like_zip(const fs::path& archive) {
+    std::ifstream file(archive, std::ios::binary);
+    unsigned char magic[4] = {};
+    if (!file.read(reinterpret_cast<char*>(magic), sizeof magic)) return false;
+    return magic[0] == 'P' && magic[1] == 'K' &&
+           (magic[2] == 3 || magic[2] == 5 || magic[2] == 7);
+}
+
+struct Unpacker {
+    std::wstring exe;
+    std::vector<std::wstring> args;
+};
+
+// The tools that can open a zip here, best first. Linux tar is left out: GNU tar answers a
+// zip with "This does not look like a tar archive" and nothing else, so offering it only
+// fails once before the tool that works is tried.
+std::vector<Unpacker> zip_unpackers(const fs::path& archive, const fs::path& into) {
+    std::vector<Unpacker> unpackers;
+#if defined(__linux__)
+    const auto bsdtar =
+        find_tool_from({L"/usr/bin/bsdtar", L"/usr/local/bin/bsdtar"}, L"bsdtar");
+    if (!bsdtar.empty())
+        unpackers.push_back({bsdtar, {L"-xf", archive.wstring(), L"-C", into.wstring()}});
+    const auto unzip = find_tool(L"unzip");
+    if (!unzip.empty())
+        unpackers.push_back({unzip, {L"-q", L"-o", archive.wstring(), L"-d", into.wstring()}});
+#else
+    const auto tar = tar_tool();
+    if (!tar.empty())
+        unpackers.push_back({tar, {L"-xf", archive.wstring(), L"-C", into.wstring()}});
+#endif
+    const auto python = python_tool();
+    if (!python.empty())
+        unpackers.push_back(
+            {python, {L"-m", L"zipfile", L"-e", archive.wstring(), into.wstring()}});
+    return unpackers;
+}
+
+}  // namespace
+
+bool unpack_archive(const fs::path& archive, const fs::path& into, Job& job,
+                    std::wstring* error) {
+    std::vector<Unpacker> unpackers;
+    if (looks_like_zip(archive)) {
+        unpackers = zip_unpackers(archive, into);
+        if (unpackers.empty()) {
+            if (error)
+                *error = format(L"%ls is a zip and no tool here opens one: install bsdtar, "
+                                L"unzip or python3",
+                                archive.filename().c_str());
+            return false;
+        }
+    } else {
+        const auto tar = tar_tool();
+        if (tar.empty()) {
+            if (error) *error = L"tar was not found, so the download cannot be unpacked";
+            return false;
+        }
+        unpackers.push_back({tar, {L"-xf", archive.wstring(), L"-C", into.wstring()}});
+    }
+
+    int code = 1;
+    std::wstring tool;
+    for (size_t index = 0; index < unpackers.size(); ++index) {
+        if (index > 0) {
+            // A tool that failed part-way leaves files behind, so the next one starts from
+            // the empty folder the caller made.
+            std::error_code ec;
+            fs::remove_all(into, ec);
+            fs::create_directories(into, ec);
+        }
+        code = job.run_process(unpackers[index].exe, unpackers[index].args, fs::path());
+        if (code == 0) return true;
+        if (job.cancelled()) {
+            if (error) *error = L"cancelled";
+            return false;
+        }
+        tool = fs::path(unpackers[index].exe).filename().wstring();
+    }
+    if (error)
+        *error = format(L"%ls could not be unpacked: %ls exited with status %d",
+                        archive.filename().c_str(), tool.c_str(), code);
+    return false;
+}
+
 bool is_newer_version(const std::wstring& candidate, const std::wstring& current) {
     auto left = version_fields_of(candidate);
     auto right = version_fields_of(current);
@@ -156,18 +264,19 @@ ReleaseInfo parse_release(const std::wstring& json, const std::wstring& platform
     release.version = (tag.front() == L'v' || tag.front() == L'V') ? tag.substr(1) : tag;
     release.page_url = json_string(json, L"html_url");
 
-    // The asset for this machine: a zip named after the platform, the newest version and
-    // this architecture. The lean Windows zip is never a release, but skip it anyway. The
-    // tools archive sits on the release page beside the launcher's own and holds no
+    // The asset for this machine: an archive named after the platform, the newest version
+    // and this architecture. The lean Windows zip is never a release, but skip it anyway.
+    // The tools archive sits on the release page beside the launcher's own and holds no
     // launcher, so an update must never take it however its name compares: the tools a
     // player already has stay where they are.
     auto version = to_lower(release.version);
     auto launcher_name = to_lower(fs::path(exe_path()).filename().stem().wstring());
+    const std::wstring_view suffix = launcher_archive_suffix(platform);
     int best = -1;
     for (const auto& url : json_strings(json, L"browser_download_url")) {
         auto name = file_name_of(url);
         auto folded = to_lower(name);
-        if (!ends_with_ci(folded, L".zip")) continue;
+        if (!ends_with_ci(folded, suffix)) continue;
         if (folded.find(L"lean") != std::wstring::npos) continue;
         if (folded.find(L"tools") != std::wstring::npos) continue;
         if (folded.find(platform) == std::wstring::npos) continue;
@@ -426,18 +535,15 @@ std::vector<Task> update_tasks(ReleaseInfo release) {
 
     tasks.push_back({L"Unpacking the new version…",
                      [zip, unpacked](Job& job) {
-                         auto tar = tar_tool();
-                         if (tar.empty()) {
-                             job.log(L"[update] tar was not found, so the download cannot be "
-                                     L"unpacked\n");
-                             return 127;
-                         }
                          std::error_code ec;
                          fs::remove_all(unpacked, ec);
                          fs::create_directories(unpacked, ec);
-                         return job.run_process(
-                             tar, {L"-xf", zip.wstring(), L"-C", unpacked.wstring()},
-                             fs::path());
+                         std::wstring error;
+                         if (!unpack_archive(zip, unpacked, job, &error)) {
+                             job.log(L"[update] " + error + L"\n");
+                             return 1;
+                         }
+                         return 0;
                      }});
 
     tasks.push_back({L"Restarting the launcher…",

@@ -37,6 +37,13 @@ DENIED_DIRS = (
     'gnt3/',
     'gnt4/',
     'narutoeu/',
+    # A mod holds the files it puts in place of the disc's, which come off the game.
+    'mods/',
+    # A downloaded patch is a delta against a disc, so it is the disc's data too.
+    'patches/',
+    # Gecko codes are written for one build's addresses, and the guide's list is another
+    # author's work: like a mod, they stay on the machine that built the list.
+    'geckos/',
     'config/GNREDA/',
     'config/GNUEDA/',
     'config/G3NJDA/',
@@ -52,7 +59,7 @@ DENIED_DIRS = (
 # of shipped. Only art the project drew itself may be published.
 DENIED_ART_DIRS = ('covers/',)
 DENIED_EXT = frozenset(
-    'iso ciso rvz wia gcz wbfs tgc nfs h4m trk bnr dol img'.split())
+    'iso ciso rvz wia gcz wbfs tgc nfs h4m trk bnr dol img xdelta xdelta3 vcdiff'.split())
 BINARY_OK_EXT = frozenset('png jpg jpeg gif ico icns svg pdf'.split())
 MAX_BYTES = 2 << 20
 # The supported builds' main.dol, one per game.

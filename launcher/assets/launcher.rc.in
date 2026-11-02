@@ -1,7 +1,7 @@
 #include <windows.h>
 
-1 ICON "@CMAKE_CURRENT_SOURCE_DIR@/src/icon.ico"
-2 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/src/logo.png"
+1 ICON "@CMAKE_CURRENT_SOURCE_DIR@/assets/icon.ico"
+2 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/assets/logo.png"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 1,0,0,0

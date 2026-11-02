@@ -13,64 +13,35 @@
 #include <SDL.h>
 
 #include "painter.h"
+#include "ui.h"
+#include "activity_panel.h"
+#include "screen.h"
+#include "catalog.h"
+#include "games_screen.h"
+#include "geckos_screen.h"
+#include "mods_screen.h"
+#include "players_screen.h"
+#include "settings_screen.h"
+#include "covers.h"
+#include "devices.h"
+#include "picker.h"
+#include "picker_screen.h"
+#include "codes.h"
 #include "jobs.h"
+#include "mods.h"
 #include "project.h"
+#include "project_state.h"
 #include "settings.h"
 #include "tools.h"
+#include "update_screen.h"
 #include "update.h"
 #include "window.h"
 
 namespace nla {
 
-struct Rect {
-    float x = 0, y = 0, w = 0, h = 0;
-
-    RectF box() const { return RectF{x, y, x + w, y + h}; }
-    bool contains(float px, float py) const {
-        return px >= x && px <= x + w && py >= y && py <= y + h;
-    }
-    Rect inset(float amount) const {
-        return {x + amount, y + amount, w - 2 * amount, h - 2 * amount};
-    }
-};
-
-enum class Id {
-    None,
-    Launch,
-    Stop,
-    LogToggle,
-    CopyLog,
-    ClearLog,
-    OpenSettings,
-    SettingsClose,
-    SettingsToggleUpdates,
-    SettingsCheckNow,
-    SettingsInstallUpdate,
-    UpdateBanner,
-    Scale,
-    Scale1,
-    Scale2,
-    Scale3,
-    Scale4,
-    SettingsPlayers,
-    SettingsRefreshDevices,
-    PadRow,                       // a player row in Settings: +0 the keyboard, then the controllers
-    PadRowEnd = PadRow + 8,
-    PadOption,                    // the pads a row may be set to: +0 Automatic, then 1 to 4
-    PadOptionEnd = PadOption + 8,
-    OverlayAction,
-    OverlayCancel,
-    PickerUp,
-    PickerPath,
-    PickerAccept,
-    PickerCancel,
-    PickerEntry,  // the first entry row; the rest follow it
-    GameCover,    // the first game's cover on the main page; the rest follow it
-};
-
 class App {
   public:
-    App() = default;
+    App();
     ~App();
     App(const App&) = delete;
     App& operator=(const App&) = delete;
@@ -83,28 +54,11 @@ class App {
     int render_to(const std::string& path, float scale, const std::string& view = "main",
                   int window_width = 0, int window_height = 0);
 
+    // The width of the panel a message is shown in. A message written for it can be cut to
+    // fit before it is stored, which is how a long path stays on one line.
+    static constexpr float kMessagePanelWidth = 620.0f;
+
   private:
-    struct Hit {
-        Rect rect;
-        Id id;
-    };
-
-    struct PickerEntry {
-        std::wstring name;
-        bool directory = false;
-    };
-
-    // A game's cover art, read from its folder once and kept for later frames.
-    struct Cover {
-        bool loaded = false;
-        int width = 0;
-        int height = 0;
-        std::vector<std::uint32_t> pixels;
-    };
-    enum class Pill { Muted, Ok, Warn, Bad };
-    enum class PickerKind { None, Folder, Image };
-    // What came of looking for a newer release.
-    enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
 
     void handle_event(const SDL_Event& event);
     void handle_key(const SDL_KeyboardEvent& key);
@@ -112,50 +66,19 @@ class App {
     void resize_surface();
 
     void paint();
+    // The primitives and the window size a painter draws with, for the panels that draw
+    // themselves.
+    PaintContext canvas() { return {painter_, ui_, width_, height_}; }
     void paint_header();
     void paint_games();
     void paint_cover(Id id, const Rect& rect, const GameInfo& game, bool selected,
                      bool enabled);
-    void paint_activity(float top);
     void paint_settings();
     void paint_overlay();
-    void paint_pad_menu();
-    void paint_picker();
-    void paint_scale_menu();
-
-    void button(Id id, const Rect& rect, const std::wstring& label, bool primary,
-                bool enabled, bool danger = false, Face face = Face::Button);
-    void link(Id id, const Rect& rect, const std::wstring& label, bool enabled = true);
-    void checkbox(Id id, float x, float y, const std::wstring& label, bool checked,
-                  bool enabled = true);
-    void scale_combo(Id id, const Rect& rect, bool enabled);
-    // A row in Settings: a name on the left, the pad it plays as on the right.
-    void pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled);
-    void pill(const Rect& rect, const std::wstring& text, Pill state);
-    void card_box(const Rect& rect);
-
-    float text_width(const std::wstring& text, Face face);
-    std::wstring elide(const std::wstring& text, Face face, float width);
-    void register_hit(Id id, const Rect& rect);
-    Id hit_at(float x, float y) const;
 
     void refresh();
-    // Gives a built game a menu entry of its own, so a desktop -- or a Steam Deck, whose
-    // Game Mode lists installed entries -- starts the game rather than the launcher.
-    void write_game_entry();
-    void locate_project();
-    // The games the project folder supplies, in the launcher's fixed order.
-    std::vector<GameInfo> available_games() const;
-    // A game's cover art from covers/, or nullptr when it has none.
-    const Cover* cover(const std::wstring& folder);
-    // Fetches the box art for the games that have none, so a fresh install shows covers
-    // without the launcher shipping art the publisher owns.
-    void fetch_covers();
-    // The art drawn in a cover's place until covers/ gets a file for that game.
-    const Cover& placeholder_cover();
-    void select_game(const std::wstring& folder);
-    void launch_game(const std::wstring& folder);
-    std::wstring current_title() const;
+    // Asks for a disc image for the project in use. The chooser itself is PickerScreen's;
+    // where to start looking and what an answer starts are this page's.
     void choose_image();
     void start_setup(const std::filesystem::path& image);
     void begin_setup(const std::filesystem::path& image, bool then_launch);
@@ -169,20 +92,15 @@ class App {
     void launch();
     void continue_launch();
     void play();
-    void open_path(const std::filesystem::path& path);
-    // The controllers the game would see, and the pads they play as, from the game's
-    // --list-devices. Row 0 is the keyboard.
-    void open_players();
-    void refresh_devices();
-    void write_pad_pins();
     void activate(Id id);
-    bool modal_active() const { return settings_open_ || overlay_open_ || picker_ != PickerKind::None; }
+    // Closes the menus a new page would otherwise be drawn under: the scale menu, and the
+    // row a player's device list was opened from.
+    void close_popups();
 
     // `exits` ends the launcher once the steps succeed: an update hands over to its
     // helper, which cannot swap this copy while it is running. `done` runs after the
     // usual reporting, for a step that has its own next move.
-    void start_job(std::vector<Task> tasks, bool then_launch = false, bool exits = false,
-                   std::function<void(int)> done = nullptr);
+    void start_job(std::vector<Task> tasks, JobOptions options = {});
     void on_log(const std::wstring& text);
     void on_stage(const std::wstring& text);
     void on_progress(int percent);
@@ -192,30 +110,21 @@ class App {
 
     void show_message(const std::wstring& title, const std::wstring& text,
                       const std::wstring& action = L"Close");
+    // `second` adds a button to the left of the action's: a step that failed offers the
+    // retry, and the other way out of it, side by side.
     void show_confirm(const std::wstring& title, const std::wstring& text,
-                      const std::wstring& action, std::function<void()> confirmed);
+                      const std::wstring& action, std::function<void()> confirmed,
+                      const std::wstring& second = L"",
+                      std::function<void()> second_action = nullptr);
     void close_overlay();
+
+    // Writes whatever the project folder is missing -- the recompiler, the tool script, a
+    // game's folder, the tables the recompiler reads -- and puts the project back in place.
+    // False when that failed, with the reason already shown.
+    bool repair_project();
 
     void open_settings();
     void save_settings();
-
-    void start_update_check(bool manual);
-    void on_update_checked(UpdateCheck check, bool manual);
-    void show_update_prompt();
-    void begin_update();
-    void open_update_page();
-
-    // Asks for a folder or a disc image: the platform's own chooser where there is one,
-    // and the launcher's picker where there is not.
-    void choose_path(PickerKind kind, const std::wstring& title, const fs::path& start,
-                     std::function<void(const fs::path&)> accept);
-    // The launcher's own picker, the fallback on systems with no native chooser.
-    void open_picker(PickerKind kind, const std::wstring& title, const fs::path& start,
-                     std::function<void(const fs::path&)> accept);
-    void close_picker();
-    void list_picker();
-    void accept_picker();
-    void fill_picker_path();
 
     void invalidate() { window_.invalidate(); }    void post(std::function<void()> task) { dispatcher_.post(std::move(task)); }
     void animate();
@@ -223,95 +132,53 @@ class App {
     Window window_;
     Dispatcher dispatcher_;
     Painter painter_;
+    UiContext ui_{painter_};
+    Overlay overlay_;
 
-    Settings settings_;
-    std::optional<Project> project_;
-    ProjectStatus status_;
-    // The game and settings the entry on disk was written for, so a rebuild or a change to
-    // them rewrites it and nothing else does.
-    std::wstring game_entry_for_;
-    std::map<std::wstring, Cover> covers_;
-    Cover placeholder_;
-    // The box art download, and whether one is in flight. Quitting sets the stop flag so
-    // the worker does not hold the exit up for the rest of its downloads.
-    std::thread covers_thread_;
-    std::atomic_bool covers_stop_{false};
-    bool covers_fetching_ = false;
+    // The game in use, the settings it remembers, and what the project's files say. The three
+    // move together, so they are held together.
+    ProjectState state_;
 
     Job job_;
     GameProcess game_;
 
-    std::deque<std::wstring> log_;
-    bool log_visible_ = false;
-    int log_offset_ = 0;
+    ActivityPanel activity_;
     bool busy_ = false;
     bool quit_ = false;
-    bool job_exits_ = false;
-    bool job_then_launch_ = false;
-    std::function<void(int)> job_done_;
+    // What the job in flight was started to do, and what to run when it ends. Replaced only
+    // by a job that actually starts, so a request that is turned away cannot change it.
+    JobOptions job_run_;
     bool launch_wanted_ = false;
     int progress_ = -1;
     std::wstring stage_;
     std::wstring play_status_;
-    float progress_phase_ = 0;
     std::uint32_t next_frame_ = 0;
 
-    bool settings_open_ = false;
-    bool scale_open_ = false;
-    Rect scale_anchor_{};
-    std::wstring settings_note_;
     std::vector<ToolInfo> tools_;
 
-    // A controller SDL reports, as the game names it, and the pad it plays as: 1 to 4, or
-    // 0 for the first one free.
-    struct DeviceRow {
-        std::wstring name;
-        int nth = 1;
-        int pad = 0;
-    };
-    std::vector<DeviceRow> devices_;
-    std::wstring devices_note_;  // why the list is empty, when it is
-    int keyboard_pad_ = 1;
-    int pad_menu_row_ = -1;  // the row whose menu is open, -1 for none
-    Rect pad_menu_anchor_{};
     bool rendering_ = false;  // --render: no game to ask, so the rows are stand-ins
+    // A render has no window to click in, so the page's two live states -- a step running,
+    // and the game itself up -- are asked for by name rather than found on the machine.
+    bool forced_busy_ = false;
+    bool forced_running_ = false;
 
-    bool overlay_open_ = false;
-    bool overlay_confirm_ = false;
-    bool overlay_update_ = false;
-    bool overlay_players_ = false;
-    std::wstring overlay_title_;
-    std::wstring overlay_text_;
-    std::wstring overlay_action_;
-    std::function<void()> overlay_callback_;
-
-    // The newest release, and what came of looking for it.
-    UpdateState update_state_ = UpdateState::Never;
-    ReleaseInfo update_release_;
-    std::wstring update_error_;
-    std::thread update_thread_;
+    // What a screen may ask the window for, filled in before anything can ask. The screen
+    // is declared after it, so it is handed a host that is already there.
+    ScreenHost host_;
+    UpdateScreen update_{host_, state_};
+    PickerScreen picker_{host_};
+    GeckosScreen geckos_{host_, state_};
+    ModsScreen mods_{host_, state_, picker_, geckos_};
+    GamesScreen games_{host_, state_, picker_};
+    PlayersScreen players_{host_, state_};
+    SettingsScreen settings_{host_, state_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;
 
-    PickerKind picker_ = PickerKind::None;
-    std::wstring picker_title_;
-    std::wstring picker_folder_;
-    std::wstring picker_path_;
-    std::wstring picker_note_;
-    bool picker_editing_ = false;
-    int picker_selected_ = -1;
-    int picker_offset_ = 0;
-    std::vector<PickerEntry> picker_entries_;
-    std::function<void(const fs::path&)> picker_accept_;
 
-    Id hover_ = Id::None;
-    Id pressed_ = Id::None;
-    std::vector<Hit> hits_;
     float width_ = 1060;
     float height_ = 820;
-    Rect log_rect_{};
-    bool log_hovered_ = false;
 };
 
 }  // namespace nla

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Static recompiler: GameCube main.dol -> C.
 
-Usage: recomp.py <main.dol> <dtk symbols.txt> <outdir> <tables dir>
+Usage: recomp.py <main.dol> <dtk symbols.txt> <outdir> <tables dir> [<mods codes file>]
 
 The tables directory holds the per-game steering files: names.txt, hle.txt,
 patches.txt, special_calls.txt, idle.txt and steps.txt (any may be absent).
+
+The optional mods codes file is the words a mod's Gecko codes write into the game's code
+(`mods.code` beside the extracted disc, written by the launcher): they are laid over the
+DOL before it is translated, because a write into code cannot affect instructions that
+have already been recompiled.
 """
 import collections
 import os
@@ -13,6 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from dol import Dol, load_symbols  # noqa: E402
+import modspatch  # noqa: E402
 import ppc  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -192,6 +198,15 @@ def translate_reloc(pc, i, reloc):
 def main():
     dol_path, sym_path, outdir, tables = sys.argv[1:5]
     dol = Dol(dol_path)
+    # A mod's instruction words, if any mod with codes is on: applied to the DOL's own
+    # bytes, so every later step -- labels, branch targets, translation -- reads the
+    # patched instructions exactly as the game would have run them.
+    if len(sys.argv) > 5 and sys.argv[5]:
+        words = modspatch.load(sys.argv[5])
+        if words:
+            dol.data = bytearray(dol.data)
+            applied, data, misplaced = modspatch.apply(dol, words)
+            modspatch.report(sys.argv[5], applied, data, misplaced)
     modules = load_modules(dol_path + '.modules')
     rels, relocs = load_rels(dol_path)
     rel_text = [(c, sz) for _, _, secs in rels for _, c, sz, exe in secs if exe]

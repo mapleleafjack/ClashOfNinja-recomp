@@ -23,6 +23,12 @@ std::wstring tools_package_size();
 // Download, check and unpack that archive into tools\ beside the launcher.
 std::vector<Task> tools_package_tasks();
 
+// Whether the archive is the one the release pinned: its SHA-256 against `expected`, and a
+// mismatch deletes it so a second attempt cannot reuse a bad download. The digest is taken
+// here rather than by the system's sha256sum, so the answer is the same on every machine.
+bool check_archive(const fs::path& archive, const std::wstring& expected,
+                   std::wstring* error);
+
 // The same steps without a window, for `--fetch-tools <log>`: everything the tasks report
 // goes to that file. Returns the job's exit code. Used by the release check, which has to
 // prove the pinned archive still downloads and still matches its digest.

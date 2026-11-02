@@ -337,6 +337,7 @@ int main(int argc, char** argv) {
     if (iso_default.empty() && plat_is_dir("rom/disc")) iso_default = "rom/disc";
     const char* iso = iso_default.c_str();
     bool headless = false, hidden = false, input_log = true, first_person = false, fast = false, vr = false;
+    bool verify_patch = false;
     std::string input_log_dir, replay_dir;
     // --record=<file>[ --record-size=WxH]: a movie of the window with the game's audio (record.h).
     const char* record_to = nullptr;
@@ -370,6 +371,7 @@ int main(int argc, char** argv) {
         else if (!strncmp(argv[i], "--record=", 9)) record_to = argv[i] + 9;
         else if (!strncmp(argv[i], "--record-size=", 14)) sscanf(argv[i] + 14, "%dx%d", &record_w, &record_h);
         else if (!strcmp(argv[i], "--headless")) headless = true;
+        else if (!strcmp(argv[i], "--verify-patch")) verify_patch = true;
         else if (!strcmp(argv[i], "--hidden")) hidden = true;
         else if (!strcmp(argv[i], "--fast")) fast = true;
         else if (!strcmp(argv[i], "--cull-swap")) gx::g_cull_swap = true;
@@ -399,6 +401,34 @@ int main(int argc, char** argv) {
     if (!plat_readable(iso)) {
         fprintf(stderr, "No game disc found. Put your " GCN_GAME_TITLE " .iso or .ciso in rom/, or run\n"
                         "tools/extract_disc.py on it once and keep the tree it makes in rom/disc.\n");
+        return 1;
+    }
+    // --verify-patch: does the patch this tree carries decode from it? xdelta's windows
+    // each carry the checksum of the target piece they rebuild, so decoding them all against
+    // the tree proves the tree is the disc the patch was made from -- or shows where the two
+    // dumps differ.
+    if (verify_patch) {
+        di_init(iso);
+        int decoded = 0, matched = 0, windows = 0;
+        uint64_t first_unmatched = 0;
+        if (!di_verify_patch(&decoded, &matched, &windows, &first_unmatched)) {
+            fprintf(stderr, "%s carries no patch: no patch.manifest beside disc.manifest\n", iso);
+            return 1;
+        }
+        if (matched == windows) {
+            printf("patch verifies: all %d windows decode from this disc\n", windows);
+            return 0;
+        }
+        if (decoded == windows) {
+            printf("patch fits this disc: %d of %d windows match, the %d that do not differ in"
+                   " space no file owns (first at %llX)\n",
+                   matched, windows, windows - matched, (unsigned long long)first_unmatched);
+            return 0;
+        }
+        fprintf(stderr,
+                "patch does not fit: %d of %d windows decode, %d match; first that does not"
+                " rebuild target offset %llX\n",
+                decoded, windows, matched, (unsigned long long)first_unmatched);
         return 1;
     }
     mem_init();

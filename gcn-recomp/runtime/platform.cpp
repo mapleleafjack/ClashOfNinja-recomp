@@ -178,6 +178,10 @@ bool plat_is_dir(const char* path) {
     return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+// Handles are bounded by memory, not by a per-process count the way POSIX descriptors
+// are, so a disc tree's file count never exhausts them.
+bool plat_raise_file_limit(uint64_t) { return true; }
+
 bool plat_replace_file(const char* from, const char* to) {
     return MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING) != 0;
 }
@@ -377,6 +381,17 @@ bool plat_readable(const char* path) { return path && *path && access(path, R_OK
 bool plat_is_dir(const char* path) {
     struct stat st;
     return path && *path && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+bool plat_raise_file_limit(uint64_t want) {
+    struct rlimit lim;
+    if (getrlimit(RLIMIT_NOFILE, &lim) != 0) return false;
+    if (lim.rlim_cur == RLIM_INFINITY || want <= (uint64_t)lim.rlim_cur) return true;
+    // The hard limit is not ours to pass: ask for what fits under it, and let the caller
+    // hear that the count it needs does not.
+    if (lim.rlim_max != RLIM_INFINITY && want > (uint64_t)lim.rlim_max) want = (uint64_t)lim.rlim_max;
+    lim.rlim_cur = (rlim_t)want;
+    return setrlimit(RLIMIT_NOFILE, &lim) == 0;
 }
 
 bool plat_replace_file(const char* from, const char* to) { return rename(from, to) == 0; }

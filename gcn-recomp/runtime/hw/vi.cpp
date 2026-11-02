@@ -1,5 +1,6 @@
 // Video Interface: retrace interrupts and framebuffer registers.
 #include "../runtime.h"
+#include "../gecko.h"
 #include <algorithm>
 #include <atomic>
 
@@ -32,6 +33,9 @@ static void vi_retrace() {
     g_frame_start = now_ticks();
     g_field = vi_progressive() ? 0 : g_field ^ 1;
     g_vi_retrace_count++;
+    // A mod's Gecko codes run once a frame, as they do on a console: on the first field,
+    // and on every field of a progressive display, where a field is the whole frame.
+    if (g_field == 0) gecko_frame();
     uint32_t tfbl = ((uint32_t)g_vi[0x1C >> 1] << 16) | g_vi[0x1E >> 1];
     g_vi_xfb_addr = (tfbl & 0x10000000) ? ((tfbl & 0xFFFFFF) << 5) : (tfbl & 0xFFFFFF);
     // Raise display interrupts 0 and 1 if enabled.

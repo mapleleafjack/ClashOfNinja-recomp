@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -18,6 +19,54 @@ class Job;
 struct Task {
     std::wstring label;
     std::function<int(Job&)> run;
+};
+
+// What a job reports while it runs: the lines the Activity panel shows, and the two labels
+// above them. The lines are trimmed from the front, so a build that prints without stopping
+// cannot grow the launcher's memory with it.
+class Activity {
+  public:
+    // How many lines are kept. Enough for a long build, and still a bounded amount.
+    static constexpr std::size_t kLines = 4000;
+
+    // A new job: no progress said yet, and no stage to name.
+    void reset();
+    // Splits the text into lines as it arrives, dropping the carriage returns, so a child
+    // that reports a line at a time and one that reports \r\n read the same.
+    void write(const std::wstring& text);
+
+    const std::deque<std::wstring>& lines() const { return lines_; }
+    bool empty() const { return lines_.empty(); }
+    void clear() { lines_.clear(); }
+    // Every line, for the clipboard.
+    std::wstring text() const;
+
+    // -1 when the job has not said how far it is, which is when no bar is drawn.
+    int percent() const { return percent_; }
+    void set_percent(int percent) { percent_ = percent > 0 ? percent : -1; }
+    const std::wstring& stage() const { return stage_; }
+    void set_stage(const std::wstring& text) { stage_ = text; }
+
+  private:
+    std::deque<std::wstring> lines_;
+    std::wstring stage_;
+    int percent_ = -1;
+};
+
+// What a job is for, as far as the launcher is concerned: whether it starts the game when it
+// finishes, whether finishing it is the cue for the helper that swaps in a new version,
+// whether it records the code stamp a build needs, and whether the caller reports a failure
+// itself -- in which case the generic "the step did not finish" prompt would only be a second
+// one about the same thing.
+//
+// These travel with the request rather than being set on the launcher beforehand, so a job
+// that never starts cannot leave them behind for the one already running.
+struct JobOptions {
+    bool then_launch = false;
+    bool exits = false;
+    bool builds = false;
+    bool quiet = false;
+    std::function<void(int)> done;
 };
 
 // Runs a queue of tasks with the worker's output collected in a string, then writes that

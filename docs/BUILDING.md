@@ -48,6 +48,19 @@ extracted file came from, and the runtime serves the console's DVD reads from it
 tools/setup.sh --run "/path/to/your disc image"
 ```
 
+`tools/acceptance.sh` runs the same path as a check, one line per step, and stops at the
+first that failed — the closest thing to "does a release work" that can be run without a
+disc in CI:
+
+```sh
+tools/acceptance.sh "/path/to/your disc image" gnt4
+```
+
+It writes the game projects if they are not there, extracts the disc and checks it is the one
+the build pins, builds the game, then boots `<game>_bench` for `NLA_ACCEPTANCE_SECONDS`
+(20 by default), so a crash is an exit code rather than something to watch for. Everything a
+step printed is left in `acceptance/log.txt`.
+
 Step by step, which is all the launcher itself does:
 
 ```sh
@@ -101,6 +114,25 @@ $env:PATH = "$tools\mingw64\bin;$tools\cmake\bin;$tools\ninja;$tools\python;$env
 Under MinGW-w64 the game is linked with `-static -static-libgcc -static-libstdc++`, so the
 built `naruto.exe` carries the C++ runtime: it starts on its own, with no toolchain DLLs
 beside it or on `PATH`.
+
+### On Linux
+
+`build-essential`, `cmake`, `ninja-build` and SDL2's development package are all a checkout
+needs:
+
+```sh
+sudo apt install build-essential cmake ninja-build libsdl2-dev
+cd naruto
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+ninja -C build
+./build/naruto
+```
+
+A static SDL2 prefix, which is what a release carries, works instead of the distribution's
+package: `-DGCN_SDL2_PREFIX=/path/to/sdl2` points the build at it, and `pkg-config` is not
+consulted. On SteamOS the root is read-only and nothing may be installed, so a release's
+`tools/sdl2` plus a compiler inside the home directory (Linuxbrew) is how a Steam Deck builds
+a game at all — see [Releases](RELEASING.md#the-linux-release).
 
 ## Command line
 

@@ -1,19 +1,19 @@
 # The launcher
 
 [README](../README.md) · [Building and running](BUILDING.md) · [Recompilation notes](RECOMPILATION.md) ·
-[Releases](RELEASING.md)
+[Mods](MODS.md) · [Releases](RELEASING.md)
 
 `launcher/` is one C++ application that builds on Windows, macOS and Linux. Its window is the
-games it finds, as box-art covers: click one, and it asks for your disc image, extracts and
-builds as needed, then plays. It draws its own interface — no widget toolkit, one executable
+games it finds, as box-art covers: a cover chooses the game, **Play** asks for your disc image
+and builds as needed, then plays, and **Mods** is where what the game plays is changed. It
+draws its own interface — no widget toolkit, one executable
 per platform — and needs only SDL2, the same library the game's runtime uses. The layout is
 drawn for a 1060×820 window and zooms with the window from there, so the text and buttons keep
 their size against the covers on a large display instead of shrinking into a corner.
 
-![Choosing which pad each controller plays as](screenshots/players.png)
+![Choosing which device plays as each player](screenshots/players.png)
 
-*Each controller plays as one of the console's four pads, remembered in the game's
-`controls.txt`.*
+*Each of the console's four players takes a device, remembered in the game's `controls.txt`.*
 
 ## Building it
 
@@ -55,8 +55,9 @@ nothing else has to be installed for it to start.
 - **Games.** The outlined cover is the game the launcher works on: *Clash of Ninja*, *Clash of
   Ninja 2*, *Gekitou Ninja Taisen! 3*, *Gekitou Ninja Taisen! 4* or *Clash of Ninja European
   Version*. Each has its own disc, build and saves under its own folder, and the launcher
-  remembers the last choice; the title and window name follow the highlighted cover. A game
-  folder that is not in the project does not appear.
+  remembers the last choice; the title and window name follow the highlighted cover. Every
+  game is offered, even before its folder exists: choosing one writes the folders the project
+  is missing, so a disc, a build and saves for it have somewhere to go.
 - **Game disc.** Reads ISO and CISO itself, including the FST offset shift that NKit and
   rebuilt images use. Other formats (RVZ, WIA, GCZ, WBFS, TGC, NFS) are converted with
   `nodtool` first. It checks `main.dol`'s SHA-1 before writing anything and puts the new tree
@@ -67,20 +68,64 @@ nothing else has to be installed for it to start.
   game's `CMakeLists.txt`.
 - **Build.** CMake and Ninja, with their output streamed into Activity, a progress bar and
   Cancel. Cancel ends the whole build tree — a job object on Windows, the process group
-  elsewhere — so compilers the build started go too.
+  elsewhere — so compilers the build started go too. A project folder that is missing what a
+  build reads — `gcn-recomp/` beside the game folders, or `tools/` — is written again
+  before CMake is started, so a folder an interrupted setup left behind, or a launcher built
+  without the release job's copy of the sources, repairs itself instead of failing on
+  `add_subdirectory(../gcn-recomp)`. A step that fails offers **Try again**, and **Use a
+  different image** for a disc that is not the one meant or cannot be read.
 - **Play.** The same `--scale`, `--no-music`, `--no-input-log`, `--players` and `--controls`
   arguments as the command line. Stop sends `SIGINT` on macOS and Linux, which the runtime
   answers by dumping its GX FIFO, then escalates if the game ignores it.
-- **Players.** The **Players…** button opens a row for the keyboard and one for each controller
-  the game can see, and the pad each plays as — *Player 1* to *Player 4*, the console's four
-  controller sockets. A controller left on *Automatic* takes the first pad that is free, so
-  plugging in a second controller makes it player 2 with nothing to set. *Refresh* looks again
-  after a device comes or goes. The picks are written to the game's `controls.txt` as
-  `pad = "<device>" <n>` and `keyboard_pad = <n>`, the file the runtime reads, so the same
+- **Players.** The **Players…** button opens a row for each of the console's four pads, and a
+  picker for the device that plays as it: *Not set*, the keyboard, or one of the controllers
+  the game can see. A controller with no pad of its own takes the first pad that is free, and
+  a pick pins every controller to the pad its row shows, so nothing is left to guess. *Refresh*
+  looks again after a device comes or goes. The picks are written to the game's `controls.txt`
+  as `pad = "<device>" <n>` and `keyboard_pad = <n>`, the file the runtime reads, so the same
   choice can be made by hand or passed to someone else; a comment or a binding already in that
   file is kept. The launcher asks the game itself for the device list (`--list-devices`), so
   the names are the ones the runtime matches. Changing a pad takes effect the next time the
   game is started.
+- **Mods.** A folder in `mods/` holds a `mod.txt`, a `disc/` tree of the files it puts in
+  place of the disc's, and optionally `gecko.txt` with the Gecko codes it switches on.
+  **Mods** on the game's page opens the table for that game, and only what its disc can
+  play is in it: those folders, the disc patches in `patches/` that the catalog names for
+  it, and the known mods in `mods.json` that have not been downloaded. Checking a row stages
+  it and **Apply** writes the choice — downloading a
+  known mod or patch first when its files are not on the machine — so a row can be picked
+  before it exists locally. Unchecking a row and applying removes it. Closing without
+  Apply leaves the game as it was. Files and codes that write memory need no rebuild: the
+  launcher writes the lists beside `disc.manifest` and the runtime serves those reads and
+  runs those codes, so switching a mod off is deleting the lists. A code that patches
+  *instructions* is compiled in, so enabling it says **Ready to rebuild** and the build
+  runs before the game starts — only the patched functions, in about 20 seconds. A build's
+  addresses are its own, so a mod is only ever offered for the discs it names.
+  [Mods](MODS.md) has the format, the catalog and the limits.
+- **Geckos.** The Gecko codes for the game on the page, switched on one at a time rather
+  than a mod at a time. **Geckos** beside **Mods** lists the codes kept for that disc in
+  `geckos/<DISCID>.txt` and the ones the community's write-up for it holds — which the
+  launcher fetches on its own. Ralf's gc-forever threads cover the two Clash of Ninja
+  releases and the GNT modding repo's guides cover GNT4 and Clash of Ninja 2; GNT3 has
+  neither yet. Checking a row stages it and
+  **Apply** writes the choice. A block pasted from an editor goes into the box at the
+  bottom of the panel: **Apply** splits it into its `$Named` codes, checks each against
+  this recompiler, keeps the ones that can run, and says why any that cannot were left
+  out. The chosen codes reach the game by the same road a mod's codes do — the
+  `mods.gecko` and `mods.code` lists — so they need no rebuild of their own, and the
+  rebuild a `C2`-style code would cost is the one the Mods panel already describes. A
+  code's addresses are a build's own, so a disc's list is only ever offered for that disc,
+  and a disc with no guide says so instead of borrowing another's codes.
+  [Mods](MODS.md#geckos-codes-chosen-on-their-own) has the format and where the guides are.
+- **Disc patches.** A patch row takes an xdelta of the whole disc — SCON4, a translation,
+  a rebalancing hack. The catalog's patches are downloaded when they are checked and
+  applied, or **Choose a patch file…** adds one already on the machine. Either way the
+  launcher decodes a sample of the delta's windows against the extracted disc and only
+  keeps one that agrees with it, then leaves `patch.manifest` beside `disc.manifest` naming
+  the delta and what the space between files reads as there. The runtime decodes the patch
+  as the game asks for its files, so there is no second image and no second extraction;
+  unchecking the row and applying removes the manifest again. The game still runs this
+  build's code: a patch that ships its own executable is played, not recompiled.
 - **Updates.** The launcher asks GitHub for the newest release when it starts, and offers it
   when that release is newer than the one it was built from. *Update now* downloads the zip for
   this system, unpacks it and hands over to a small helper: the launcher exits, the helper puts
@@ -92,16 +137,17 @@ nothing else has to be installed for it to start.
   from box art and the dtk it fetches when it has none.
 - **Game source.** A package carries no game folder: the launcher writes `naruto\`,
   `naruto2\`, `gnt3\`, `gnt4\` and `narutoeu\` into the folder it lives in, with the
-  recompiler and `tools\extract_disc.py` beside them, when a disc is first chosen for a game,
-  and dtk makes that disc's symbol map. A release carries dtk in `tools\dtk`; a `-Lean`
-  release, or a copy the tool archive was never downloaded for, fetches the pinned build
-  (about 8 MB) into `tools\dtk` the first time a symbol map is needed, so nothing has to be
-  installed by hand.
+  recompiler and `tools\extract_disc.py` beside them, when a game is first chosen — a project
+  from an earlier launcher gets the games it is missing the same way, since nothing already
+  in a game folder is overwritten — and dtk makes that disc's symbol map. A release carries
+  dtk in `tools\dtk`; a `-Lean` release, or a copy the tool archive was never downloaded for,
+  fetches the pinned build (about 8 MB) into `tools\dtk` the first time a symbol map is
+  needed, so nothing has to be installed by hand.
   An update replaces the launcher only; the disc, the build and the saves stay where they are.
-- **Settings.** Three things, and nothing else: **Players…** (which controller and keyboard
-  play as which pad), the window scale a game opens at, and the update check. Everything else
-  the launcher works out on its own — the folder is always the one the executable is in, and
-  the disc image is asked for from the main page — and the remaining play options keep their
+- **Settings.** Three things, and nothing else: **Players…** (which device plays as each of the
+  four players), the window scale a game opens at, and the update check. Everything else the
+  launcher works out on its own — the folder is always the one the executable is in, and the
+  disc image is asked for from the main page — and the remaining play options keep their
   defaults: music on, input log on.
 - **Choosing a folder or an image.** The platform's own chooser: `IFileOpenDialog` with
   `FOS_PICKFOLDERS` on Windows, `NSOpenPanel` on macOS, `zenity` or `kdialog` on Linux. Only a
@@ -115,8 +161,8 @@ nothing else has to be installed for it to start.
   asked for without them.
 
 Drag a disc image or a project folder onto the window, or click a cover. A package carries no
-game project, so the covers are always shown and the first disc chosen for a game sets its
-folder up beside the launcher — the game folders, the disc, the build and the saves are always
+game project, so the covers are always shown and the first game chosen sets its folder up
+beside the launcher — the game folders, the disc, the build and the saves are always
 in the launcher's own folder, never one above it or one used earlier. *Show details* reveals
 the Activity log whenever it is hidden; the covers stay, smaller, beside it. Cover art added
 while the launcher is running is picked up the next time it starts.
@@ -132,7 +178,8 @@ to BMP files through
 
 ```
 --render <file> [main|settings|players|picker|confirm|update|update-banner
-                 |click:x,y|settings-click:x,y|players-click:x,y|update-click:x,y] [WxH]
+                 |click:x,y|settings-click:x,y|players-click:x,y|update-click:x,y
+                 |cover-click:<index>] [WxH]
 ```
 
 which needs no window and no desktop. The click modes paint, click that point and paint again
@@ -143,8 +190,16 @@ box art. A size such as `2560x1417` renders the view as a window of that size wo
 zoom and all. A render needs one usable system font; on a minimal Linux install that means
 `fonts-dejavu` or `fonts-liberation`. The screenshots in this documentation are renders.
 
+`cover-click:<index>` clicks a game's cover in a project folder of its own beside the render,
+which holds only the first game — so the page has to leave that game for the one clicked, and a
+game whose folder the launcher has not written yet must still be the game it lands on. The exit
+code is the check: the test fails when the page stays on another game.
+
 `launcher/tests/extract_test.cpp` runs the extractor from a console so its output can be
 compared with `tools/extract_disc.py`; it is a developer target, not shipped.
+`launcher/tests/project_test.cpp` covers choosing a game without a disc: a game the launcher
+knows but has not set up yet is still the game asked for, and writing the game folders leaves
+what a player already has alone and gives each game its own disc back.
 `launcher/tests/update_test.cpp` covers the update check without a network: version comparison,
 reading a release out of GitHub's JSON, and the helper script, which the test runs for real
 against a stand-in install. It also builds a throwaway git repository to check that an
@@ -154,3 +209,7 @@ GitHub once and prints the release it finds.
 `--fetch-tools <log>` runs the same download the launcher offers, without a window, and writes
 what its steps report to `log`. A release build uses it to prove the pinned archive still
 downloads and still matches its digest.
+
+`--version` prints the version the launcher was built at — the one it compares a release
+against — and exits. The release checks read it to confirm a download reports the version the
+tag names.
