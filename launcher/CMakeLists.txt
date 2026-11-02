@@ -392,6 +392,26 @@ add_test(NAME gecko-logic COMMAND $<TARGET_FILE:gecko_test>)
 # Which game a project folder answers with: a game the launcher knows is the game asked
 # for even before its folder is written, so the cover grid cannot silently land on another
 # game. Needs no disc and no network.
+# What the Activity panel keeps: every rule for splitting and trimming a job's output, which
+# used to live inside the window where nothing could reach it.
+add_executable(activity_test
+  tests/activity_test.cpp
+  src/jobs.cpp
+  src/util.cpp
+)
+target_include_directories(activity_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(activity_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(activity_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(activity_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(activity_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME activity-logic COMMAND $<TARGET_FILE:activity_test>)
+
 add_executable(project_test
   tests/project_test.cpp
   src/project.cpp
