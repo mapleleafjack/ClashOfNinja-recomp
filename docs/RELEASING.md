@@ -30,6 +30,8 @@ gh workflow run build.yml -f bundle=true     # exercise the bundle without a rel
 | `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the build tools and the recompiler inside, plus the notices |
 | `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, `mods.json`, `gcn-recomp\`, `tools\extract_disc.py` and the notices; no game folder |
 | `NarutoLauncher-tools-windows-x64-v<version>.zip` | the toolchain the launcher downloads on first use |
+| `NarutoLauncher-Linux-x64-v<version>.tar.xz` | the launcher, `mods.json`, `gcn-recomp/`, `tools/` and the notices; no game folder |
+| `NarutoLauncher-tools-linux-x64-v<version>.tar.xz` | the toolchain the launcher downloads on first use |
 
 The tag also names the version: the workflow passes it as `NLA_VERSION`, which becomes the
 bundle's `CFBundleShortVersionString` and, compiled into the launcher, is the version it
@@ -44,6 +46,15 @@ Windows has no prebuilt SDL2 for every target, so a launcher build needs a prefi
 `%LOCALAPPDATA%\gcn-recomp\SDL2-<version>-<tag>`, the same prefix gcn-recomp builds and the
 launcher's CMake looks for. It also runs outside Windows (any CMake, Ninja and compiler), which
 is how CI's use of it is checked.
+
+Linux has neither of those shortcuts: SteamOS, which a Steam Deck runs, is immutable and ships
+no C++ compiler, and a distribution's gcc is not relocatable. So
+`launcher/packaging/build-tools-linux.sh` writes the Linux archive from pinned releases —
+Kitware's standalone CMake, Ninja, a static SDL2 and Zig, which `zig cc` uses to target glibc
+without needing anything installed on the player's machine. It fails rather than ship an SDL2
+without its X11 or audio backends, and it prints the digest and size to pin with
+`NLA_TOOLS_SHA256` and `NLA_TOOLS_BYTES`. The player's machine still needs `python3` for the
+recompiler and `xz` for the archive, both of which SteamOS provides.
 
 ## The Windows release
 
@@ -165,7 +176,8 @@ bash launcher/packaging/build-release-linux.sh --version 1.0.1 \
 ```
 
 `--split` writes `NarutoLauncher-tools.tar.xz`, holding `tools/` at its root, and prints the
-SHA-256 and size to pin, exactly as the Windows tools archive is pinned:
+SHA-256 and size to pin, exactly as the Windows tools archive is pinned. The published asset
+is made by `build-tools-linux.sh`, under the release name the workflow pins:
 
 ```sh
 cmake -S launcher -B launcher/build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
