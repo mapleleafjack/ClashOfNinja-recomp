@@ -19,7 +19,7 @@ void check(bool condition, const char* what) {
 
 }  // namespace
 
-int main() {
+int run() {
     // A fresh overlay shows nothing.
     {
         nla::Overlay overlay;
@@ -101,3 +101,10 @@ int main() {
     std::printf("%s\n", failures == 0 ? "overlay: all checks passed" : "overlay: FAILURES");
     return failures == 0 ? 0 : 1;
 }
+
+// MinGW links with -municode on Windows, which wants wmain.
+#if defined(_WIN32)
+int wmain() { return run(); }
+#else
+int main() { return run(); }
+#endif

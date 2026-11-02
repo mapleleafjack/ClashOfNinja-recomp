@@ -70,8 +70,10 @@ jobs:
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
-        # The tests are ctest cases of their own, so they have to exist before ctest runs.
-        run: ninja -C launcher/build-ci NarutoLauncher update_test mods_test gecko_test project_test boot_test
+        # The tests are ctest cases of their own, so they have to exist before ctest runs - and
+        # ctest fails one whose binary was never built, so the default target builds every
+        # one of them, including a test added later.
+        run: ninja -C launcher/build-ci
 
       - name: Test
         run: ctest --test-dir launcher/build-ci --output-on-failure
@@ -291,8 +293,10 @@ jobs:
           -DNLA_TOOLS_BYTES="$NLA_TOOLS_BYTES"
 
       - name: Build
-        # The tests are ctest cases of their own, so they have to exist before ctest runs.
-        run: ninja -C launcher/build-ci NarutoLauncher update_test mods_test gecko_test project_test boot_test
+        # The tests are ctest cases of their own, so they have to exist before ctest runs - and
+        # ctest fails one whose binary was never built, so the default target builds every
+        # one of them, including a test added later.
+        run: ninja -C launcher/build-ci
 
       - name: Test
         # The render and click cases draw a frame, so they need a display. Xvfb gives them
@@ -459,7 +463,9 @@ jobs:
           -DNLA_TOOLS_BYTES="${{ env.NLA_TOOLS_BYTES }}"
 
       - name: Build
-        run: ninja -C launcher/build-release NarutoLauncher update_test mods_test gecko_test project_test boot_test
+        # Every test target, not a list a new one falls off: ctest fails a test whose binary
+        # was never built.
+        run: ninja -C launcher/build-release
 
       - name: Test
         run: ctest --test-dir launcher/build-release --output-on-failure

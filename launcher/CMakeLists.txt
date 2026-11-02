@@ -733,6 +733,7 @@ add_test(NAME settings-screen-logic COMMAND $<TARGET_FILE:settings_screen_test>)
 add_executable(hash_test
   tests/hash_test.cpp
   src/tools_package.cpp
+  src/tools.cpp
   src/jobs.cpp
   ${NLA_UTIL_SOURCES}
 )
