@@ -35,7 +35,7 @@ covers what it does carry.
 
 Releases are on the
 [releases page](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest) (latest is
-v1.5.1).
+v1.7.0).
 
 | Platform | Download | Also needs |
 | --- | --- | --- |
