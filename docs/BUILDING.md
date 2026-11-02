@@ -102,6 +102,25 @@ Under MinGW-w64 the game is linked with `-static -static-libgcc -static-libstdc+
 built `naruto.exe` carries the C++ runtime: it starts on its own, with no toolchain DLLs
 beside it or on `PATH`.
 
+### On Linux
+
+`build-essential`, `cmake`, `ninja-build` and SDL2's development package are all a checkout
+needs:
+
+```sh
+sudo apt install build-essential cmake ninja-build libsdl2-dev
+cd naruto
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+ninja -C build
+./build/naruto
+```
+
+A static SDL2 prefix, which is what a release carries, works instead of the distribution's
+package: `-DGCN_SDL2_PREFIX=/path/to/sdl2` points the build at it, and `pkg-config` is not
+consulted. On SteamOS the root is read-only and nothing may be installed, so a release's
+`tools/sdl2` plus a compiler inside the home directory (Linuxbrew) is how a Steam Deck builds
+a game at all — see [Releases](RELEASING.md#the-linux-release).
+
 ## Command line
 
 The game takes these; the launcher passes the play-related ones through.

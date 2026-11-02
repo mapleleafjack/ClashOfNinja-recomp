@@ -34,7 +34,7 @@ v1.5.1).
 | --- | --- | --- |
 | Windows 10/11 x64 | `NarutoLauncher-Windows-x64-v<version>.zip` (~4 MB) | nothing |
 | macOS 14+, Apple Silicon | `NarutoLauncher-macOS-arm64-v<version>.zip` (~13 MB, tools inside) | a C++ compiler: `xcode-select --install` (free) or Xcode |
-| Linux | none — build from source, see [BUILDING.md](docs/BUILDING.md) | `cmake ninja-build g++ libsdl2-dev python3` |
+| Linux x64 | `NarutoLauncher-Linux-x64-v<version>.tar.xz` (~2 MB, SDL2 inside) | `cmake ninja-build g++`, or Linuxbrew, which needs no root on SteamOS |
 
 1. **Unzip it.** On Windows use a path with no spaces in it, for example
    `C:\Games\NarutoLauncher` — MinGW-w64 will not run from one. Windows may also warn that the

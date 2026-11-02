@@ -259,23 +259,24 @@ jobs:
 
       - name: Package
         shell: bash
+        # One implementation, shared with a developer's own packaging run, so what CI ships
+        # cannot drift from what build-release-linux.sh makes. The tarball carries the
+        # recompiler, extract_disc.py and the static SDL2 prefix: without them a downloaded
+        # copy cannot set up or build a game, and SteamOS has no SDL2 development package
+        # to fall back on.
         run: |
           set -euo pipefail
-          version="${{ steps.version.outputs.value }}"
-          stage="launcher/build-ci/package/NarutoLauncher Linux ${version}"
-          mkdir -p "$stage"
-          cp launcher/build-ci/NarutoLauncher "$stage/"
-          cp launcher/mods.json "$stage/"
-          cp LICENSE THIRD-PARTY-NOTICES.md "$stage/"
-          cp -R licenses "$stage/licenses"
-          tar -cJf "launcher/build-ci/NarutoLauncher-Linux-x64-v${version}.tar.xz" \
-            -C launcher/build-ci/package "NarutoLauncher Linux ${version}"
-          sha256sum launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+          bash launcher/packaging/build-release-linux.sh \
+            --version "${{ steps.version.outputs.value }}" \
+            --build-dir launcher/build-ci \
+            --out launcher/build-ci/package \
+            --sdl2-prefix "$RUNNER_TEMP/sdl2" \
+            --skip-build
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
-          path: launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+          path: launcher/build-ci/package/NarutoLauncher-Linux-x64-*.tar.xz
           if-no-files-found: error
 
   windows:
