@@ -25,6 +25,19 @@ bool has_game(const fs::path& root, const std::wstring& folder) {
     return fs::is_regular_file(root / folder / L"CMakeLists.txt", ec);
 }
 
+// The tables the launcher writes beside a game, which steer the recompiler. Without them a
+// project still configures and compiles and then fails to link: the runtime's hle_*
+// wrappers call the orig_* bodies that hle.txt asks the recompiler to keep, so a game
+// folder an older launcher wrote has to be topped up rather than built as it is.
+bool has_tables(const fs::path& game_dir) {
+    std::error_code ec;
+    for (const wchar_t* name : {L"hle.txt", L"idle.txt", L"names.txt", L"patches.txt",
+                                L"special_calls.txt"}) {
+        if (!fs::is_regular_file(game_dir / L"recomp" / name, ec)) return false;
+    }
+    return true;
+}
+
 bool is_known_game(const std::wstring& folder) {
     for (const auto& game : kGames) {
         if (game.folder == folder) return true;
@@ -159,7 +172,7 @@ bool Project::valid() const {
 
 bool Project::complete() const {
     std::error_code ec;
-    return valid() &&
+    return valid() && has_tables(game_dir()) &&
            fs::is_regular_file(root_ / L"gcn-recomp" / L"CMakeLists.txt", ec);
 }
 

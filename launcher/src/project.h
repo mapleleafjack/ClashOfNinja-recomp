@@ -70,9 +70,11 @@ class Project {
 
     bool valid() const;
     // Every folder a build reads is there: the recompiler beside the game folders, the tool
-    // script the launcher travels with, and this game's own project file. A project a failed
-    // setup left half-written is valid but not complete, which is how Play knows to repair it
-    // instead of handing CMake a subdirectory that is not there.
+    // script the launcher travels with, this game's own project file, and the tables in
+    // recomp\ that steer the recompiler. A project a failed setup left half-written is valid
+    // but not complete, which is how Play knows to repair it instead of handing CMake a
+    // subdirectory that is not there -- or building a game whose recompiled code has no
+    // orig_* body for the runtime's hle_* wrappers to call.
     bool complete() const;
 
     fs::path root() const { return root_; }

@@ -131,6 +131,34 @@ void setup(const fs::path& root) {
     fs::remove_all(root, ec);
 }
 
+// A project that has the recompiler and the tool script but none of the tables in recomp\.
+// It used to count as complete, so Play configured and compiled it, and the link stopped at
+// `undefined reference to orig_OSSaveContext`: hle.txt is what asks the recompiler to keep
+// the body the runtime's hle_OSSaveContext calls.
+void top_up(const fs::path& root) {
+    std::error_code ec;
+    older_project(root);
+    fs::create_directories(root / L"gcn-recomp", ec);
+    nla::write_text_file(root / L"gcn-recomp" / L"CMakeLists.txt", "# stand-in\n");
+
+    nla::Project game(root, L"gnt4");
+    check(!game.complete(), "a project with no recomp tables is not complete");
+
+    std::wstring error;
+    if (!nla::Project::create(root, &error)) {
+        // Writing the folders needs the recompiler and the scripts the launcher travels
+        // with above it, which a build inside this checkout has and a build made elsewhere
+        // has not.
+        std::printf("skip the tables: %s\n", nla::narrow(error).c_str());
+        fs::remove_all(root, ec);
+        return;
+    }
+    check(game.complete(), "the tables the launcher writes complete it");
+    check(nla::read_text_file(root / L"gnt4" / L"recomp" / L"special_calls.txt") != L"",
+          "and they steer the recompiler");
+    fs::remove_all(root, ec);
+}
+
 // The digest kept against the file it was taken from. A status is asked for on every
 // refresh, and the DOL is a couple of megabytes, so the second ask must not read it again -
 // while a rebuilt file must be read.
@@ -210,6 +238,7 @@ int run() {
     choosing(root);
     games();
     setup(root / L"setup");
+    top_up(root / L"topup");
     fs::remove_all(root, ec);
 
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");

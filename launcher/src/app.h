@@ -119,8 +119,8 @@ class App {
     void close_overlay();
 
     // Writes whatever the project folder is missing -- the recompiler, the tool script, a
-    // game's folder -- and puts the project back in place. False when that failed, with the
-    // reason already shown.
+    // game's folder, the tables the recompiler reads -- and puts the project back in place.
+    // False when that failed, with the reason already shown.
     bool repair_project();
 
     void open_settings();

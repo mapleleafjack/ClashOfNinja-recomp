@@ -216,8 +216,9 @@ void App::start_setup(const fs::path& image) {
     }
     // The game folders are the launcher's to write: a release carries none, so the first
     // disc chosen for a game sets it up where the launcher lives. A folder that is missing
-    // the recompiler or the tool script -- one an earlier setup left half-written -- is
-    // topped up here too, rather than skipped because its game folders happen to be there.
+    // the recompiler, the tool script or the recompiler's tables -- one an earlier setup
+    // left half-written -- is topped up here too, rather than skipped because its game
+    // folders happen to be there.
     if (!state_.project()->complete()) {
         if (!repair_project()) return;
     }
@@ -418,9 +419,11 @@ std::vector<Task> App::build_tasks() {
 void App::start_build(bool then_launch) {
     if (!state_.project() || busy_) return;
     if (!check_required_tools()) return;
-    // A folder set up by an older launcher can be missing the recompiler, and CMake then
-    // fails on `add_subdirectory(../gcn-recomp)` before it reads a line of the game. That is
-    // a setup the launcher can finish, so it is finished here rather than reported.
+    // A folder set up by an older launcher can be missing the recompiler or the tables the
+    // recompiler reads: CMake then fails on `add_subdirectory(../gcn-recomp)` before it
+    // reads a line of the game, or the link stops at an orig_* body hle.txt would have
+    // kept. Both are a setup the launcher can finish, so it is finished here rather than
+    // reported.
     if (!repair_project()) return;
     auto tasks = build_tasks();
     if (tasks.empty()) {
