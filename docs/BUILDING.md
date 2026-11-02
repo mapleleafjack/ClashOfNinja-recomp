@@ -48,6 +48,19 @@ extracted file came from, and the runtime serves the console's DVD reads from it
 tools/setup.sh --run "/path/to/your disc image"
 ```
 
+`tools/acceptance.sh` runs the same path as a check, one line per step, and stops at the
+first that failed — the closest thing to "does a release work" that can be run without a
+disc in CI:
+
+```sh
+tools/acceptance.sh "/path/to/your disc image" gnt4
+```
+
+It writes the game projects if they are not there, extracts the disc and checks it is the one
+the build pins, builds the game, then boots `<game>_bench` for `NLA_ACCEPTANCE_SECONDS`
+(20 by default), so a crash is an exit code rather than something to watch for. Everything a
+step printed is left in `acceptance/log.txt`.
+
 Step by step, which is all the launcher itself does:
 
 ```sh

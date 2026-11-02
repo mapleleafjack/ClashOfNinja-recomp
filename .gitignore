@@ -11,6 +11,8 @@ naruto2/
 gnt3/
 gnt4/
 narutoeu/
+# What tools/acceptance.sh leaves behind: the log and the game's own output.
+acceptance/
 config/GNREDA/
 config/GNUEDA/
 config/G3NJDA/
