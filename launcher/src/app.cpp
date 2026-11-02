@@ -165,9 +165,9 @@ void App::handle_event(const SDL_Event& event) {
                     refresh();
                     break;
                 case SDL_WINDOWEVENT_LEAVE:
-                    if (ui_.hover() != Id::None || log_hovered_) {
+                    if (ui_.hover() != Id::None || activity_.hovered()) {
                         ui_.set_hover(Id::None);
-                        log_hovered_ = false;
+                        activity_.set_hovered(false);
                         invalidate();
                     }
                     break;
@@ -179,10 +179,10 @@ void App::handle_event(const SDL_Event& event) {
             float x = static_cast<float>(event.motion.x) / factor;
             float y = static_cast<float>(event.motion.y) / factor;
             Id hit = ui_.hit_at(x, y);
-            bool over_log = log_visible_ && log_rect_.contains(x, y);
-            if (hit != ui_.hover() || over_log != log_hovered_) {
+            bool over_log = activity_.visible() && activity_.rect().contains(x, y);
+            if (hit != ui_.hover() || over_log != activity_.hovered()) {
                 ui_.set_hover(hit);
-                log_hovered_ = over_log;
+                activity_.set_hovered(over_log);
                 invalidate();
             }
             window_.set_hand_cursor(hit != Id::None);
@@ -223,8 +223,9 @@ void App::handle_event(const SDL_Event& event) {
                 code_offset_ = static_cast<std::size_t>(
                     std::max(0L, std::min(static_cast<long>(most), wanted)));
                 invalidate();
-            } else if (log_visible_ && log_rect_.contains(x, y) && !activity_.empty()) {
-                log_offset_ = std::max(0, log_offset_ + (event.wheel.y > 0 ? 3 : -3));
+            } else if (activity_.visible() && activity_.rect().contains(x, y) &&
+                       !activity_.empty()) {
+                activity_.scroll(event.wheel.y > 0 ? 1 : -1);
                 invalidate();
             }
             return;
@@ -634,12 +635,11 @@ void App::activate(Id id) {
             }
             break;
         case Id::LogToggle:
-            log_visible_ = !log_visible_;
+            activity_.toggle();
             break;
         case Id::CopyLog: copy_log(); break;
         case Id::ClearLog:
             activity_.clear();
-            log_offset_ = 0;
             break;
         case Id::OpenSettings: open_settings(); break;
         case Id::UpdateBanner: show_update_prompt(); break;

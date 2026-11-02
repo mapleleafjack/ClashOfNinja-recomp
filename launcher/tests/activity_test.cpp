@@ -2,7 +2,7 @@
 // many of them survive. Every rule here used to live in App::append_log, where nothing could
 // reach it without a window. Run by ctest; needs no game.
 
-#include "jobs.h"
+#include "activity_panel.h"
 
 #include <cstdio>
 #include <string>
@@ -117,6 +117,77 @@ void starting() {
           "a new job keeps the log: it is what the last steps printed");
 }
 
+// The panel's own state: whether it is open, how far back it is scrolled, and that a new
+// job opens it again. These were four fields on App, asked about from the event loop and
+// from the drawing; nothing could check them without a window.
+void panel() {
+    {
+        nla::ActivityPanel panel;
+        check(!panel.visible(), "a new panel is folded away");
+        panel.begin();
+        check(panel.visible(), "a job opens the panel");
+    }
+    {
+        nla::ActivityPanel panel;
+        panel.write(L"one\ntwo\nthree\n");
+        panel.set_stage(L"Building");
+        panel.set_percent(40);
+        panel.begin();
+        check(panel.visible() && panel.lines().size() == 3,
+              "a new job keeps the lines the last steps printed");
+        check(panel.percent() == -1 && panel.stage().empty(),
+              "a new job starts with no progress and no stage of its own");
+    }
+    {
+        nla::ActivityPanel panel;
+        panel.begin();
+        panel.write(L"a\nb\nc\nd\ne\nf\ng\nh\n");
+        panel.scroll(1);
+        check(panel.offset() == 3, "one notch of the wheel is three lines");
+        panel.scroll(-1);
+        check(panel.offset() == 0, "the other way comes back");
+        panel.scroll(-1);
+        check(panel.offset() == 0, "the newest end is the floor");
+    }
+    {
+        // Eight lines with room for three: the offset cannot pass the fifth, or the first
+        // line would scroll out of reach and the rest of the log with it.
+        nla::ActivityPanel panel;
+        panel.begin();
+        panel.write(L"a\nb\nc\nd\ne\nf\ng\nh\n");
+        panel.scroll(100);
+        panel.clamp_offset(3);
+        check(panel.offset() == 5, "the offset stops at the first line the frame can show");
+        panel.clamp_offset(20);
+        check(panel.offset() == 0, "a frame taller than the log shows it from the top");
+    }
+    {
+        nla::ActivityPanel panel;
+        panel.begin();
+        panel.toggle();
+        check(!panel.visible(), "the toggle folds it");
+        panel.toggle();
+        check(panel.visible(), "and unfolds it");
+        panel.fold();
+        check(!panel.visible(), "a finished job folds it back");
+    }
+    {
+        nla::ActivityPanel panel;
+        panel.begin();
+        panel.write(L"a\nb\n");
+        panel.scroll(1);
+        panel.clear();
+        check(panel.empty() && panel.offset() == 0, "clearing the log returns to the newest end");
+    }
+    {
+        nla::ActivityPanel panel;
+        check(panel.rect().contains(10, 10) == false, "nothing is over an undrawn panel");
+        panel.set_rect({100, 100, 200, 50});
+        check(panel.rect().contains(150, 120), "the wheel reaches the drawn lines");
+        check(!panel.rect().contains(10, 10), "and not the rest of the page");
+    }
+}
+
 int run() {
     splitting();
     keeping();
@@ -124,6 +195,7 @@ int run() {
     copying();
     progress();
     starting();
+    panel();
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;
 }

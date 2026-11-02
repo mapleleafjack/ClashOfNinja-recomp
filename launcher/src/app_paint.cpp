@@ -545,7 +545,7 @@ void App::paint_header() {
 void App::paint_games() {
     constexpr float kHeaderBottom = 86.0f;
     auto games = available_games();
-    bool compact = log_visible_;
+    bool compact = activity_.visible();
     // The one step in flight, and the game that is up: a render names them instead of
     // finding them, so a state that no machine happens to be in can still be drawn.
     const bool busy = busy_ || forced_busy_;
@@ -929,7 +929,7 @@ void App::paint_activity(float top) {
                                            card.y + 40),
                   Face::CardTitle, rgb(theme::Text));
 
-    std::wstring toggle = log_visible_ ? L"Hide" : L"Show";
+    std::wstring toggle = activity_.visible() ? L"Hide" : L"Show";
     float clear_w = ui_.text_width(L"Clear", Face::Tiny);
     float copy_w = ui_.text_width(L"Copy", Face::Tiny);
     float toggle_w = ui_.text_width(toggle, Face::Tiny);
@@ -944,11 +944,11 @@ void App::paint_activity(float top) {
     float content_bottom = card.y + card.h - 14;
     float reserved = busy_ ? 34.0f : 0.0f;
 
-    log_rect_ = {};
-    if (log_visible_) {
+    activity_.set_rect({});
+    if (activity_.visible()) {
         Rect log_area{card.x + 20, content_top, card.w - 40,
                       std::max(40.0f, content_bottom - reserved - content_top)};
-        log_rect_ = log_area;
+        activity_.set_rect(log_area);
         painter_.fill_round(log_area.box(), 10, rgb(theme::Log));
         painter_.stroke_round(log_area.box(), 10, rgb(0x242932), 1);
         if (activity_.empty()) {
@@ -961,9 +961,8 @@ void App::paint_activity(float top) {
             int visible = static_cast<int>((log_area.h - 16) / line_height);
             visible = std::max(1, visible);
             int total = static_cast<int>(activity_.lines().size());
-            int max_offset = std::max(0, total - visible);
-            log_offset_ = std::min(log_offset_, max_offset);
-            int end = total - log_offset_;
+            activity_.clamp_offset(visible);
+            int end = total - activity_.offset();
             int start = std::max(0, end - visible);
             for (int index = start; index < end; ++index) {
                 float y = log_area.y + 8 + (index - start) * line_height;

@@ -75,6 +75,7 @@ set(NLA_SOURCES
   src/app_paint.cpp
   src/app_picker.cpp
   src/app_update.cpp
+  src/activity_panel.cpp
   src/catalog.cpp
   src/codes.cpp
   src/covers.cpp
@@ -398,6 +399,7 @@ add_test(NAME gecko-logic COMMAND $<TARGET_FILE:gecko_test>)
 # used to live inside the window where nothing could reach it.
 add_executable(activity_test
   tests/activity_test.cpp
+  src/activity_panel.cpp
   src/jobs.cpp
   src/util.cpp
 )

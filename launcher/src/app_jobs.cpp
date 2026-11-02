@@ -17,9 +17,7 @@ void App::start_job(std::vector<Task> tasks, JobOptions options) {
     if (busy_ || tasks.empty()) return;
     busy_ = true;
     job_run_ = std::move(options);
-    activity_.reset();
-    log_visible_ = true;
-    log_offset_ = 0;
+    activity_.begin();
     next_frame_ = 0;
     job_.start(
         std::move(tasks),
@@ -57,7 +55,7 @@ void App::on_job_done(int code) {
         // A job can be the one that installed the tools, so look for them again.
         tools_ = check_tools();
         // Back to the clean one-button view when there is nothing to read.
-        log_visible_ = false;
+        activity_.fold();
         // What the mods' codes were when this build went in: a later change says the game
         // has to be built again.
         if (built && project_) {

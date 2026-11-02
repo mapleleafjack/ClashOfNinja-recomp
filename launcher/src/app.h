@@ -14,6 +14,7 @@
 
 #include "painter.h"
 #include "ui.h"
+#include "activity_panel.h"
 #include "catalog.h"
 #include "covers.h"
 #include "devices.h"
@@ -221,9 +222,7 @@ class App {
     Job job_;
     GameProcess game_;
 
-    Activity activity_;
-    bool log_visible_ = false;
-    int log_offset_ = 0;
+    ActivityPanel activity_;
     bool busy_ = false;
     bool quit_ = false;
     // What the job in flight was started to do, and what to run when it ends. Replaced only
@@ -297,8 +296,6 @@ class App {
 
     float width_ = 1060;
     float height_ = 820;
-    Rect log_rect_{};
-    bool log_hovered_ = false;
 };
 
 }  // namespace nla
