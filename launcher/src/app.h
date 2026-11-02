@@ -15,6 +15,7 @@
 #include "painter.h"
 #include "ui.h"
 #include "catalog.h"
+#include "covers.h"
 #include "devices.h"
 #include "picker.h"
 #include "codes.h"
@@ -49,13 +50,6 @@ class App {
 
   private:
 
-    // A game's cover art, read from its folder once and kept for later frames.
-    struct Cover {
-        bool loaded = false;
-        int width = 0;
-        int height = 0;
-        std::vector<std::uint32_t> pixels;
-    };
     // What came of looking for a newer release.
     enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
 
@@ -86,7 +80,6 @@ class App {
     // without the launcher shipping art the publisher owns.
     void fetch_covers();
     // The art drawn in a cover's place until covers/ gets a file for that game.
-    const Cover& placeholder_cover();
     void select_game(const std::wstring& folder);
     void launch_game(const std::wstring& folder);
     std::wstring current_title() const;
@@ -218,8 +211,7 @@ class App {
     Settings settings_;
     std::optional<Project> project_;
     ProjectStatus status_;
-    std::map<std::wstring, Cover> covers_;
-    Cover placeholder_;
+    CoverCache art_;
     // The box art download, and whether one is in flight. Quitting sets the stop flag so
     // the worker does not hold the exit up for the rest of its downloads.
     std::thread covers_thread_;

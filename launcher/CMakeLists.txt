@@ -77,6 +77,7 @@ set(NLA_SOURCES
   src/app_update.cpp
   src/catalog.cpp
   src/codes.cpp
+  src/covers.cpp
   src/dialog.cpp
   src/devices.cpp
   src/disc.cpp
@@ -415,6 +416,29 @@ add_test(NAME activity-logic COMMAND $<TARGET_FILE:activity_test>)
 
 # What the launcher's own picker lists: the order, and what it leaves out. Needs no window,
 # only a folder made for the purpose.
+# What the box art cache keeps: the stand-in tile it draws, and that a game's folder is read
+# once including when the answer is "no art here".
+add_executable(covers_test
+  tests/covers_test.cpp
+  src/covers.cpp
+  src/image.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/util.cpp
+)
+target_include_directories(covers_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(covers_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(covers_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(covers_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(covers_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME covers-logic COMMAND $<TARGET_FILE:covers_test>)
+
 add_executable(picker_test
   tests/picker_test.cpp
   src/picker.cpp

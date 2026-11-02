@@ -80,7 +80,7 @@ void App::locate_project() {
                     }
                     if (candidate.valid()) {
                         project_.emplace(chosen, settings_.game);
-                        covers_.clear();
+                        art_.clear();
                         fetch_covers();
                         settings_.game = project_->game();
                         play_status_.clear();
@@ -108,34 +108,19 @@ std::vector<GameInfo> App::available_games() const {
     return std::vector<GameInfo>(Project::games());
 }
 
-const App::Cover* App::cover(const std::wstring& folder) {
+const Cover* App::cover(const std::wstring& folder) {
     if (!project_) return nullptr;
-    // The key carries the project root, so a moved or newly chosen project folder does
-    // not pick up art from the old one.
+    // The key carries the project root, so a moved or newly chosen project folder does not
+    // pick up art from the old one.
     std::wstring key = (project_->root() / folder).wstring();
-    auto found = covers_.find(key);
-    if (found != covers_.end()) return found->second.loaded ? &found->second : nullptr;
-
-    Cover art;
-    std::error_code ec;
-    // covers/ holds one file per game, named after its folder. A cover.png inside the
-    // game folder is where art lived before covers/ existed, and still works.
-    for (const wchar_t* extension : {L".png", L".jpg", L".jpeg"}) {
-        fs::path path = project_->covers_dir() / (folder + extension);
-        if (!fs::is_regular_file(path, ec)) continue;
-        art.loaded = load_image(path, &art.width, &art.height, art.pixels);
-        break;
-    }
-    if (!art.loaded) {
-        for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"}) {
-            fs::path path = project_->root() / folder / name;
-            if (!fs::is_regular_file(path, ec)) continue;
-            art.loaded = load_image(path, &art.width, &art.height, art.pixels);
-            break;
-        }
-    }
-    Cover& stored = covers_.emplace(key, std::move(art)).first->second;
-    return stored.loaded ? &stored : nullptr;
+    // covers/ holds one file per game, named after its folder. A cover.png inside the game
+    // folder is where art lived before covers/ existed, and still works.
+    std::vector<fs::path> candidates;
+    for (const wchar_t* extension : {L".png", L".jpg", L".jpeg"})
+        candidates.push_back(project_->covers_dir() / (folder + extension));
+    for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"})
+        candidates.push_back(project_->root() / folder / name);
+    return art_.load(key, candidates);
 }
 
 void App::fetch_covers() {
@@ -183,52 +168,11 @@ void App::fetch_covers() {
         post([this, fetched] {
             covers_fetching_ = false;
             if (fetched == 0) return;
-            covers_.clear();
+            art_.clear();
             append_log(format(L"[launcher] box art: %d cover(s) now in covers/\n", fetched));
             invalidate();
         });
     });
-}
-
-const App::Cover& App::placeholder_cover() {
-    if (placeholder_.loaded) return placeholder_;
-
-    // A still, dark box with the launcher's accent glowing behind where the logo sits,
-    // so an empty cover looks deliberate rather than broken.
-    constexpr int kWidth = 300;
-    constexpr int kHeight = 400;
-    const float glow_x = kWidth * 0.5f;
-    const float glow_y = kHeight * 0.33f;
-    const float glow_radius = kWidth * 0.62f;
-
-    placeholder_.width = kWidth;
-    placeholder_.height = kHeight;
-    placeholder_.pixels.resize(static_cast<size_t>(kWidth) * kHeight);
-    const Color top = rgb(0x262d39);
-    const Color bottom = rgb(0x151920);
-    const Color accent = rgb(theme::Accent);
-    for (int y = 0; y < kHeight; ++y) {
-        float t = static_cast<float>(y) / (kHeight - 1);
-        for (int x = 0; x < kWidth; ++x) {
-            float distance = std::hypot(static_cast<float>(x) - glow_x,
-                                        static_cast<float>(y) - glow_y) /
-                             glow_radius;
-            float glow = std::pow(std::clamp(1.0f - distance, 0.0f, 1.0f), 2.4f) * 0.30f;
-            auto channel = [&](float from, float to, float light) {
-                float value = from + (to - from) * t;
-                value += (light - value) * glow;
-                return static_cast<std::uint32_t>(
-                    std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
-            };
-            std::uint32_t red = channel(top.r, bottom.r, accent.r);
-            std::uint32_t green = channel(top.g, bottom.g, accent.g);
-            std::uint32_t blue = channel(top.b, bottom.b, accent.b);
-            placeholder_.pixels[static_cast<size_t>(y) * kWidth + x] =
-                0xFF000000u | (red << 16) | (green << 8) | blue;
-        }
-    }
-    placeholder_.loaded = true;
-    return placeholder_;
 }
 
 std::wstring App::current_title() const {

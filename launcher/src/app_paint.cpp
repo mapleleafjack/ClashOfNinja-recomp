@@ -898,7 +898,7 @@ void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool select
     } else {
         // Without art of its own, the tile still names the game and says where the cover
         // goes, so the page works on a fresh checkout.
-        const Cover& fallback = placeholder_cover();
+        const Cover& fallback = art_.placeholder();
         painter_.draw_image(box, fallback.pixels.data(), fallback.width, fallback.height,
                             kRadius);
         painter_.text(game.short_title,

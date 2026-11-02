@@ -254,7 +254,7 @@ void App::handle_event(const SDL_Event& event) {
                 }
                 if (candidate.valid()) {
                     project_.emplace(dropped, settings_.game);
-                    covers_.clear();
+                    art_.clear();
                     fetch_covers();
                     settings_.game = project_->game();
                     play_status_.clear();
