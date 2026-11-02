@@ -84,7 +84,10 @@ plist_read() {  # plist_read <key>
 }
 
 got_version=$(plist_read CFBundleShortVersionString)
-[[ "$got_version" == "$version" ]] ||
+# CFBundleShortVersionString is three numbers, so a pre-release tag - v1.7.0-rc.1 - shows in
+# the bundle as its numeric part, and the launcher's own --version carries the suffix.
+core=${version%%-*}
+[[ "$got_version" == "$version" || "$got_version" == "$core" ]] ||
   fail "the bundle says version '$got_version' and the release is '$version'"
 
 got_exe=$(plist_read CFBundleExecutable)

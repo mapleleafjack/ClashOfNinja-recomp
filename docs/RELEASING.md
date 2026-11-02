@@ -41,6 +41,12 @@ before the launcher is configured, so its URL, digest and size are pinned into t
 the configure step also records the commit and its date alongside it. A lean Windows zip is
 uploaded as a workflow artifact on every run.
 
+A tag with a suffix — `v1.7.0-rc.1` — publishes a pre-release, which GitHub keeps out of the
+latest release so no launcher is offered it as an update. The tag may point at any commit: a
+pre-release does not need `main` first. `CFBundleShortVersionString` is numbers only, so the
+macOS bundle carries `1.7.0` while the launcher inside reports the whole tag; the release
+checks accept either for a tag with a suffix.
+
 Windows has no prebuilt SDL2 for every target, so a launcher build needs a prefix first.
 `launcher/packaging/build-sdl2.ps1` builds one from source into
 `%LOCALAPPDATA%\gcn-recomp\SDL2-<version>-<tag>`, the same prefix gcn-recomp builds and the

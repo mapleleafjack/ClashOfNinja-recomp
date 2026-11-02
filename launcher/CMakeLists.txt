@@ -6,7 +6,14 @@ cmake_minimum_required(VERSION 3.20)
 if(NOT NLA_VERSION)
   set(NLA_VERSION "0.0.0")
 endif()
-project(NarutoLauncher VERSION ${NLA_VERSION} LANGUAGES CXX)
+# project(VERSION) takes numbers only, so a pre-release tag - v1.7.0-rc.1 - feeds it its
+# numeric part while NLA_VERSION keeps the suffix the launcher reports and compares.
+set(NLA_VERSION_NUMBERS "${NLA_VERSION}")
+string(REGEX REPLACE "^v?([0-9]+(\\.[0-9]+)*).*$" "\\1" NLA_VERSION_NUMBERS "${NLA_VERSION}")
+if(NOT NLA_VERSION_NUMBERS MATCHES "^[0-9]+(\\.[0-9]+)*$")
+  set(NLA_VERSION_NUMBERS "0.0.0")
+endif()
+project(NarutoLauncher VERSION ${NLA_VERSION_NUMBERS} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -204,7 +211,7 @@ endif()
 # NLA_VERSION is the version of the copy of the game's sources a macOS bundle lays down,
 # so an updated launcher replaces its own sources and nothing else.
 target_compile_definitions(NarutoLauncher PRIVATE
-  SDL_MAIN_HANDLED NLA_VERSION="${PROJECT_VERSION}" NLA_SOURCE="${NLA_SOURCE}"
+  SDL_MAIN_HANDLED NLA_VERSION="${NLA_VERSION}" NLA_SOURCE="${NLA_SOURCE}"
   NLA_SOURCE_TIME=${NLA_SOURCE_TIME})
 
 if(WIN32)

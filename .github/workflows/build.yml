@@ -591,7 +591,10 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" --generate-notes
+            # A tag with a suffix - v1.7.0-rc.1 - is a pre-release: GitHub keeps it out of
+            # the latest release, so no launcher is offered it as an update.
+            create=(--title "$TAG" --generate-notes)
+            [[ "$TAG" == *-* ]] && create+=(--prerelease)
+            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" "${create[@]}"
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets
