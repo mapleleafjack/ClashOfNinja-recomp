@@ -88,6 +88,7 @@ set(NLA_SOURCES
   src/painter.cpp
   src/picker.cpp
   src/picker_screen.cpp
+  src/players_screen.cpp
   src/jobs.cpp
   src/mods.cpp
   src/mods_screen.cpp
@@ -650,6 +651,38 @@ else()
   target_link_libraries(games_screen_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME games-screen-logic COMMAND $<TARGET_FILE:games_screen_test>)
+
+# What the Players panel does: the ids it answers for, the stand-in device list a render
+# uses, which pad a pick lands on, and when a row's list opens. The page holds a host of
+# callbacks and the project state, so this drives it with no window, no game and no
+# controllers plugged in.
+add_executable(players_screen_test
+  tests/players_screen_test.cpp
+  src/players_screen.cpp
+  src/devices.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  src/util.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/ui.cpp
+)
+target_include_directories(players_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(players_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(players_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(players_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(players_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME players-screen-logic COMMAND $<TARGET_FILE:players_screen_test>)
 
 # Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
 # so the check is made against the tree the patch decodes from. The runtime has no test

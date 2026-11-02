@@ -20,6 +20,7 @@
 #include "games_screen.h"
 #include "geckos_screen.h"
 #include "mods_screen.h"
+#include "players_screen.h"
 #include "covers.h"
 #include "devices.h"
 #include "picker.h"
@@ -73,7 +74,6 @@ class App {
                      bool enabled);
     void paint_settings();
     void paint_overlay();
-    void paint_pad_menu();
     void paint_scale_menu();
 
     void refresh();
@@ -92,13 +92,6 @@ class App {
     void launch();
     void continue_launch();
     void play();
-    // The controllers the game would see, and the pads they play as, from the game's
-    // --list-devices. Row 0 is the keyboard.
-    void open_players();
-    // Asks the game which controllers it sees. Deciding who plays as whom is DeviceMap's.
-    void refresh_devices();
-    // The pads this picker owns, written to controls.txt beside the player's own mapping.
-    void write_pad_pins();
     void activate(Id id);
     // Closes the menus a new page would otherwise be drawn under: the scale menu, and the
     // row a player's device list was opened from.
@@ -141,7 +134,6 @@ class App {
     Painter painter_;
     UiContext ui_{painter_};
     Overlay overlay_;
-    DeviceMap device_map_;
 
     // The game in use, the settings it remembers, and what the project's files say. The three
     // move together, so they are held together.
@@ -180,6 +172,7 @@ class App {
     GeckosScreen geckos_{host_, state_};
     ModsScreen mods_{host_, state_, picker_, geckos_};
     GamesScreen games_{host_, state_, picker_};
+    PlayersScreen players_{host_, state_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;

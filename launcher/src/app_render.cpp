@@ -152,9 +152,9 @@ int App::render_to(const std::string& path, float scale, const std::string& view
     if (view == "settings") {
         open_settings();
     } else if (view == "players") {
-        open_players();
+        players_.open();
     } else if (view.rfind("players-click:", 0) == 0) {
-        open_players();
+        players_.open();
         if (!click(view.substr(14))) {
             std::fprintf(stderr, "usage: players-click:<x>,<y>\n");
             return 1;
@@ -363,7 +363,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         // The device list: one row's menu, and the last row's, which has to open upwards
         // rather than off the bottom of the panel.
         const bool last = view.find(":last") != std::string::npos;
-        open_players();
+        players_.open();
         if (!click_control(Id::PadRow, last ? kPads - 1 : 0)) return 1;
     } else if (view == "picker") {
         picker_.choose_path(PickerKind::Image, L"Choose your own disc image",

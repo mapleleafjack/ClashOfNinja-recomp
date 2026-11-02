@@ -429,41 +429,16 @@ void App::activate(Id id) {
         return;
     }
 
-    if (overlay_.is(OverlayPage::Players)) {
-        if (device_map_.menu_row() >= 0) {
-            const int player = device_map_.menu_row() + 1;
-            const int picked = static_cast<int>(id) - static_cast<int>(Id::PadOption);
-            if (id >= Id::PadOption && id < Id::PadOptionEnd &&
-                picked < static_cast<int>(device_map_.pad_options().size())) {
-                device_map_.set_menu_row(-1);
-                device_map_.assign(player, picked);
-                write_pad_pins();
-                return;
-            }
-            device_map_.set_menu_row(-1);  // anything else closes the menu, then does its own work
-        }
-        if (id >= Id::PadRow && id < Id::PadRowEnd) {
-            const int row = static_cast<int>(id) - static_cast<int>(Id::PadRow);
-            if (row >= 0 && row < kPads) {
-                device_map_.set_menu_row(row);
-                if (const auto rect = ui_.rect_of(id)) device_map_.set_menu_anchor(*rect);
-                invalidate();
-                return;
-            }
-        }
-        switch (id) {
-            case Id::SettingsRefreshDevices:
-                refresh_devices();
-                invalidate();
-                return;
-            case Id::OverlayAction:
-                // Back to Settings, which is where the panel was opened from.
-                close_overlay();
-                open_settings();
-                return;
-            default:
-                return;
-        }
+    // The panel answers for its own ids. Done is not one of them: it is the overlay's, and
+    // it lands back on Settings, which is where the panel is opened from.
+    if (overlay_.is(OverlayPage::Players) && players_.handles(id)) {
+        players_.activate(id);
+        return;
+    }
+    if (overlay_.is(OverlayPage::Players) && id == Id::OverlayAction) {
+        close_overlay();
+        open_settings();
+        return;
     }
 
     if (overlay_.is_overlay()) {
@@ -517,7 +492,7 @@ void App::activate(Id id) {
                 save_settings();
                 break;
             case Id::SettingsPlayers:
-                open_players();
+                players_.open();
                 return;
             default:
                 break;
@@ -612,7 +587,7 @@ void App::close_overlay() {
     // picker's own field, which is the only other place that types.
     geckos_.stop_editing();
     window_.set_text_input(false);
-    device_map_.set_menu_row(-1);
+    players_.close_menu();
     invalidate();
 }
 
@@ -625,7 +600,7 @@ void App::open_settings() {
 
 void App::close_popups() {
     overlay_.set_scale_menu(false);
-    device_map_.set_menu_row(-1);
+    players_.close_menu();
 }
 
 void App::save_settings() { state_.settings().save(); }

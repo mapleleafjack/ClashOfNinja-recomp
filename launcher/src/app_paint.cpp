@@ -69,7 +69,7 @@ void App::paint() {
     }
     if (picker_.chooser().is_open()) picker_.paint(ctx);
     if (overlay_.scale_menu()) paint_scale_menu();
-    if (device_map_.menu_row() >= 0) paint_pad_menu();
+    if (players_.menu_open()) players_.paint_menu(ctx);
 
     painter_.end();
 }
@@ -589,7 +589,7 @@ void App::paint_overlay() {
                                          16.0f + 56.0f + 24.0f,
                                      220.0f, height_ - 80.0f);
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
-    device_map_.set_menu_panel(panel);
+
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
 
@@ -597,32 +597,7 @@ void App::paint_overlay() {
                                               panel.y + 50),
                   Face::CardTitle, rgb(theme::Text));
     if (overlay_.is(OverlayPage::Players)) {
-        // One row per pad, and the device that plays as it: the picks go to the game's
-        // controls.txt, which is what the runtime reads.
-        float left = panel.x + 26;
-        float right = panel.x + panel.w - 26;
-        float y = panel.y + 60;
-        painter_.text(L"Pick the device each player uses. Controllers take the first free pad.",
-                      RectF(left, y, right - 70, y + 20), Face::Tiny, rgb(theme::Muted));
-        ui_.link(Id::SettingsRefreshDevices, Rect{right - 62, y, 62, 18}, L"Refresh");
-        y += 26;
-        auto pad_row = [&](Id id, const std::wstring& name, const std::wstring& value,
-                           bool empty) {
-            painter_.text(ui_.elide(name, Face::Small, right - left - 200),
-                          RectF(left, y + 5, right - left - 200 + left, y + 27), Face::Small,
-                          rgb(theme::Text));
-            ui_.combo(id, Rect{right - 190, y, 190, 28}, value, !busy_, empty);
-            y += 34;
-        };
-        for (int player = 1; player <= kPads; ++player) {
-            const std::wstring value = device_map_.player_device_label(player);
-            pad_row(static_cast<Id>(static_cast<int>(Id::PadRow) + player - 1),
-                    L"Player " + std::to_wstring(player), value, value == L"Not set");
-        }
-        if (!device_map_.note().empty()) {
-            painter_.text(ui_.elide(device_map_.note(), Face::Tiny, right - left),
-                          RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
-        }
+        players_.paint_table(ctx, panel, busy_);
     } else if (overlay_.is(OverlayPage::Mods)) {
         mods_.paint_table(ctx, panel, busy_);
     } else if (overlay_.is(OverlayPage::Geckos)) {
@@ -654,35 +629,6 @@ void App::paint_overlay() {
 
 // What a player row offers: nothing, the keyboard, then each controller the game sees. A
 // row near the bottom of the panel opens its menu upwards, so the panel hides nothing.
-void App::paint_pad_menu() {
-    const std::vector<std::wstring> options = device_map_.pad_options();
-    const int count = static_cast<int>(options.size());
-    Rect menu{device_map_.menu_anchor().x, device_map_.menu_anchor().y + device_map_.menu_anchor().h + 6, device_map_.menu_anchor().w,
-              count * 30.0f + 8};
-    if (menu.y + menu.h > device_map_.menu_panel().y + device_map_.menu_panel().h - 10)
-        menu.y = device_map_.menu_anchor().y - 6 - menu.h;
-    painter_.fill_round(menu.box(), 10, rgb(0x1b1e25));
-    painter_.stroke_round(menu.box(), 10, rgb(theme::BorderStrong), 1);
-    const int player = device_map_.menu_row() + 1;
-    int current = 0;
-    if (device_map_.player_is_keyboard(player)) {
-        current = 1;
-    } else if (const int device = device_map_.player_device(player); device >= 0) {
-        current = 2 + device;
-    }
-    for (int i = 0; i < count; ++i) {
-        Rect item{menu.x + 4, menu.y + 4 + i * 30.0f, menu.w - 8, 30};
-        Id id = static_cast<Id>(static_cast<int>(Id::PadOption) + i);
-        if (ui_.hover() == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
-        painter_.text(ui_.elide(options[static_cast<size_t>(i)], Face::Small, item.w - 20),
-                      RectF(item.x + 10, item.y, item.x + item.w - 10, item.y + item.h),
-                      Face::Small,
-                      i == current ? rgb(theme::Accent)
-                                   : rgb(i == 0 ? theme::Muted : theme::Text),
-                      TextAlign::Leading, TextVAlign::Center, false);
-        ui_.register_hit(id, item);
-    }
-}
 
 void App::paint_scale_menu() {    Rect menu{scale_anchor_.x, scale_anchor_.y + scale_anchor_.h + 6, scale_anchor_.w, 4 * 32 + 8};
     painter_.fill_round(menu.box(), 10, rgb(0x1b1e25));
