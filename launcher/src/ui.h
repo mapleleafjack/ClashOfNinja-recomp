@@ -80,9 +80,9 @@ enum class Id {
 
 enum class Pill { Muted, Ok, Warn, Bad };
 
-// Which page covers the main one: a message, or one of the launcher's own tables. A page is
-// modal, so there is only ever one.
-enum class OverlayPage { None, Message, Mods, Geckos, Players };
+// Which page covers the main one: a message, one of the launcher's own tables, or Settings.
+// A page is modal, so there is only ever one.
+enum class OverlayPage { None, Message, Mods, Geckos, Players, Settings };
 
 // Where the mouse can be pressed, recorded as a frame is drawn and asked about after it.
 // The last one registered wins, so a menu drawn over a panel takes the click.
@@ -155,12 +155,29 @@ class Overlay {
                       std::function<void()> second_action = {});
     // One of the launcher's own tables, which fills its own page and only needs a way out.
     void show_panel(OverlayPage page, std::wstring title);
+    // A page whose content the App draws itself, so all that is kept here is that it is the
+    // one showing. Settings is such a page: opening anything else replaces it.
+    void show_page(OverlayPage page);
     // The prompt offering a newer release, where closing it means "not this version".
     void mark_update() { update_ = true; }
+    // Closes the page, and the scale menu that was drawn over it.
     void close();
 
-    bool open() const { return page_ != OverlayPage::None; }
+    // Any page, Settings included.
+    bool showing() const { return page_ != OverlayPage::None; }
+    // A message or one of the tables: the pages that answer to the overlay's own buttons.
+    bool is_overlay() const {
+        return page_ == OverlayPage::Message || is_table();
+    }
+    bool is_table() const {
+        return page_ == OverlayPage::Mods || page_ == OverlayPage::Geckos ||
+               page_ == OverlayPage::Players;
+    }
     bool is(OverlayPage page) const { return page_ == page; }
+    // The scale menu is not a page of its own: it is drawn over whichever page is showing,
+    // and a page opening or closing takes it with it.
+    void set_scale_menu(bool open) { scale_menu_ = open; }
+    bool scale_menu() const { return scale_menu_; }
     bool confirm() const { return confirm_; }
     bool update() const { return update_; }
     const std::wstring& title() const { return title_; }
@@ -172,9 +189,12 @@ class Overlay {
     std::function<void()> take_second();
 
   private:
+    void clear_actions();
+
     OverlayPage page_ = OverlayPage::None;
     bool confirm_ = false;
     bool update_ = false;
+    bool scale_menu_ = false;
     std::wstring title_;
     std::wstring text_;
     std::wstring action_;

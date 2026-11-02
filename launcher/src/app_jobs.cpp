@@ -547,9 +547,7 @@ void App::open_path(const fs::path& path) {
 void App::open_players() {
     refresh_devices();
     overlay_.show_panel(OverlayPage::Players, L"Players");
-    settings_open_ = false;
-    scale_open_ = false;
-    device_map_.set_menu_row(-1);
+    close_popups();
     invalidate();
 }
 

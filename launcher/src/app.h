@@ -147,9 +147,9 @@ class App {
     // The pads this picker owns, written to controls.txt beside the player's own mapping.
     void write_pad_pins();
     void activate(Id id);
-    bool modal_active() const {
-        return settings_open_ || overlay_.open() || chooser_.is_open();
-    }
+    // Closes the menus a new page would otherwise be drawn under: the scale menu, and the
+    // row a player's device list was opened from.
+    void close_popups();
 
     // `exits` ends the launcher once the steps succeed: an update hands over to its
     // helper, which cannot swap this copy while it is running. `done` runs after the
@@ -236,8 +236,6 @@ class App {
     float progress_phase_ = 0;
     std::uint32_t next_frame_ = 0;
 
-    bool settings_open_ = false;
-    bool scale_open_ = false;
     Rect scale_anchor_{};
     std::wstring settings_note_;
     std::vector<ToolInfo> tools_;

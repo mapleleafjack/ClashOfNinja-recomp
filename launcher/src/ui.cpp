@@ -164,6 +164,7 @@ void Overlay::show_message(std::wstring title, std::wstring text, std::wstring a
     page_ = OverlayPage::Message;
     confirm_ = false;
     update_ = false;
+    scale_menu_ = false;
     title_ = std::move(title);
     text_ = std::move(text);
     action_ = std::move(action);
@@ -186,6 +187,7 @@ void Overlay::show_panel(OverlayPage page, std::wstring title) {
     page_ = page;
     confirm_ = false;
     update_ = false;
+    scale_menu_ = false;
     title_ = std::move(title);
     text_.clear();
     action_ = L"Done";
@@ -194,10 +196,26 @@ void Overlay::show_panel(OverlayPage page, std::wstring title) {
     on_second_ = nullptr;
 }
 
+void Overlay::show_page(OverlayPage page) {
+    page_ = page;
+    confirm_ = false;
+    update_ = false;
+    scale_menu_ = false;
+    title_.clear();
+    text_.clear();
+    action_.clear();
+    clear_actions();
+}
+
 void Overlay::close() {
     page_ = OverlayPage::None;
     confirm_ = false;
     update_ = false;
+    scale_menu_ = false;
+    clear_actions();
+}
+
+void Overlay::clear_actions() {
     second_.clear();
     on_action_ = nullptr;
     on_second_ = nullptr;

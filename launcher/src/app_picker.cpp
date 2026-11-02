@@ -44,9 +44,8 @@ void App::choose_path(PickerKind kind, const std::wstring& title, const fs::path
 void App::open_picker(PickerKind kind, const std::wstring& title, const fs::path& start,
                       std::function<void(const fs::path&)> accept) {
     chooser_.open(kind, title, start, std::move(accept));
-    settings_open_ = false;
     overlay_.close();
-    scale_open_ = false;
+    close_popups();
     window_.set_text_input(true);
     invalidate();
 }

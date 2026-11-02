@@ -232,8 +232,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                           static_cast<int>(mods.y + mods.h / 2));
             if (!click(point)) return 1;
             const std::wstring wanted = L"Mods — " + Project::game_info(game).title;
-            if (!overlay_.is(OverlayPage::Mods) || settings_open_ ||
-                overlay_.title() != wanted) {
+            if (!overlay_.is(OverlayPage::Mods) || overlay_.title() != wanted) {
                 std::fprintf(stderr, "mods-from-game: %s\n",
                              narrow(overlay_.is(OverlayPage::Mods) ? L"the mods panel says \"" +
                                                         overlay_.title() + L"\""
@@ -245,7 +244,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             escape.type = SDL_KEYDOWN;
             escape.key.keysym.sym = SDLK_ESCAPE;
             handle_event(escape);
-            if (overlay_.open() || settings_open_) {
+            if (overlay_.showing()) {
                 std::fprintf(stderr,
                              "mods-from-game: Escape did not return to the game\n");
                 return 1;
@@ -321,8 +320,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                           static_cast<int>(geckos.y + geckos.h / 2));
             if (!click(point)) return 1;
             const std::wstring wanted = L"Geckos \u2014 " + Project::game_info(game).title;
-            if (!overlay_.is(OverlayPage::Geckos) || settings_open_ ||
-                overlay_.title() != wanted) {
+            if (!overlay_.is(OverlayPage::Geckos) || overlay_.title() != wanted) {
                 std::fprintf(stderr, "geckos-from-game: %s\n",
                              narrow(overlay_.is(OverlayPage::Geckos)
                                         ? L"the geckos panel says \"" + overlay_.title() + L"\""
@@ -334,7 +332,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             escape.type = SDL_KEYDOWN;
             escape.key.keysym.sym = SDLK_ESCAPE;
             handle_event(escape);
-            if (overlay_.open() || settings_open_) {
+            if (overlay_.showing()) {
                 std::fprintf(stderr,
                              "geckos-from-game: Escape did not return to the game\n");
                 return 1;
@@ -500,13 +498,13 @@ void App::paint() {
     paint_header();
     paint_games();
 
-    if (settings_open_) {
+    if (overlay_.is(OverlayPage::Settings)) {
         paint_settings();
-    } else if (overlay_.open()) {
+    } else if (overlay_.is_overlay()) {
         paint_overlay();
     }
     if (chooser_.is_open()) paint_picker();
-    if (scale_open_) paint_scale_menu();
+    if (overlay_.scale_menu()) paint_scale_menu();
     if (device_map_.menu_row() >= 0) paint_pad_menu();
 
     painter_.end();

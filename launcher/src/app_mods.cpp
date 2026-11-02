@@ -205,9 +205,7 @@ void App::open_mods() {
     }
     overlay_.show_panel(OverlayPage::Mods,
                         project_ ? L"Mods — " + project_->title() : L"Mods");
-    settings_open_ = false;
-    scale_open_ = false;
-    device_map_.set_menu_row(-1);
+    close_popups();
     invalidate();
 }
 

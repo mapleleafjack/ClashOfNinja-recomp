@@ -494,6 +494,29 @@ if(WIN32)
 endif()
 add_test(NAME boot-logic COMMAND $<TARGET_FILE:boot_test>)
 
+# Which page covers the main one, and what it takes with it. The overlay is a plain value
+# with no window or painter, so the rule that only one page is ever showing is checked here
+# rather than through the drawing.
+add_executable(overlay_test
+  tests/overlay_test.cpp
+  src/ui.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/util.cpp
+)
+target_include_directories(overlay_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(overlay_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(overlay_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(overlay_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(overlay_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME overlay-logic COMMAND $<TARGET_FILE:overlay_test>)
+
 # The recompiler's side of the same file: the words a mod's codes write into code are laid
 # over the DOL before it is translated, and words for data are left to the runtime.
 find_package(Python3 COMPONENTS Interpreter QUIET)

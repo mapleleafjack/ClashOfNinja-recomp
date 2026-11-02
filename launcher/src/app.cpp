@@ -332,17 +332,17 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
             if (chooser_.is_open()) {
                 launch_wanted_ = false;
                 close_picker();
-            } else if (scale_open_) {
-                scale_open_ = false;
+            } else if (overlay_.scale_menu()) {
+                overlay_.set_scale_menu(false);
                 invalidate();
-            } else if (overlay_.open()) {
+            } else if (overlay_.is_overlay()) {
                 // The players panel is opened from Settings, so Escape lands back there;
                 // the mods panel belongs to the game page, which is all that is under it.
                 const bool back_to_settings = overlay_.is(OverlayPage::Players);
                 close_overlay();
                 if (back_to_settings) open_settings();
-            } else if (settings_open_) {
-                settings_open_ = false;
+            } else if (overlay_.is(OverlayPage::Settings)) {
+                overlay_.close();
                 invalidate();
             }
             return;
@@ -553,7 +553,7 @@ void App::activate(Id id) {
         }
     }
 
-    if (overlay_.open()) {
+    if (overlay_.is_overlay()) {
         if (id == Id::OverlayAction) {
             auto callback = overlay_.take_action();
             close_overlay();
@@ -574,10 +574,10 @@ void App::activate(Id id) {
         return;
     }
 
-    if (settings_open_) {
+    if (overlay_.is(OverlayPage::Settings)) {
         switch (id) {
             case Id::SettingsClose:
-                settings_open_ = false;
+                overlay_.close();
                 refresh();
                 break;
             case Id::SettingsToggleUpdates:
@@ -588,19 +588,19 @@ void App::activate(Id id) {
                 start_update_check(true);
                 return;
             case Id::SettingsInstallUpdate:
-                settings_open_ = false;
+                overlay_.close();
                 begin_update();
                 return;
             case Id::Scale:
-                scale_open_ = !scale_open_;
-                if (scale_open_) anchor_scale();
+                overlay_.set_scale_menu(!overlay_.scale_menu());
+                if (overlay_.scale_menu()) anchor_scale();
                 break;
             case Id::Scale1:
             case Id::Scale2:
             case Id::Scale3:
             case Id::Scale4:
                 settings_.scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
-                scale_open_ = false;
+                overlay_.set_scale_menu(false);
                 save_settings();
                 break;
             case Id::SettingsPlayers:
@@ -613,15 +613,15 @@ void App::activate(Id id) {
         return;
     }
 
-    if (scale_open_) {
+    if (overlay_.scale_menu()) {
         if (id >= Id::Scale1 && id <= Id::Scale4) {
             settings_.scale = static_cast<int>(id) - static_cast<int>(Id::Scale1) + 1;
-            scale_open_ = false;
+            overlay_.set_scale_menu(false);
             save_settings();
             invalidate();
             return;
         }
-        scale_open_ = false;
+        overlay_.set_scale_menu(false);
     }
 
     switch (id) {
@@ -644,8 +644,8 @@ void App::activate(Id id) {
         case Id::OpenSettings: open_settings(); break;
         case Id::UpdateBanner: show_update_prompt(); break;
         case Id::Scale:
-            scale_open_ = !scale_open_;
-            if (scale_open_) anchor_scale();
+            overlay_.set_scale_menu(!overlay_.scale_menu());
+            if (overlay_.scale_menu()) anchor_scale();
             break;
         case Id::Play: launch(); break;
         case Id::Mods:
@@ -670,11 +670,10 @@ void App::activate(Id id) {
 
 void App::show_message(const std::wstring& title, const std::wstring& text,
                        const std::wstring& action) {
-    settings_open_ = false;
     overlay_.show_message(title, text, action);
+    close_popups();
     gecko_editing_ = false;
     window_.set_text_input(false);
-    scale_open_ = false;
     invalidate();
 }
 
@@ -682,12 +681,11 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
                        const std::wstring& action, std::function<void()> confirmed,
                        const std::wstring& second,
                        std::function<void()> second_action) {
-    settings_open_ = false;
     overlay_.show_confirm(title, text, action, std::move(confirmed), second,
                           std::move(second_action));
+    close_popups();
     gecko_editing_ = false;
     window_.set_text_input(false);
-    scale_open_ = false;
     invalidate();
 }
 
@@ -702,11 +700,15 @@ void App::close_overlay() {
 }
 
 void App::open_settings() {
-    settings_open_ = true;
-    scale_open_ = false;
-    device_map_.set_menu_row(-1);
+    overlay_.show_page(OverlayPage::Settings);
+    close_popups();
     settings_note_.clear();
     invalidate();
+}
+
+void App::close_popups() {
+    overlay_.set_scale_menu(false);
+    device_map_.set_menu_row(-1);
 }
 
 void App::save_settings() { settings_.save(); }
