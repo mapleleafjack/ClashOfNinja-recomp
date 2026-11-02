@@ -84,6 +84,13 @@ App::App() {
         close_popups();
     };
     host_.launch_cancelled = [this] { launch_wanted_ = false; };
+    host_.set_title = [this](const std::wstring& title) { window_.set_title(title); };
+    host_.set_play_status = [this](const std::wstring& text) { play_status_ = text; };
+    host_.launch_if_wanted = [this] {
+        if (!launch_wanted_) return;
+        launch_wanted_ = false;
+        launch();
+    };
     host_.project = [this]() -> const std::optional<Project>& { return state_.project(); };
     host_.rendering = [this] { return rendering_; };
     host_.refresh = [this] { refresh(); };
@@ -97,10 +104,10 @@ App::~App() {
     // Work in flight posts its answer to the dispatcher, so it must be finished before
     // anything it touches goes away. Both requests have a short timeout of their own, and
     // the box art worker stops between downloads.
-    covers_stop_ = true;
+    games_.stop_fetching();
     update_.shutdown();
     geckos_.shutdown();
-    if (covers_thread_.joinable()) covers_thread_.join();
+    games_.shutdown();
     job_.shutdown();
     game_.shutdown();
 }
@@ -116,7 +123,7 @@ bool App::create() {
     if (state_.project()) state_.settings().game = state_.project()->game();
 
     std::wstring error;
-    std::wstring window_title = current_title() + L" — Launcher";
+    std::wstring window_title = games_.current_title() + L" — Launcher";
     if (!window_.create(window_title, state_.settings().window_width, state_.settings().window_height,
                         &error)) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Naruto: Clash of Ninja",
@@ -143,7 +150,7 @@ bool App::create() {
 
     if (state_.settings().check_updates) update_.start(false);
     // Art for a game that has none, so the page is not bare on a fresh install.
-    fetch_covers();
+    games_.fetch_covers();
 
     // Which folder is in use, so the log never leaves where the games are a guess.
     if (state_.project()) {
@@ -321,14 +328,14 @@ void App::handle_event(const SDL_Event& event) {
                 }
                 if (candidate.valid()) {
                     state_.set_project(dropped, state_.settings().game);
-                    art_.clear();
-                    fetch_covers();
+                    games_.forget_art();
+                    games_.fetch_covers();
                     state_.settings().game = state_.project()->game();
                     play_status_.clear();
                     save_settings();
                     auto text = dropped.wstring();
                     append_log(format(L"[launcher] project: %ls\n", text.c_str()));
-                    window_.set_title(current_title() + L" — Launcher");
+                    window_.set_title(games_.current_title() + L" — Launcher");
                     refresh();
                     if (launch_wanted_) {
                         launch_wanted_ = false;
@@ -564,18 +571,18 @@ void App::activate(Id id) {
         case Id::Play: launch(); break;
         case Id::Mods:
             if (state_.project()) mods_.open();
-            else locate_project();
+            else games_.locate_project();
             break;
         case Id::Geckos:
             if (state_.project()) geckos_.open();
-            else locate_project();
+            else games_.locate_project();
             break;
         default: {
             // A cover on the main page chooses that game; Play starts it.
             int game_index = static_cast<int>(id) - static_cast<int>(Id::GameCover);
-            auto games = available_games();
+            auto games = games_.available_games();
             if (id >= Id::GameCover && id < Id::GameCoverEnd && game_index < static_cast<int>(games.size()))
-                select_game(games[static_cast<size_t>(game_index)].folder);
+                games_.select_game(games[static_cast<size_t>(game_index)].folder);
             break;
         }
     }

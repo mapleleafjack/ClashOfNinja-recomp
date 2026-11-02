@@ -17,6 +17,7 @@
 #include "activity_panel.h"
 #include "screen.h"
 #include "catalog.h"
+#include "games_screen.h"
 #include "geckos_screen.h"
 #include "mods_screen.h"
 #include "covers.h"
@@ -75,18 +76,6 @@ class App {
     void paint_scale_menu();
 
     void refresh();
-    void locate_project();
-    // The games the project folder supplies, in the launcher's fixed order.
-    std::vector<GameInfo> available_games() const;
-    // A game's cover art from covers/, or nullptr when it has none.
-    const Cover* cover(const std::wstring& folder);
-    // Fetches the box art for the games that have none, so a fresh install shows covers
-    // without the launcher shipping art the publisher owns.
-    void fetch_covers();
-    // The art drawn in a cover's place until covers/ gets a file for that game.
-    void select_game(const std::wstring& folder);
-    void launch_game(const std::wstring& folder);
-    std::wstring current_title() const;
     // Asks for a disc image for the project in use. The chooser itself is PickerScreen's;
     // where to start looking and what an answer starts are this page's.
     void choose_image();
@@ -156,12 +145,6 @@ class App {
     // The game in use, the settings it remembers, and what the project's files say. The three
     // move together, so they are held together.
     ProjectState state_;
-    CoverCache art_;
-    // The box art download, and whether one is in flight. Quitting sets the stop flag so
-    // the worker does not hold the exit up for the rest of its downloads.
-    std::thread covers_thread_;
-    std::atomic_bool covers_stop_{false};
-    bool covers_fetching_ = false;
 
     Job job_;
     GameProcess game_;
@@ -196,6 +179,7 @@ class App {
     PickerScreen picker_{host_};
     GeckosScreen geckos_{host_};
     ModsScreen mods_{host_, picker_, geckos_};
+    GamesScreen games_{host_, state_, picker_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;

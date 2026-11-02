@@ -73,6 +73,13 @@ struct ScreenHost {
     std::function<void(std::vector<Task>, JobOptions)> start_job;
     // A path cut in the middle to fit the message panel, which needs the font to measure.
     std::function<std::wstring(const std::wstring&)> elide_path;
+    // The window's own title, which follows the game on the page.
+    std::function<void(const std::wstring&)> set_title;
+    // The line under the play button: the game page clears it when another game is chosen,
+    // and the page that started one writes it.
+    std::function<void(const std::wstring&)> set_play_status;
+    // Starts the game if a launch was waiting on the answer to a question this page asked.
+    std::function<void()> launch_if_wanted;
 };
 
 // A key as a page understands it, rather than as the platform reports it: a screen has no

@@ -450,7 +450,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         write_text_file(scratch / L"naruto" / L"CMakeLists.txt", "# stand-in\n");
         state_.set_project(scratch, state_.settings().game);
 
-        auto games = available_games();
+        auto games = games_.available_games();
         if (index < 0 || index >= static_cast<int>(games.size())) {
             std::fprintf(stderr, "cover-click: there is no cover %d, 0 to %d\n", index,
                          static_cast<int>(games.size()) - 1);
@@ -539,7 +539,7 @@ void App::paint_header() {
         title_right = std::min(title_right, badge.x - 16);
     }
 
-    painter_.text(current_title(), RectF(82, 14, title_right, 46), Face::Title,
+    painter_.text(games_.current_title(), RectF(82, 14, title_right, 46), Face::Title,
                   rgb(theme::Text));
     painter_.text(kSubtitle, RectF(83, 48, title_right, 68), Face::Subtitle,
                   rgb(theme::Muted));
@@ -549,7 +549,7 @@ void App::paint_header() {
 
 void App::paint_games() {
     constexpr float kHeaderBottom = 86.0f;
-    auto games = available_games();
+    auto games = games_.available_games();
     bool compact = activity_.visible();
     // The one step in flight, and the game that is up: a render names them instead of
     // finding them, so a state that no machine happens to be in can still be drawn.
@@ -895,13 +895,13 @@ void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool select
     painter_.fill_round(RectF(box.left, box.top + 3, box.right, box.bottom + 5), kRadius,
                         rgb(0x000000, 0.32f));
 
-    const Cover* art = cover(game.folder);
+    const Cover* art = games_.cover(game.folder);
     if (art && art->loaded) {
         painter_.draw_image(box, art->pixels.data(), art->width, art->height, kRadius);
     } else {
         // Without art of its own, the tile still names the game and says where the cover
         // goes, so the page works on a fresh checkout.
-        const Cover& fallback = art_.placeholder();
+        const Cover& fallback = games_.placeholder_tile();
         painter_.draw_image(box, fallback.pixels.data(), fallback.width, fallback.height,
                             kRadius);
         painter_.text(game.short_title,

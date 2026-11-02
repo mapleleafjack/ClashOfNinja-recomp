@@ -1,16 +1,19 @@
 // The project folder, the games in it, and the cover art the page draws for them.
 
-#include "app.h"
+#include "games_screen.h"
 
 #include "image.h"
+#include "picker_screen.h"
 
+#include "tools.h"
 #include "util.h"
 
 #include <algorithm>
-#include <atomic>
-#include <thread>
 
 namespace nla {
+
+GamesScreen::GamesScreen(ScreenHost& host, ProjectState& model, PickerScreen& picker)
+    : host_(host), model_(model), picker_(picker) {}
 
 namespace {
 
@@ -45,11 +48,12 @@ std::wstring box_art_url(const std::wstring& folder) {
 
 }  // namespace
 
-void App::locate_project() {
-    fs::path start = state_.project() ? state_.project()->root() : home_dir();
+
+void GamesScreen::locate_project() {
+    fs::path start = model_.project() ? model_.project()->root() : home_dir();
     picker_.choose_path(PickerKind::Folder, L"Choose the folder to put the game folders in", start,
                 [this](const fs::path& chosen) {
-                    Project candidate(chosen, state_.settings().game);
+                    Project candidate(chosen, model_.settings().game);
                     auto text = chosen.wstring();
                     if (!candidate.complete()) {
                         // An empty folder is the normal case: the projects are the
@@ -57,29 +61,26 @@ void App::locate_project() {
                         // missing only the recompiler gets it here as well.
                         std::wstring error;
                         if (!Project::create(chosen, &error)) {
-                            show_message(L"Could not set the folder up", error);
+                            host_.message(L"Could not set the folder up", error);
                             return;
                         }
-                        append_log(format(L"[launcher] wrote the game folders in %ls\n",
+                        host_.log(format(L"[launcher] wrote the game folders in %ls\n",
                                           text.c_str()));
-                        candidate = Project(chosen, state_.settings().game);
+                        candidate = Project(chosen, model_.settings().game);
                     }
                     if (candidate.valid()) {
-                        state_.set_project(chosen, state_.settings().game);
+                        model_.set_project(chosen, model_.settings().game);
                         art_.clear();
                         fetch_covers();
-                        state_.settings().game = state_.project()->game();
-                        play_status_.clear();
-                        save_settings();
-                        append_log(format(L"[launcher] project: %ls\n", text.c_str()));
-                        window_.set_title(current_title() + L" — Launcher");
-                        refresh();
-                        if (launch_wanted_) {
-                            launch_wanted_ = false;
-                            launch();
-                        }
+                        model_.settings().game = model_.project()->game();
+                        host_.set_play_status({});
+                        host_.settings().save();
+                        host_.log(format(L"[launcher] project: %ls\n", text.c_str()));
+                        host_.set_title(current_title() + L" — Launcher");
+                        host_.refresh();
+                        host_.launch_if_wanted();
                     } else {
-                        show_message(L"Not a project folder",
+                        host_.message(L"Not a project folder",
                                      std::wstring(L"That folder does not hold the game "
                                                   L"folders and tools/extract_disc.py:\n\n") +
                                          text);
@@ -87,30 +88,30 @@ void App::locate_project() {
                 });
 }
 
-std::vector<GameInfo> App::available_games() const {
+std::vector<GameInfo> GamesScreen::available_games() const {
     // All of them, always: the covers are the launcher's whole first page, and a game
     // whose folder does not exist yet gets it when a disc is chosen for it.
-    if (!state_.project()) return {};
+    if (!model_.project()) return {};
     return std::vector<GameInfo>(Project::games());
 }
 
-const Cover* App::cover(const std::wstring& folder) {
-    if (!state_.project()) return nullptr;
+const Cover* GamesScreen::cover(const std::wstring& folder) {
+    if (!model_.project()) return nullptr;
     // The key carries the project root, so a moved or newly chosen project folder does not
     // pick up art from the old one.
-    std::wstring key = (state_.project()->root() / folder).wstring();
+    std::wstring key = (model_.project()->root() / folder).wstring();
     // covers/ holds one file per game, named after its folder. A cover.png inside the game
     // folder is where art lived before covers/ existed, and still works.
     std::vector<fs::path> candidates;
     for (const wchar_t* extension : {L".png", L".jpg", L".jpeg"})
-        candidates.push_back(state_.project()->covers_dir() / (folder + extension));
+        candidates.push_back(model_.project()->covers_dir() / (folder + extension));
     for (const wchar_t* name : {L"cover.png", L"cover.jpg", L"cover.jpeg"})
-        candidates.push_back(state_.project()->root() / folder / name);
+        candidates.push_back(model_.project()->root() / folder / name);
     return art_.load(key, candidates);
 }
 
-void App::fetch_covers() {
-    if (!state_.project() || rendering_ || covers_fetching_) return;
+void GamesScreen::fetch_covers() {
+    if (!model_.project() || host_.rendering() || fetching_) return;
     std::vector<std::pair<std::wstring, std::wstring>> wanted;
     for (const auto& game : available_games()) {
         if (cover(game.folder)) continue;
@@ -121,19 +122,19 @@ void App::fetch_covers() {
     auto curl = curl_tool();
     if (curl.empty()) return;
 
-    fs::path folder = state_.project()->covers_dir();
+    fs::path folder = model_.project()->covers_dir();
     std::error_code ec;
     fs::create_directories(folder, ec);
     if (ec) return;
 
-    if (covers_thread_.joinable()) covers_thread_.join();
-    covers_fetching_ = true;
-    append_log(format(L"[launcher] fetching box art for %d game(s)\n",
+    if (thread_.joinable()) thread_.join();
+    fetching_ = true;
+    host_.log(format(L"[launcher] fetching box art for %d game(s)\n",
                       static_cast<int>(wanted.size())));
-    covers_thread_ = std::thread([this, folder, curl, wanted] {
+    thread_ = std::thread([this, folder, curl, wanted] {
         int fetched = 0;
         for (const auto& [game, url] : wanted) {
-            if (covers_stop_) return;
+            if (stop_) return;
             // curl writes beside the target and the file is moved into place, so a
             // failed or cut-off download leaves no half image to draw.
             fs::path partial = folder / (game + L".part");
@@ -150,55 +151,67 @@ void App::fetch_covers() {
                 fs::remove(partial, ec);
             }
         }
-        if (covers_stop_) return;
-        post([this, fetched] {
-            covers_fetching_ = false;
+        if (stop_) return;
+        host_.post([this, fetched] {
+            fetching_ = false;
             if (fetched == 0) return;
             art_.clear();
-            append_log(format(L"[launcher] box art: %d cover(s) now in covers/\n", fetched));
-            invalidate();
+            host_.log(format(L"[launcher] box art: %d cover(s) now in covers/\n", fetched));
+            host_.invalidate();
         });
     });
 }
 
-std::wstring App::current_title() const {
-    return state_.project() ? state_.project()->title() : std::wstring(kTitle);
+std::wstring GamesScreen::current_title() const {
+    return model_.project() ? model_.project()->title() : std::wstring(kTitle);
 }
 
-void App::select_game(const std::wstring& folder) {
-    if (!state_.project() || busy_ || game_.running()) return;
-    if (folder == state_.project()->game()) return;
+void GamesScreen::select_game(const std::wstring& folder) {
+    if (!model_.project() || host_.busy() || host_.game_running()) return;
+    if (folder == model_.project()->game()) return;
     if (Project::game_info(folder).folder != folder) return;
     // A game the launcher has not set up yet is still a game: it is offered on the cover
     // grid, and its folder is written as it is chosen, so the disc it is given has
     // somewhere to go. Writing the folders leaves the ones already there alone, so a
     // project an older launcher made gets the games it is missing.
     std::error_code ec;
-    if (!rendering_ && !headless_ &&
-        !fs::is_regular_file(state_.project()->root() / folder / L"CMakeLists.txt", ec)) {
+    if (!host_.rendering() &&
+        !fs::is_regular_file(model_.project()->root() / folder / L"CMakeLists.txt", ec)) {
         std::wstring error;
-        if (!Project::create(state_.project()->root(), &error))
-            append_log(format(L"[launcher] the game folders were not written: %ls\n",
+        if (!Project::create(model_.project()->root(), &error))
+            host_.log(format(L"[launcher] the game folders were not written: %ls\n",
                               error.c_str()));
     }
-    state_.select_game(folder);
-    state_.settings().game = state_.project()->game();
-    play_status_.clear();
+    model_.select_game(folder);
+    model_.settings().game = model_.project()->game();
+    host_.set_play_status({});
     // A render only paints the result: it must not remember the game a check clicked.
-    if (!rendering_) save_settings();
-    window_.set_title(current_title() + L" — Launcher");
-    append_log(format(L"[launcher] game: %ls\n", state_.project()->title().c_str()));
-    refresh();
+    if (!host_.rendering()) host_.settings().save();
+    host_.set_title(current_title() + L" — Launcher");
+    host_.log(format(L"[launcher] game: %ls\n", model_.project()->title().c_str()));
+    host_.refresh();
 }
 
-void App::launch_game(const std::wstring& folder) {
-    if (busy_ || game_.running()) return;
-    if (!state_.project()) {
-        launch();
-        return;
+
+const Cover& GamesScreen::placeholder_tile() { return art_.placeholder(); }
+
+void GamesScreen::stop_fetching() { stop_ = true; }
+
+void GamesScreen::shutdown() {
+    stop_ = true;
+    if (thread_.joinable()) thread_.join();
+}
+
+bool GamesScreen::handles(Id id) const {
+    return id >= Id::GameCover && id < Id::GameCoverEnd;
+}
+
+void GamesScreen::activate(Id id) {
+    const int index = static_cast<int>(id) - static_cast<int>(Id::GameCover);
+    const auto games = available_games();
+    if (id >= Id::GameCover && id < Id::GameCoverEnd && index < static_cast<int>(games.size())) {
+        select_game(games[static_cast<std::size_t>(index)].folder);
     }
-    select_game(folder);
-    launch();
 }
 
 }  // namespace nla

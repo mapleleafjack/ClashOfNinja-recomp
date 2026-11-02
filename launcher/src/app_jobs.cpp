@@ -458,7 +458,7 @@ void App::launch() {
     }
     if (!state_.project()) {
         launch_wanted_ = true;
-        locate_project();
+        games_.locate_project();
         return;
     }
     refresh();

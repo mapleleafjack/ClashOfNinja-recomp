@@ -68,7 +68,6 @@ set(NLA_SOURCES
   # applies, and its own updates. The window draws through ui.cpp, which holds the widgets
   # and the hit list, so nothing it paints has to be an App.
   src/app.cpp
-  src/app_games.cpp
   src/app_jobs.cpp
   src/app_paint.cpp
   src/app_state.cpp
@@ -80,6 +79,7 @@ set(NLA_SOURCES
   src/devices.cpp
   src/disc.cpp
   src/font.cpp
+  src/games_screen.cpp
   src/gecko.cpp
   src/geckos_screen.cpp
   src/git.cpp
@@ -607,6 +607,39 @@ else()
   target_link_libraries(project_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME project-logic COMMAND $<TARGET_FILE:project_test>)
+
+# What the game page does: the ids it answers for, what a cover click chooses, what a project
+# folder answers with, and what the stand-in tile says. The page holds a host of callbacks and
+# the project state it changes, so this drives it with no window, no disc and no network.
+add_executable(games_screen_test
+  tests/games_screen_test.cpp
+  src/games_screen.cpp
+  src/covers.cpp
+  src/image.cpp
+  src/picker_screen.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  src/util.cpp
+)
+target_include_directories(games_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(games_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(games_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(games_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(games_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME games-screen-logic COMMAND $<TARGET_FILE:games_screen_test>)
 
 # Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
 # so the check is made against the tree the patch decodes from. The runtime has no test
