@@ -14,7 +14,7 @@ void App::refresh() {
     refresh_mods();
     // The codes chosen on their own are read back here too: the program the runtime runs
     // holds the mods' codes and these, so both lists must be current before it is written.
-    refresh_geckos();
+    geckos_.refresh();
     write_mod_overlay();
     state_.reload_status();
     invalidate();

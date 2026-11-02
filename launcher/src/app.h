@@ -17,6 +17,7 @@
 #include "activity_panel.h"
 #include "screen.h"
 #include "catalog.h"
+#include "geckos_screen.h"
 #include "covers.h"
 #include "devices.h"
 #include "picker.h"
@@ -130,22 +131,6 @@ class App {
     // Adds a delta from this machine to the table, checked, without applying it.
     void stage_patch(const fs::path& delta);
 
-    // The Geckos panel: this disc's own codes and the ones its community guide holds, each
-    // switched on by itself. Unlike a mod, a code adds nothing to the disc, so the panel
-    // writes the same `mods.gecko`/`mods.code` the mods do, alongside theirs.
-    void open_geckos();
-    // What this disc offers and what settings has switched on, read back from disk.
-    void refresh_geckos();
-    void toggle_code(const std::wstring& name);
-    // Reads the box, adds what can run, then writes the checks and the program.
-    void apply_geckos();
-    // Fetches the guide's answer for this disc into geckos/online/, without blocking the
-    // window: the panel shows the list it has until the answer arrives.
-    void fetch_online_codes();
-    // The codes switched on, as the program builder wants them, in the order they were
-    // switched on. Read from disk so a run that never opened the panel still gets them.
-    std::vector<CodeEntry> enabled_code_entries() const;
-
     // Asks the game which controllers it sees. Deciding who plays as whom is DeviceMap's.
     void refresh_devices();
     // The pads this picker owns, written to controls.txt beside the player's own mapping.
@@ -243,35 +228,12 @@ class App {
     std::wstring patch_note_;
 
 
-    // The Geckos table: every code this disc offers, and what is written against what is staged.
-    CodeSelection codes_;
-    // How many rows the panel has room for at this window size. The panel is a list of
-    // unknown length rather than a fixed one, so the count comes from the height it is
-    // drawn in: a short window shows fewer rows instead of a panel taller than the window.
-    std::size_t code_rows_fit_ = kCodeRows;
-    std::wstring codes_note_;  // the line under the table: why it is empty, or what Apply did
-    std::size_t code_offset_ = 0;  // the first row drawn, for a list longer than the panel
-    std::wstring online_label_;    // the guide the cached list came from, when it did
-    // The box a block of codes is pasted into. There is no caret to place: the panel takes
-    // what is typed at the end, and Backspace takes it back.
-    std::wstring gecko_edit_;
-    bool gecko_editing_ = false;
-    bool codes_fetching_ = false;
-    // A guide that could not be fetched is not asked for again this run: refresh() is called
-    // after every change, and a machine with no network would otherwise retry each time.
-    // Opening the panel clears it, because with no button to press that is how a player asks
-    // for another try.
-    bool codes_fetch_tried_ = false;
-    bool codes_fetch_failed_ = false;
-    std::thread codes_thread_;
-    std::atomic_bool codes_stop_{false};
-
-
     // What a screen may ask the window for, filled in before anything can ask. The screen
     // is declared after it, so it is handed a host that is already there.
     ScreenHost host_;
     UpdateScreen update_{host_};
     PickerScreen picker_{host_};
+    GeckosScreen geckos_{host_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;

@@ -556,7 +556,7 @@ void App::write_mod_overlay() {
         chosen.push_back(entry->mod);
     }
     auto sync = sync_overlay_manifest(state_.project()->disc(), state_.project()->manifest(), chosen);
-    auto programs = sync_mod_programs(state_.project()->disc(), chosen, enabled_code_entries());
+    auto programs = sync_mod_programs(state_.project()->disc(), chosen, geckos_.enabled_entries());
     // Refresh runs often, so Activity only hears about a change: a mod switched on or off,
     // or one that cannot be served and why.
     std::wstring summary;

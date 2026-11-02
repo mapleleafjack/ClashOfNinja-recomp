@@ -8,6 +8,7 @@
 
 #include "jobs.h"
 #include "picker.h"
+#include "project.h"
 #include "settings.h"
 #include "ui.h"
 
@@ -45,6 +46,8 @@ struct ScreenHost {
     // This page is now the one showing: whatever was over the main page closes, so two
     // pages are never drawn on top of each other.
     std::function<void()> take_over;
+    // One of the launcher's own tables, opened over the main page with its title.
+    std::function<void(OverlayPage, const std::wstring&)> show_panel;
 
     std::function<void(const std::wstring&)> log;
     std::function<void(const std::wstring& title, const std::wstring& text)> message;
@@ -56,6 +59,12 @@ struct ScreenHost {
 
     std::function<bool()> busy;
     std::function<bool()> game_running;
+    // The project in use, for a page that reads the disc it is about.
+    std::function<const std::optional<Project>&()> project;
+    // A render, which has no disk to write and no network to ask.
+    std::function<bool()> rendering;
+    // The whole re-sync, for a page whose Apply changes what the runtime reads.
+    std::function<void()> refresh;
     std::function<Settings&()> settings;
     std::function<void(const std::wstring&)> settings_note;
     // A launch that was waiting on a chooser's answer is given up when it is cancelled.

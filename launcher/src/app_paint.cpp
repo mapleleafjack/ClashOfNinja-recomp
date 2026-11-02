@@ -253,11 +253,11 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             }
         }
     } else if (view == "geckos") {
-        open_geckos();
+        geckos_.open();
     } else if (view == "geckos-paste") {
         // The box is clicked and then handed text the way the window hands it over, so the
         // path being checked is the one a paste takes, not a shortcut into the buffer.
-        open_geckos();
+        geckos_.open();
         paint();
         Rect box{};
         for (const auto& hit : ui_.hits()) {
@@ -273,7 +273,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         std::snprintf(point, sizeof(point), "%d,%d", static_cast<int>(box.x + box.w / 2),
                       static_cast<int>(box.y + box.h / 2));
         if (!click(point)) return 1;
-        if (!gecko_editing_) {
+        if (!geckos_.editing()) {
             std::fprintf(stderr, "geckos-paste: the box did not take the click\n");
             return 1;
         }
@@ -284,7 +284,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             handle_event(text);
         }
     } else if (view.rfind("geckos-click:", 0) == 0) {
-        open_geckos();
+        geckos_.open();
         if (!click(view.substr(13))) {
             std::fprintf(stderr, "usage: geckos-click:<x>,<y>\n");
             return 1;
@@ -1122,7 +1122,7 @@ void App::paint_overlay() {
         constexpr float kRow = 22.0f;
         int fit = static_cast<int>((height_ - kChrome) / kRow);
         fit = std::clamp(fit, 3, kCodeRows);
-        code_rows_fit_ = static_cast<std::size_t>(fit);
+        geckos_.set_rows_fit(static_cast<std::size_t>(fit));
     }
     // A message is as tall as what it says: the fixed 620×336 panel left half of itself
     // empty for a short prompt, and would have cut a long one off at the bottom.
@@ -1133,7 +1133,7 @@ void App::paint_overlay() {
                     : overlay_.is(OverlayPage::Mods)
                         ? 250.0f + 34.0f * static_cast<float>(mods_.rows())
                     : overlay_.is(OverlayPage::Geckos)
-                        ? 308.0f + 22.0f * static_cast<float>(codes_.rows(code_rows_fit_))
+                        ? 308.0f + 22.0f * static_cast<float>(geckos_.codes().rows(geckos_.rows_fit()))
                         : std::clamp(60.0f + message_lines * painter_.line_height(Face::Body) +
                                          16.0f + 56.0f + 24.0f,
                                      220.0f, height_ - 80.0f);
@@ -1269,10 +1269,10 @@ void App::paint_overlay() {
                       RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
         y += 20;
         std::wstring second;
-        if (codes_fetching_) {
+        if (geckos_.fetching()) {
             second = L"Fetching what the guide for this disc holds\u2026";
-        } else if (!online_label_.empty()) {
-            second = L"The guide's list is here (" + online_label_ + L").";
+        } else if (!geckos_.online_label().empty()) {
+            second = L"The guide's list is here (" + geckos_.online_label() + L").";
         } else if (state_.project()) {
             second = L"Fetch to see the codes the community's guide holds for this disc.";
         }
@@ -1288,12 +1288,10 @@ void App::paint_overlay() {
                       rgb(theme::Muted), TextAlign::Trailing);
         y += 20;
 
-        const std::size_t rows = codes_.rows(code_rows_fit_);
-        if (rows > 0 && code_offset_ + rows > codes_.entries().size())
-            code_offset_ = codes_.entries().size() - rows;
-        if (rows == 0) code_offset_ = 0;
+        const std::size_t rows = geckos_.codes().rows(geckos_.rows_fit());
+        geckos_.clamp_offset();
         for (std::size_t i = 0; i < rows; ++i) {
-            const CodeEntry& entry = codes_.entries()[code_offset_ + i];
+            const CodeEntry& entry = geckos_.codes().entries()[geckos_.offset() + i];
             Id id = static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i));
             const bool usable = entry.runnable && !busy_;
             // A code this recompiler cannot run is listed so it can be read, and says so in
@@ -1301,7 +1299,7 @@ void App::paint_overlay() {
             std::wstring label = entry.name;
             if (!entry.runnable) label += L" · can't run here";
             ui_.checkbox(id, left, y + 3, ui_.elide(label, Face::Small, source_left - left - 30),
-                     codes_.checked(entry.name), usable);
+                     geckos_.codes().checked(entry.name), usable);
             painter_.text(entry.online ? L"guide" : L"yours",
                           RectF(source_left, y + 3, source_right, y + 19), Face::Tiny,
                           entry.runnable ? rgb(theme::Muted) : rgb(0x69707d),
@@ -1311,13 +1309,13 @@ void App::paint_overlay() {
         }
 
         // The line under the table: what Apply did, or what the row under the cursor is.
-        std::wstring note = codes_note_;
+        std::wstring note = geckos_.note();
         if (note.empty()) {
             for (std::size_t i = 0; i < rows; ++i) {
                 if (ui_.hover() !=
                     static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i)))
                     continue;
-                const CodeEntry& entry = codes_.entries()[code_offset_ + i];
+                const CodeEntry& entry = geckos_.codes().entries()[geckos_.offset() + i];
                 if (!entry.runnable) {
                     note = entry.warning.empty()
                                ? std::wstring(L"This code does nothing this game can run.")
@@ -1329,31 +1327,31 @@ void App::paint_overlay() {
             }
         }
         if (note.empty()) {
-            const bool staged = codes_.staged();
+            const bool staged = geckos_.codes().staged();
             note = staged ? L"Apply to write these changes to the game."
-                          : format(L"%zu code(s) on for this game.", codes_.enabled().size());
+                          : format(L"%zu code(s) on for this game.", geckos_.codes().enabled().size());
         }
-        if (codes_.entries().size() > rows && codes_note_.empty() && ui_.hover() == Id::None) {
+        if (geckos_.codes().entries().size() > rows && geckos_.note().empty() && ui_.hover() == Id::None) {
             // A list longer than the panel says so, because the wheel is the only sign of it.
             note = format(L"%zu codes; scroll for the rest. %zu on for this game.",
-                          codes_.entries().size(), codes_.enabled().size());
+                          geckos_.codes().entries().size(), geckos_.codes().enabled().size());
         }
 
         // The box a block pasted from an editor goes into, and what that block becomes.
         const float box_h = 66.0f;
         Rect editor{left, panel.y + panel.h - 162, right - left, box_h};
-        painter_.fill_round(editor.box(), 6, rgb(gecko_editing_ ? 0x1d222b : 0x171b21));
+        painter_.fill_round(editor.box(), 6, rgb(geckos_.editing() ? 0x1d222b : 0x171b21));
         painter_.stroke_round(editor.box(), 6,
-                              rgb(gecko_editing_ ? theme::Accent : theme::BorderStrong), 1);
+                              rgb(geckos_.editing() ? theme::Accent : theme::BorderStrong), 1);
         const float line_h = painter_.line_height(Face::Tiny);
         const int fits = std::max(1, static_cast<int>((box_h - 10.0f) / line_h));
-        if (gecko_edit_.empty()) {
+        if (geckos_.edit().empty()) {
             painter_.text(L"Paste a block of codes here, then Apply.",
                           RectF(editor.x + 8, editor.y + 6, editor.x + editor.w - 8,
                                 editor.y + 6 + line_h),
                           Face::Tiny, rgb(0x69707d));
         } else {
-            auto lines = split(gecko_edit_, L'\n');
+            auto lines = split(geckos_.edit(), L'\n');
             const int first = std::max(0, static_cast<int>(lines.size()) - fits);
             float line_y = editor.y + 6;
             for (int i = first; i < static_cast<int>(lines.size()); ++i) {
@@ -1369,15 +1367,15 @@ void App::paint_overlay() {
 
         // The guide's list is fetched on its own, so the only thing wanted here is a way to
         // ask again -- after a fetch that failed, or for a guide that has been updated.
-        const std::wstring refresh = codes_fetching_ ? L"Fetching…" : L"Refresh list";
+        const std::wstring refresh = geckos_.fetching() ? L"Fetching…" : L"Refresh list";
         const float refresh_w = ui_.text_width(refresh, Face::Tiny) + 10.0f;
         ui_.link(Id::CodeRefresh, Rect{right - refresh_w, panel.y + panel.h - 86, refresh_w, 18},
-             refresh, state_.project() != std::nullopt && !codes_fetching_);
+             refresh, state_.project() != std::nullopt && !geckos_.fetching());
         painter_.text(ui_.elide(note, Face::Small, right - left - refresh_w - 16.0f),
                       RectF(left, panel.y + panel.h - 84, right - refresh_w - 12.0f,
                             panel.y + panel.h - 66),
                       Face::Small, rgb(theme::Muted));
-        const bool staged = codes_.pending() != codes_.enabled() || !gecko_edit_.empty();
+        const bool staged = geckos_.codes().pending() != geckos_.codes().enabled() || !geckos_.edit().empty();
         ui_.button(Id::CodeApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && state_.project() != std::nullopt && staged);

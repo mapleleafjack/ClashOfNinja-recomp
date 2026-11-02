@@ -83,6 +83,13 @@ App::App() {
         close_popups();
     };
     host_.launch_cancelled = [this] { launch_wanted_ = false; };
+    host_.project = [this]() -> const std::optional<Project>& { return state_.project(); };
+    host_.rendering = [this] { return rendering_; };
+    host_.refresh = [this] { refresh(); };
+    host_.show_panel = [this](OverlayPage page, const std::wstring& title) {
+        overlay_.show_panel(page, title);
+        close_popups();
+    };
 }
 
 App::~App() {
@@ -90,10 +97,9 @@ App::~App() {
     // anything it touches goes away. Both requests have a short timeout of their own, and
     // the box art worker stops between downloads.
     covers_stop_ = true;
-    codes_stop_ = true;
     update_.shutdown();
+    geckos_.shutdown();
     if (covers_thread_.joinable()) covers_thread_.join();
-    if (codes_thread_.joinable()) codes_thread_.join();
     job_.shutdown();
     game_.shutdown();
 }
@@ -281,14 +287,7 @@ void App::handle_event(const SDL_Event& event) {
             } else if (overlay_.is(OverlayPage::Geckos)) {
                 // The guide's list is longer than the panel: the wheel is how the rest of
                 // it is reached.
-                const std::size_t rows = codes_.rows(code_rows_fit_);
-                const std::size_t most =
-                    codes_.entries().size() > rows ? codes_.entries().size() - rows : 0;
-                const long wanted = static_cast<long>(code_offset_) -
-                                    static_cast<long>(event.wheel.y) * 3;
-                code_offset_ = static_cast<std::size_t>(
-                    std::max(0L, std::min(static_cast<long>(most), wanted)));
-                invalidate();
+                geckos_.scroll(event.wheel.y);
             } else if (activity_.visible() && activity_.rect().contains(x, y) &&
                        !activity_.empty()) {
                 activity_.scroll(event.wheel.y > 0 ? 1 : -1);
@@ -354,45 +353,9 @@ void App::handle_event(const SDL_Event& event) {
 void App::handle_key(const SDL_KeyboardEvent& key) {
     // The codes box takes held keys like a text field does: Backspace that repeats is how a
     // line is cleared.
-    const bool typing = overlay_.is(OverlayPage::Geckos) && gecko_editing_;
+    const bool typing = geckos_.capturing();
     if (key.repeat && !picker_.capturing() && !typing) return;
     const bool command = (key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
-
-    // While the box has focus the keys it uses are its own: Return is a line in the block,
-    // not a dialog's answer, and Escape leaves the box before it closes the panel.
-    if (typing) {
-        if (key.keysym.sym == SDLK_ESCAPE) {
-            gecko_editing_ = false;
-            window_.set_text_input(false);
-            invalidate();
-            return;
-        }
-        if (key.keysym.sym == SDLK_RETURN || key.keysym.sym == SDLK_KP_ENTER) {
-            gecko_edit_ += L'\n';
-            invalidate();
-            return;
-        }
-        if (key.keysym.sym == SDLK_BACKSPACE) {
-            if (!gecko_edit_.empty()) {
-                gecko_edit_.pop_back();
-                // A UTF-16 surrogate pair must not be split.
-                if (sizeof(wchar_t) == 2 && !gecko_edit_.empty() &&
-                    gecko_edit_.back() >= 0xD800 && gecko_edit_.back() <= 0xDBFF) {
-                    gecko_edit_.pop_back();
-                }
-                invalidate();
-            }
-            return;
-        }
-        if (command && key.keysym.sym == SDLK_v) {
-            auto text = window_.clipboard();
-            if (!text.empty()) {
-                gecko_edit_ += text;
-                invalidate();
-            }
-            return;
-        }
-    }
 
     // A page with a field takes the keys it owns while it is showing, and the window's own
     // shortcuts only see what it leaves.
@@ -425,9 +388,8 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
 }
 
 void App::handle_text(const SDL_TextInputEvent& text) {
-    if (overlay_.is(OverlayPage::Geckos) && gecko_editing_) {
-        gecko_edit_ += widen(text.text);
-        invalidate();
+    if (geckos_.capturing()) {
+        geckos_.text(widen(text.text));
         return;
     }
     if (picker_.capturing()) picker_.text(widen(text.text));
@@ -449,34 +411,11 @@ void App::activate(Id id) {
         return;
     }
 
-    if (overlay_.is(OverlayPage::Geckos)) {
-        const int row = static_cast<int>(id) - static_cast<int>(Id::CodeRow);
-        if (id >= Id::CodeRow && id < Id::CodeRowEnd && row >= 0 &&
-            row < static_cast<int>(codes_.rows(code_rows_fit_))) {
-            toggle_code(codes_.entries()[code_offset_ + static_cast<size_t>(row)].name);
-            return;
-        }
-        switch (id) {
-            case Id::CodeBox:
-                // The box holds what is typed at the end of it; a block pasted in is the
-                // way a code gets here, so the field is the same one the picker uses.
-                gecko_editing_ = true;
-                window_.set_text_input(true);
-                invalidate();
-                return;
-            case Id::CodeApply:
-                apply_geckos();
-                return;
-            case Id::CodeRefresh:
-                fetch_online_codes();
-                return;
-            case Id::OverlayAction:
-                // Anything checked but not applied goes with it: the game is as it was.
-                close_overlay();
-                return;
-            default:
-                return;
-        }
+    // The panel answers for its own ids and lets the overlay's own buttons through, which is
+    // how Done closes it with whatever was checked left unapplied.
+    if (overlay_.is(OverlayPage::Geckos) && geckos_.handles(id)) {
+        geckos_.activate(id);
+        return;
     }
 
     if (overlay_.is(OverlayPage::Mods)) {
@@ -646,7 +585,7 @@ void App::activate(Id id) {
             else locate_project();
             break;
         case Id::Geckos:
-            if (state_.project()) open_geckos();
+            if (state_.project()) geckos_.open();
             else locate_project();
             break;
         default: {
@@ -665,7 +604,7 @@ void App::show_message(const std::wstring& title, const std::wstring& text,
                        const std::wstring& action) {
     overlay_.show_message(title, text, action);
     close_popups();
-    gecko_editing_ = false;
+    geckos_.stop_editing();
     window_.set_text_input(false);
     invalidate();
 }
@@ -677,7 +616,7 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
     overlay_.show_confirm(title, text, action, std::move(confirmed), second,
                           std::move(second_action));
     close_popups();
-    gecko_editing_ = false;
+    geckos_.stop_editing();
     window_.set_text_input(false);
     invalidate();
 }
@@ -686,7 +625,7 @@ void App::close_overlay() {
     overlay_.close();
     // The box stops taking keystrokes with the panel: the window hands text back to the
     // picker's own field, which is the only other place that types.
-    gecko_editing_ = false;
+    geckos_.stop_editing();
     window_.set_text_input(false);
     device_map_.set_menu_row(-1);
     invalidate();

@@ -68,7 +68,6 @@ set(NLA_SOURCES
   # applies, and its own updates. The window draws through ui.cpp, which holds the widgets
   # and the hit list, so nothing it paints has to be an App.
   src/app.cpp
-  src/app_geckos.cpp
   src/app_games.cpp
   src/app_jobs.cpp
   src/app_mods.cpp
@@ -83,6 +82,7 @@ set(NLA_SOURCES
   src/disc.cpp
   src/font.cpp
   src/gecko.cpp
+  src/geckos_screen.cpp
   src/git.cpp
   src/image.cpp
   src/painter.cpp
@@ -422,6 +422,36 @@ else()
   target_link_libraries(gecko_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME gecko-logic COMMAND $<TARGET_FILE:gecko_test>)
+
+# What the Geckos panel does: the ids it answers for, the stand-in list a render draws, what
+# switching a code on does, and what the paste box takes while it has the keyboard. The page
+# holds a host of callbacks instead of the window, so this drives it with no window, no disc
+# and no network.
+add_executable(geckos_screen_test
+  tests/geckos_screen_test.cpp
+  src/geckos_screen.cpp
+  src/codes.cpp
+  src/gecko.cpp
+  src/project.cpp
+  src/project_state.cpp
+  src/project_templates.cpp
+  src/settings.cpp
+  src/jobs.cpp
+  src/tools.cpp
+  src/util.cpp
+)
+target_include_directories(geckos_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(geckos_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(geckos_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(geckos_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(geckos_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME geckos-screen-logic COMMAND $<TARGET_FILE:geckos_screen_test>)
 
 # Which game a project folder answers with: a game the launcher knows is the game asked
 # for even before its folder is written, so the cover grid cannot silently land on another
