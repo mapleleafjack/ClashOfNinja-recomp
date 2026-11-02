@@ -1,5 +1,10 @@
 # Naruto: Clash of Ninja — static recompilation
 
+[![Build](https://github.com/mapleleafjack/ClashOfNinja-recomp/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/mapleleafjack/ClashOfNinja-recomp/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/mapleleafjack/ClashOfNinja-recomp?style=flat-square&label=release)](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)](#download-and-run)
+
 <a href="https://ko-fi.com/jack2438"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi"></a>
 
 Native Windows and macOS builds of five GameCube games, made from your own disc. The PowerPC
