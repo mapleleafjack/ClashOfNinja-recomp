@@ -65,6 +65,11 @@ long plat_utc_offset_seconds();
 bool plat_readable(const char* path);
 // Whether `path` names a directory rather than a file.
 bool plat_is_dir(const char* path);
+// Raise this process's limit on open files to at least `want`, as far as the platform
+// allows, and say whether that limit now holds. A process started from a desktop icon
+// gets a small one -- macOS's launchd hands out 256 -- which a disc tree passes, since
+// it keeps a descriptor per file. Windows has no equivalent cap to raise.
+bool plat_raise_file_limit(uint64_t want);
 // Create `path` and any missing parents. Ignores already-exists.
 void plat_make_dirs(const std::string& path);
 // Replace `to` with `from`, overwriting an existing file.

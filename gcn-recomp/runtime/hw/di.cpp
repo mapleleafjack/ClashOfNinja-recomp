@@ -110,6 +110,18 @@ static void trim_line_end(char* text) {
         text[--length] = 0;
 }
 
+// The process is allowed as many descriptors as a manifest's files need before the first
+// one is opened. Each stays open for as long as the game runs, and a process started from a
+// desktop icon begins at macOS's 256 -- fewer than a disc's tree holds -- so opening them
+// would fail partway through, on a file that is there. The slack covers the descriptors
+// already taken by the window, the audio device and the runtime's own files.
+static bool di_reserve_files(size_t files, const std::string& manifest, std::string* error) {
+    if (plat_raise_file_limit(files + 128)) return true;
+    *error = manifest + " lists " + std::to_string(files) +
+             " files, more than this process may hold open at once";
+    return false;
+}
+
 // Opens the tree `dir` as a disc: its disc.manifest names the file each extent came from.
 static bool di_open_tree(const char* dir, Disc* disc, std::string* error) {
     std::string manifest = std::string(dir) + "/disc.manifest";
@@ -119,6 +131,14 @@ static bool di_open_tree(const char* dir, Disc* disc, std::string* error) {
         return false;
     }
     char line[4096];
+    size_t files = 0;
+    while (fgets(line, sizeof(line), m))
+        if (!strncmp(line, "extent ", 7)) files++;
+    if (!di_reserve_files(files, manifest, error)) {
+        fclose(m);
+        return false;
+    }
+    rewind(m);
     while (fgets(line, sizeof(line), m)) {
         char path[3600];
         unsigned long long start, size, file_off;
@@ -193,6 +213,17 @@ static void di_open_overlays(const char* dir) {
     FILE* o = fopen(manifest.c_str(), "rb");
     if (!o) return;
     char line[4096];
+    // One descriptor per replaced file, held beside the disc tree's own: a mod that replaces
+    // a lot of the disc takes the process past the same limit the tree does.
+    size_t overlays = 0;
+    while (fgets(line, sizeof(line), o))
+        if (!strncmp(line, "overlay ", 8)) overlays++;
+    rewind(o);
+    if (overlays) {
+        std::string error;
+        if (!di_reserve_files(g_disc.extents.size() + overlays, manifest, &error))
+            fatal("%s", error.c_str());
+    }
     while (fgets(line, sizeof(line), o)) {
         char path[3600];
         unsigned long long start, size, available;
