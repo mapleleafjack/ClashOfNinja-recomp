@@ -165,8 +165,8 @@ void App::handle_event(const SDL_Event& event) {
                     refresh();
                     break;
                 case SDL_WINDOWEVENT_LEAVE:
-                    if (hover_ != Id::None || log_hovered_) {
-                        hover_ = Id::None;
+                    if (ui_.hover() != Id::None || log_hovered_) {
+                        ui_.set_hover(Id::None);
                         log_hovered_ = false;
                         invalidate();
                     }
@@ -178,10 +178,10 @@ void App::handle_event(const SDL_Event& event) {
         case SDL_MOUSEMOTION: {
             float x = static_cast<float>(event.motion.x) / factor;
             float y = static_cast<float>(event.motion.y) / factor;
-            Id hit = hit_at(x, y);
+            Id hit = ui_.hit_at(x, y);
             bool over_log = log_visible_ && log_rect_.contains(x, y);
-            if (hit != hover_ || over_log != log_hovered_) {
-                hover_ = hit;
+            if (hit != ui_.hover() || over_log != log_hovered_) {
+                ui_.set_hover(hit);
                 log_hovered_ = over_log;
                 invalidate();
             }
@@ -190,16 +190,16 @@ void App::handle_event(const SDL_Event& event) {
         }
         case SDL_MOUSEBUTTONDOWN:
             if (event.button.button != SDL_BUTTON_LEFT) return;
-            pressed_ = hit_at(static_cast<float>(event.button.x) / factor,
-                              static_cast<float>(event.button.y) / factor);
+            ui_.set_pressed(ui_.hit_at(static_cast<float>(event.button.x) / factor,
+                                       static_cast<float>(event.button.y) / factor));
             invalidate();
             return;
         case SDL_MOUSEBUTTONUP: {
             if (event.button.button != SDL_BUTTON_LEFT) return;
-            Id hit = hit_at(static_cast<float>(event.button.x) / factor,
-                            static_cast<float>(event.button.y) / factor);
-            Id pressed = pressed_;
-            pressed_ = Id::None;
+            Id hit = ui_.hit_at(static_cast<float>(event.button.x) / factor,
+                                static_cast<float>(event.button.y) / factor);
+            Id pressed = ui_.pressed();
+            ui_.set_pressed(Id::None);
             if (pressed != Id::None && pressed == hit) activate(hit);
             invalidate();
             return;
@@ -413,12 +413,7 @@ void App::activate(Id id) {
     if (id == Id::None) return;
 
     auto anchor_scale = [this] {
-        for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
-            if (it->id == Id::Scale) {
-                scale_anchor_ = it->rect;
-                return;
-            }
-        }
+        if (const auto rect = ui_.rect_of(Id::Scale)) scale_anchor_ = *rect;
     };
 
     if (picker_ != PickerKind::None) {
@@ -537,12 +532,7 @@ void App::activate(Id id) {
             const int row = static_cast<int>(id) - static_cast<int>(Id::PadRow);
             if (row >= 0 && row < kPads) {
                 pad_menu_row_ = row;
-                for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
-                    if (it->id == id) {
-                        pad_menu_anchor_ = it->rect;
-                        break;
-                    }
-                }
+                if (const auto rect = ui_.rect_of(id)) pad_menu_anchor_ = *rect;
                 invalidate();
                 return;
             }

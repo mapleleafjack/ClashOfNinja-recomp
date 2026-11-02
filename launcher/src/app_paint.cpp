@@ -153,7 +153,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         int seen = 0;
         Rect target{};
         bool found = false;
-        for (const auto& hit : hits_) {
+        for (const auto& hit : ui_.hits()) {
             if (hit.id != id || seen++ != index) continue;
             target = hit.rect;
             found = true;
@@ -215,7 +215,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             paint();
             Rect mods{};
             bool found = false;
-            for (const auto& hit : hits_) {
+            for (const auto& hit : ui_.hits()) {
                 if (hit.id == Id::Mods) {
                     mods = hit.rect;
                     found = true;
@@ -259,7 +259,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         open_geckos();
         paint();
         Rect box{};
-        for (const auto& hit : hits_) {
+        for (const auto& hit : ui_.hits()) {
             if (hit.id != Id::CodeBox) continue;
             box = hit.rect;
             break;
@@ -304,7 +304,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             paint();
             Rect geckos{};
             bool found = false;
-            for (const auto& hit : hits_) {
+            for (const auto& hit : ui_.hits()) {
                 if (hit.id == Id::Geckos) {
                     geckos = hit.rect;
                     found = true;
@@ -450,7 +450,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             paint();
             Rect tile{};
             bool found = false;
-            for (const auto& hit : hits_) {
+            for (const auto& hit : ui_.hits()) {
                 if (static_cast<int>(hit.id) == static_cast<int>(Id::GameCover) + which) {
                     tile = hit.rect;
                     found = true;
@@ -487,7 +487,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
 void App::paint() {
     if (!painter_.begin()) return;
     painter_.clear(rgb(theme::Background));
-    hits_.clear();
+    ui_.begin_frame();
 
     paint_header();
     paint_games();
@@ -515,16 +515,16 @@ void App::paint_header() {
     }
 
     Rect settings_button{width_ - 24 - 104, 24, 104, 34};
-    button(Id::OpenSettings, settings_button, L"Settings", false, true);
+    ui_.button(Id::OpenSettings, settings_button, L"Settings", false, true);
 
     // The games are the big covers below, so the header only carries the title of the
     // one they would launch, and what the launcher found about it.
     float title_right = settings_button.x - 16;
     if (update_state_ == UpdateState::Available && !update_release_.version.empty()) {
         std::wstring label = L"Update " + update_release_.version;
-        float badge_w = text_width(label, Face::Button) + 30;
+        float badge_w = ui_.text_width(label, Face::Button) + 30;
         Rect badge{settings_button.x - 8 - badge_w, 24, badge_w, 34};
-        button(Id::UpdateBanner, badge, label, true, !busy_);
+        ui_.button(Id::UpdateBanner, badge, label, true, !busy_);
         title_right = std::min(title_right, badge.x - 16);
     }
 
@@ -647,8 +647,8 @@ void App::paint_games() {
     auto plan_buttons = [&](float width) -> ButtonPlan {
         if (!changeable) return {std::min(kLoneWidth, width), 0.0f, false};
         const float row_w = std::min(170.0f, (width - kButtonGap * 2.0f) / 3.0f);
-        const bool fits = elide(play_label, Face::Button, row_w - kButtonPad) == play_label &&
-                          elide(L"Geckos", Face::Button, row_w - kButtonPad) == L"Geckos";
+        const bool fits = ui_.elide(play_label, Face::Button, row_w - kButtonPad) == play_label &&
+                          ui_.elide(L"Geckos", Face::Button, row_w - kButtonPad) == L"Geckos";
         if (fits) return {row_w, row_w, false};
         return {std::max(kIconButton, width - 2.0f * (kIconButton + kButtonGap)),
                 kIconButton, true};
@@ -679,7 +679,7 @@ void App::paint_games() {
         const ButtonPlan plan = plan_buttons(width);
         // A narrow button drops to the smaller face rather than crowding its label.
         auto face_for = [this, &plan](const std::wstring& label) {
-            return text_width(label, Face::ButtonLarge) <= plan.play_width - kButtonPad
+            return ui_.text_width(label, Face::ButtonLarge) <= plan.play_width - kButtonPad
                        ? Face::ButtonLarge
                        : Face::Button;
         };
@@ -687,22 +687,22 @@ void App::paint_games() {
                                 ? plan.play_width
                                 : plan.play_width + 2.0f * (plan.other_width + kButtonGap);
         const float left = center_x - total / 2.0f;
-        button(Id::Play, Rect{left, top, plan.play_width, kButtonHeight}, play_label, true,
+        ui_.button(Id::Play, Rect{left, top, plan.play_width, kButtonHeight}, play_label, true,
                !waiting, false, face_for(play_label));
         if (plan.other_width <= 0) return;
         const bool ready = !waiting;
         const float x = left + plan.play_width + kButtonGap;
         if (plan.icons) {
-            button(Id::Mods, Rect{x, top, plan.other_width, kButtonHeight}, L"", false, ready,
+            ui_.button(Id::Mods, Rect{x, top, plan.other_width, kButtonHeight}, L"", false, ready,
                    false, Face::Button, mods_mark);
-            button(Id::Geckos,
+            ui_.button(Id::Geckos,
                    Rect{x + plan.other_width + kButtonGap, top, plan.other_width,
                         kButtonHeight},
                    L"", false, ready, false, Face::Button, codes_mark);
         } else {
-            button(Id::Mods, Rect{x, top, plan.other_width, kButtonHeight}, L"Mods", false,
+            ui_.button(Id::Mods, Rect{x, top, plan.other_width, kButtonHeight}, L"Mods", false,
                    ready, false, Face::Button);
-            button(Id::Geckos,
+            ui_.button(Id::Geckos,
                    Rect{x + plan.other_width + kButtonGap, top, plan.other_width,
                         kButtonHeight},
                    L"Geckos", false, ready, false, Face::Button);
@@ -714,20 +714,20 @@ void App::paint_games() {
         if (busy) {
             progress_bar(Rect{center_x - width / 2, top + 4, width, 6});
             if (job_.running()) {
-                float cancel_w = text_width(L"Cancel", Face::Tiny);
-                link(Id::Stop, Rect{center_x - cancel_w / 2, top + 20, cancel_w, 18},
+                float cancel_w = ui_.text_width(L"Cancel", Face::Tiny);
+                ui_.link(Id::Stop, Rect{center_x - cancel_w / 2, top + 20, cancel_w, 18},
                      L"Cancel");
             }
             bottom = top + 44;
         } else if (running) {
-            button(Id::Stop, Rect{center_x - 110, top, 220, 40}, L"Stop the game", true, true,
+            ui_.button(Id::Stop, Rect{center_x - 110, top, 220, 40}, L"Stop the game", true, true,
                    true);
             bottom = top + 46;
         }
         if (!compact) {
             std::wstring toggle = L"Show details";
-            float toggle_w = text_width(toggle, Face::Tiny);
-            link(Id::LogToggle, Rect{center_x - toggle_w / 2, bottom + 4, toggle_w, 18},
+            float toggle_w = ui_.text_width(toggle, Face::Tiny);
+            ui_.link(Id::LogToggle, Rect{center_x - toggle_w / 2, bottom + 4, toggle_w, 18},
                  toggle);
             bottom += 24;
         }
@@ -747,13 +747,13 @@ void App::paint_games() {
         float center_x = width_ / 2;
         float top =
             kHeaderBottom + std::max(24.0f, (height_ - kHeaderBottom - kBlockHeight) * 0.5f);
-        float pill_w = text_width(pill_text, Face::Small) + 32;
-        pill(Rect{center_x - pill_w / 2, top, pill_w, 22}, pill_text, pill_state);
+        float pill_w = ui_.text_width(pill_text, Face::Small) + 32;
+        ui_.pill(Rect{center_x - pill_w / 2, top, pill_w, 22}, pill_text, pill_state);
         painter_.text(title, RectF(center_x - 380, top + 26, center_x + 380, top + 78),
                       Face::Hero, rgb(theme::Text), TextAlign::Center);
         painter_.text(detail, RectF(center_x - 340, top + 82, center_x + 340, top + 136),
                       Face::Body, rgb(theme::Muted), TextAlign::Center);
-        button(Id::Launch, Rect{center_x - 130, top + 152, 260, 50}, L"Choose a folder",
+        ui_.button(Id::Launch, Rect{center_x - 130, top + 152, 260, 50}, L"Choose a folder",
                true, !busy, false, Face::ButtonLarge);
         if (!play_status_.empty()) {
             painter_.text(play_status_,
@@ -806,7 +806,7 @@ void App::paint_games() {
         Rect tile{x, top, tile_width, tile_height};
         paint_cover(static_cast<Id>(static_cast<int>(Id::GameCover) + index), tile, game,
                     selected, can_launch);
-        painter_.text(elide(game.short_title, Face::Button, tile_width - 6.0f),
+        painter_.text(ui_.elide(game.short_title, Face::Button, tile_width - 6.0f),
                       RectF(tile.x, tile.y + tile.h + 4, tile.x + tile.w,
                             tile.y + tile.h + 4 + label_height),
                       Face::Button, selected ? rgb(theme::Accent) : rgb(theme::Muted),
@@ -842,8 +842,8 @@ void App::paint_games() {
         const float block_h = std::max(tile_height + label_height, column_h);
 
         float y = top + 2.0f;
-        float pill_w = std::min(text_width(pill_text, Face::Small) + 32, column_width);
-        pill(Rect{status_left, y, pill_w, pill_h}, pill_text, pill_state);
+        float pill_w = std::min(ui_.text_width(pill_text, Face::Small) + 32, column_width);
+        ui_.pill(Rect{status_left, y, pill_w, pill_h}, pill_text, pill_state);
         y += pill_h + 8.0f;
         painter_.text(title, RectF(status_left, y, status_right, y + title_h),
                       Face::CardTitle, rgb(theme::Text));
@@ -862,8 +862,8 @@ void App::paint_games() {
 
     float status_top = top + tile_height + label_height + 22.0f;
     float center_x = width_ / 2;
-    float pill_w = text_width(pill_text, Face::Small) + 32;
-    pill(Rect{center_x - pill_w / 2, status_top, pill_w, 22}, pill_text, pill_state);
+    float pill_w = ui_.text_width(pill_text, Face::Small) + 32;
+    ui_.pill(Rect{center_x - pill_w / 2, status_top, pill_w, 22}, pill_text, pill_state);
     painter_.text(title,
                   RectF(center_x - 380, status_top + 26, center_x + 380, status_top + 74),
                   Face::Hero, rgb(theme::Text), TextAlign::Center);
@@ -876,8 +876,8 @@ void App::paint_games() {
 
 void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool selected,
                       bool enabled) {
-    bool hovered = enabled && hover_ == id;
-    bool down = enabled && pressed_ == id;
+    bool hovered = enabled && ui_.hover() == id;
+    bool down = enabled && ui_.pressed() == id;
     constexpr float kRadius = 14.0f;
     RectF box = rect.box();
 
@@ -911,28 +911,28 @@ void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool select
                                                    : rgb(theme::Border)));
     if (selected) painter_.stroke_round(box, kRadius, rgb(theme::Accent, 0.30f), 6.0f);
     painter_.stroke_round(box, kRadius, border, selected ? 2.0f : 1.0f);
-    if (enabled) register_hit(id, rect);
+    if (enabled) ui_.register_hit(id, rect);
 }
 
 void App::paint_activity(float top) {
     float card_height = std::max(140.0f, height_ - top - 24.0f);
     Rect card{24, top, width_ - 48, card_height};
-    card_box(card);
+    ui_.card_box(card);
 
     painter_.text(L"Activity", RectF(card.x + 20, card.y + 16, card.x + 200,
                                            card.y + 40),
                   Face::CardTitle, rgb(theme::Text));
 
     std::wstring toggle = log_visible_ ? L"Hide" : L"Show";
-    float clear_w = text_width(L"Clear", Face::Tiny);
-    float copy_w = text_width(L"Copy", Face::Tiny);
-    float toggle_w = text_width(toggle, Face::Tiny);
+    float clear_w = ui_.text_width(L"Clear", Face::Tiny);
+    float copy_w = ui_.text_width(L"Copy", Face::Tiny);
+    float toggle_w = ui_.text_width(toggle, Face::Tiny);
     float right = card.x + card.w - 20;
-    link(Id::LogToggle, Rect{right - toggle_w, card.y + 18, toggle_w, 18}, toggle);
+    ui_.link(Id::LogToggle, Rect{right - toggle_w, card.y + 18, toggle_w, 18}, toggle);
     right -= toggle_w + 16;
-    link(Id::CopyLog, Rect{right - copy_w, card.y + 18, copy_w, 18}, L"Copy");
+    ui_.link(Id::CopyLog, Rect{right - copy_w, card.y + 18, copy_w, 18}, L"Copy");
     right -= copy_w + 16;
-    link(Id::ClearLog, Rect{right - clear_w, card.y + 18, clear_w, 18}, L"Clear");
+    ui_.link(Id::ClearLog, Rect{right - clear_w, card.y + 18, clear_w, 18}, L"Clear");
 
     float content_top = card.y + 44;
     float content_bottom = card.y + card.h - 14;
@@ -986,7 +986,7 @@ void App::paint_activity(float top) {
                                                  cancel.y + cancel.h),
                           Face::Tiny, rgb(theme::Link), TextAlign::Center,
                           TextVAlign::Center);
-            register_hit(Id::Stop, cancel);
+            ui_.register_hit(Id::Stop, cancel);
         }
 
         Rect bar{card.x + 20, bar_y, card.w - 40, 6};
@@ -1021,7 +1021,7 @@ void App::paint_settings() {
     painter_.text(L"Settings", RectF(panel.x + 26, panel.y + 18, panel.x + 300,
                                             panel.y + 48),
                   Face::CardTitle, rgb(theme::Text));
-    link(Id::SettingsClose, Rect{panel.x + panel.w - 26 - 40, panel.y + 20, 40, 20}, L"Close");
+    ui_.link(Id::SettingsClose, Rect{panel.x + panel.w - 26 - 40, panel.y + 20, 40, 20}, L"Close");
 
     float left = panel.x + 26;
     float content_w = panel.w - 52;
@@ -1041,18 +1041,18 @@ void App::paint_settings() {
     };
 
     section(L"CONTROLLERS");
-    painter_.text(elide(L"Which controller plays as which player.", Face::Small,
+    painter_.text(ui_.elide(L"Which controller plays as which player.", Face::Small,
                         content_w - 130),
                   RectF(left, y + 7, left + content_w - 130, y + 29), Face::Small,
                   rgb(theme::Muted));
-    button(Id::SettingsPlayers, Rect{right - 110, y, 110, 32}, L"Players…", false, !busy_);
+    ui_.button(Id::SettingsPlayers, Rect{right - 110, y, 110, 32}, L"Players…", false, !busy_);
     y += 36;
     separator();
 
     section(L"RESOLUTION");
     painter_.text(L"Window scale", RectF(left, y + 8, left + 96, y + 28), Face::Small,
                   rgb(theme::Muted));
-    scale_combo(Id::Scale, Rect{left + 96, y, 180, 32}, !busy_);
+    ui_.combo(Id::Scale, Rect{left + 96, y, 180, 32}, scale_label(settings_.scale), !busy_);
     y += 36;
     separator();
 
@@ -1078,17 +1078,17 @@ void App::paint_settings() {
         case UpdateState::Never:
             break;
     }
-    painter_.text(elide(update_line, Face::Small, content_w - 250),
+    painter_.text(ui_.elide(update_line, Face::Small, content_w - 250),
                   RectF(left, y + 7, left + content_w - 250, y + 29), Face::Small,
                   update_color);
-    button(Id::SettingsCheckNow, Rect{right - 100, y, 100, 32}, L"Check now", false,
+    ui_.button(Id::SettingsCheckNow, Rect{right - 100, y, 100, 32}, L"Check now", false,
            !busy_ && update_state_ != UpdateState::Checking);
     if (update_state_ == UpdateState::Available) {
-        button(Id::SettingsInstallUpdate, Rect{right - 100 - 8 - 128, y, 128, 32},
+        ui_.button(Id::SettingsInstallUpdate, Rect{right - 100 - 8 - 128, y, 128, 32},
                L"Install update", true, !busy_);
     }
     y += 36;
-    checkbox(Id::SettingsToggleUpdates, left, y + 4, L"Check when the launcher starts",
+    ui_.checkbox(Id::SettingsToggleUpdates, left, y + 4, L"Check when the launcher starts",
              settings_.check_updates, !busy_);
     y += 24;
 
@@ -1097,7 +1097,7 @@ void App::paint_settings() {
                       Face::Tiny, rgb(theme::Ok));
     }
 
-    button(Id::SettingsClose, Rect{right - 110, panel.y + panel.h - 54, 110, 36}, L"Done",
+    ui_.button(Id::SettingsClose, Rect{right - 110, panel.y + panel.h - 54, 110, 36}, L"Done",
            true, true);
 }
 
@@ -1149,14 +1149,14 @@ void App::paint_overlay() {
         float y = panel.y + 60;
         painter_.text(L"Pick the device each player uses. Controllers take the first free pad.",
                       RectF(left, y, right - 70, y + 20), Face::Tiny, rgb(theme::Muted));
-        link(Id::SettingsRefreshDevices, Rect{right - 62, y, 62, 18}, L"Refresh");
+        ui_.link(Id::SettingsRefreshDevices, Rect{right - 62, y, 62, 18}, L"Refresh");
         y += 26;
         auto pad_row = [&](Id id, const std::wstring& name, const std::wstring& value,
                            bool empty) {
-            painter_.text(elide(name, Face::Small, right - left - 200),
+            painter_.text(ui_.elide(name, Face::Small, right - left - 200),
                           RectF(left, y + 5, right - left - 200 + left, y + 27), Face::Small,
                           rgb(theme::Text));
-            pad_combo(id, Rect{right - 190, y, 190, 28}, value, !busy_, empty);
+            ui_.combo(id, Rect{right - 190, y, 190, 28}, value, !busy_, empty);
             y += 34;
         };
         for (int player = 1; player <= kPads; ++player) {
@@ -1165,7 +1165,7 @@ void App::paint_overlay() {
                     L"Player " + std::to_wstring(player), value, value == L"Not set");
         }
         if (!devices_note_.empty()) {
-            painter_.text(elide(devices_note_, Face::Tiny, right - left),
+            painter_.text(ui_.elide(devices_note_, Face::Tiny, right - left),
                           RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
         }
     } else if (overlay_mods_) {
@@ -1198,16 +1198,16 @@ void App::paint_overlay() {
             if (entry.patch) label += L" · disc patch";
             else if (!entry.mod.gecko_files.empty()) label += L" · codes";
             if (!entry.installed) label += L" · download";
-            checkbox(id, left, y + 6, elide(label, Face::Small, version_left - left - 30),
+            ui_.checkbox(id, left, y + 6, ui_.elide(label, Face::Small, version_left - left - 30),
                      mod_checked(entry.id), !busy_ && available);
-            painter_.text(elide(entry.version, Face::Tiny, 84),
+            painter_.text(ui_.elide(entry.version, Face::Tiny, 84),
                           RectF(version_left, y + 4, version_right - 6, y + 26), Face::Tiny,
                           rgb(theme::Muted), TextAlign::Trailing);
-            painter_.text(elide(entry.author, Face::Tiny, right - version_right),
+            painter_.text(ui_.elide(entry.author, Face::Tiny, right - version_right),
                           RectF(version_right, y + 4, right, y + 26), Face::Tiny,
                           rgb(theme::Muted), TextAlign::Trailing);
             // The whole row is the checkbox, so a click anywhere on it is the same choice.
-            if (available && !busy_) register_hit(id, Rect{left - 4, y - 4, right - left + 8, 30});
+            if (available && !busy_) ui_.register_hit(id, Rect{left - 4, y - 4, right - left + 8, 30});
             y += 34;
         }
 
@@ -1216,7 +1216,7 @@ void App::paint_overlay() {
         // thing about a mod a table cannot keep short.
         const ModChoice* hovered = nullptr;
         for (size_t i = 0; i < mod_rows(); ++i) {
-            if (hover_ == static_cast<Id>(static_cast<int>(Id::ModRow) + static_cast<int>(i)))
+            if (ui_.hover() == static_cast<Id>(static_cast<int>(Id::ModRow) + static_cast<int>(i)))
                 hovered = &mod_entries_[i];
         }
         const bool staged =
@@ -1231,21 +1231,21 @@ void App::paint_overlay() {
         } else {
             note = mods_summary();
         }
-        painter_.text(elide(note, Face::Small, right - left),
+        painter_.text(ui_.elide(note, Face::Small, right - left),
                       RectF(left, y + 8, right, y + 30), Face::Small, rgb(theme::Muted));
         if (!patch_note_.empty()) {
-            painter_.text(elide(patch_note_, Face::Tiny, right - left),
+            painter_.text(ui_.elide(patch_note_, Face::Tiny, right - left),
                           RectF(left, y + 30, right, y + 48), Face::Tiny, rgb(theme::Muted));
         } else if (mod_rows() < mod_entries_.size()) {
             painter_.text(format(L"… and %zu more in the mods folder.",
                                  mod_entries_.size() - mod_rows()),
                           RectF(left, y + 30, right, y + 48), Face::Tiny, rgb(theme::Muted));
         }
-        link(Id::ModsFolder, Rect{left, panel.y + panel.h - 84, 160, 18},
+        ui_.link(Id::ModsFolder, Rect{left, panel.y + panel.h - 84, 160, 18},
              L"Open the mods folder");
-        link(Id::ModChoose, Rect{left + 172, panel.y + panel.h - 84, 190, 18},
+        ui_.link(Id::ModChoose, Rect{left + 172, panel.y + panel.h - 84, 190, 18},
              L"Choose a patch file…");
-        button(Id::ModApply,
+        ui_.button(Id::ModApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && staged);
     } else if (overlay_geckos_) {
@@ -1261,7 +1261,7 @@ void App::paint_overlay() {
             project_ ? L"Only codes written for this disc are listed. Each is switched on by "
                        L"itself."
                      : L"Set up the game folder first: the codes are kept beside it.";
-        painter_.text(elide(lead, Face::Tiny, right - left),
+        painter_.text(ui_.elide(lead, Face::Tiny, right - left),
                       RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
         y += 20;
         std::wstring second;
@@ -1273,7 +1273,7 @@ void App::paint_overlay() {
             second = L"Fetch to see the codes the community's guide holds for this disc.";
         }
         if (!second.empty()) {
-            painter_.text(elide(second, Face::Tiny, right - left),
+            painter_.text(ui_.elide(second, Face::Tiny, right - left),
                           RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
         }
         y += 22;
@@ -1296,13 +1296,13 @@ void App::paint_overlay() {
             // the row: a grey check with no reason beside it reads as a bug.
             std::wstring label = entry.name;
             if (!entry.runnable) label += L" · can't run here";
-            checkbox(id, left, y + 3, elide(label, Face::Small, source_left - left - 30),
+            ui_.checkbox(id, left, y + 3, ui_.elide(label, Face::Small, source_left - left - 30),
                      code_checked(entry.name), usable);
             painter_.text(entry.online ? L"guide" : L"yours",
                           RectF(source_left, y + 3, source_right, y + 19), Face::Tiny,
                           entry.runnable ? rgb(theme::Muted) : rgb(0x69707d),
                           TextAlign::Trailing);
-            if (usable) register_hit(id, Rect{left - 4, y - 3, right - left + 8, 24});
+            if (usable) ui_.register_hit(id, Rect{left - 4, y - 3, right - left + 8, 24});
             y += 22;
         }
 
@@ -1310,7 +1310,7 @@ void App::paint_overlay() {
         std::wstring note = codes_note_;
         if (note.empty()) {
             for (std::size_t i = 0; i < rows; ++i) {
-                if (hover_ !=
+                if (ui_.hover() !=
                     static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i)))
                     continue;
                 const CodeEntry& entry = code_entries_[code_offset_ + i];
@@ -1329,7 +1329,7 @@ void App::paint_overlay() {
             note = staged ? L"Apply to write these changes to the game."
                           : format(L"%zu code(s) on for this game.", enabled_codes_.size());
         }
-        if (code_entries_.size() > rows && codes_note_.empty() && hover_ == Id::None) {
+        if (code_entries_.size() > rows && codes_note_.empty() && ui_.hover() == Id::None) {
             // A list longer than the panel says so, because the wheel is the only sign of it.
             note = format(L"%zu codes; scroll for the rest. %zu on for this game.",
                           code_entries_.size(), enabled_codes_.size());
@@ -1361,20 +1361,20 @@ void App::paint_overlay() {
             }
         }
         // The box takes the click whether or not it has focus: that is how it gets focus.
-        if (!busy_) register_hit(Id::CodeBox, editor);
+        if (!busy_) ui_.register_hit(Id::CodeBox, editor);
 
         // The guide's list is fetched on its own, so the only thing wanted here is a way to
         // ask again -- after a fetch that failed, or for a guide that has been updated.
         const std::wstring refresh = codes_fetching_ ? L"Fetching…" : L"Refresh list";
-        const float refresh_w = text_width(refresh, Face::Tiny) + 10.0f;
-        link(Id::CodeRefresh, Rect{right - refresh_w, panel.y + panel.h - 86, refresh_w, 18},
+        const float refresh_w = ui_.text_width(refresh, Face::Tiny) + 10.0f;
+        ui_.link(Id::CodeRefresh, Rect{right - refresh_w, panel.y + panel.h - 86, refresh_w, 18},
              refresh, project_ != std::nullopt && !codes_fetching_);
-        painter_.text(elide(note, Face::Small, right - left - refresh_w - 16.0f),
+        painter_.text(ui_.elide(note, Face::Small, right - left - refresh_w - 16.0f),
                       RectF(left, panel.y + panel.h - 84, right - refresh_w - 12.0f,
                             panel.y + panel.h - 66),
                       Face::Small, rgb(theme::Muted));
         const bool staged = pending_codes_ != enabled_codes_ || !gecko_edit_.empty();
-        button(Id::CodeApply,
+        ui_.button(Id::CodeApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && project_ != std::nullopt && staged);
     } else {
@@ -1386,36 +1386,20 @@ void App::paint_overlay() {
     float button_right = panel.x + panel.w - 26;
     const float button_y = panel.y + panel.h - 56;
     button_right -= 130;
-    button(Id::OverlayAction, Rect{button_right, button_y, 130, 36}, overlay_action_, true,
+    ui_.button(Id::OverlayAction, Rect{button_right, button_y, 130, 36}, overlay_action_, true,
            true);
     if (overlay_confirm_) {
         button_right -= 8 + 100;
-        button(Id::OverlayCancel, Rect{button_right, button_y, 100, 36}, L"Cancel", false,
+        ui_.button(Id::OverlayCancel, Rect{button_right, button_y, 100, 36}, L"Cancel", false,
                true);
     }
     if (!overlay_second_.empty()) {
         const float second_w =
-            std::max(110.0f, text_width(overlay_second_, Face::Button) + 26.0f);
+            std::max(110.0f, ui_.text_width(overlay_second_, Face::Button) + 26.0f);
         button_right -= 8 + second_w;
-        button(Id::OverlaySecondary, Rect{button_right, button_y, second_w, 36},
+        ui_.button(Id::OverlaySecondary, Rect{button_right, button_y, second_w, 36},
                overlay_second_, false, true);
     }
-}
-
-void App::pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled,
-                    bool empty) {
-    bool hovered = enabled && hover_ == id;
-    painter_.fill_round(rect.box(), 8, rgb(hovered ? 0x2c333e : 0x242932));
-    painter_.stroke_round(rect.box(), 8, rgb(theme::BorderStrong), 1);
-    painter_.text(value, RectF(rect.x + 10, rect.y, rect.x + rect.w - 26, rect.y + rect.h),
-                  Face::Small,
-                  enabled ? rgb(empty ? theme::Muted : theme::Text) : rgb(0x69707d),
-                  TextAlign::Leading, TextVAlign::Center, false);
-    float chevron_x = rect.x + rect.w - 16;
-    float chevron_y = rect.y + rect.h / 2 - 2;
-    painter_.line(chevron_x - 4, chevron_y, chevron_x, chevron_y + 4, rgb(theme::Muted), 1.6f);
-    painter_.line(chevron_x, chevron_y + 4, chevron_x + 4, chevron_y, rgb(theme::Muted), 1.6f);
-    if (enabled) register_hit(id, rect);
 }
 
 // What a player row offers: nothing, the keyboard, then each controller the game sees. A
@@ -1439,14 +1423,14 @@ void App::paint_pad_menu() {
     for (int i = 0; i < count; ++i) {
         Rect item{menu.x + 4, menu.y + 4 + i * 30.0f, menu.w - 8, 30};
         Id id = static_cast<Id>(static_cast<int>(Id::PadOption) + i);
-        if (hover_ == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
-        painter_.text(elide(options[static_cast<size_t>(i)], Face::Small, item.w - 20),
+        if (ui_.hover() == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
+        painter_.text(ui_.elide(options[static_cast<size_t>(i)], Face::Small, item.w - 20),
                       RectF(item.x + 10, item.y, item.x + item.w - 10, item.y + item.h),
                       Face::Small,
                       i == current ? rgb(theme::Accent)
                                    : rgb(i == 0 ? theme::Muted : theme::Text),
                       TextAlign::Leading, TextVAlign::Center, false);
-        register_hit(id, item);
+        ui_.register_hit(id, item);
     }
 }
 
@@ -1456,164 +1440,18 @@ void App::paint_scale_menu() {    Rect menu{scale_anchor_.x, scale_anchor_.y + s
     for (int index = 0; index < 4; ++index) {
         Rect item{menu.x + 4, menu.y + 4 + index * 32.0f, menu.w - 8, 32};
         Id id = static_cast<Id>(static_cast<int>(Id::Scale1) + index);
-        if (hover_ == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
+        if (ui_.hover() == id) painter_.fill_round(item.box(), 6, rgb(0x2b3340));
         painter_.text(scale_label(index + 1),
                       RectF(item.x + 10, item.y, item.x + item.w - 10, item.y + item.h),
                       Face::Small,
                       settings_.scale == index + 1 ? rgb(theme::Accent) : rgb(theme::Text),
                       TextAlign::Leading, TextVAlign::Center,
                       false);
-        register_hit(id, item);
+        ui_.register_hit(id, item);
     }
 }
 
 // -- pieces ----------------------------------------------------------------
-
-void App::button(Id id, const Rect& rect, const std::wstring& label, bool primary,
-                 bool enabled, bool danger, Face face,
-                 const std::function<void(const Rect&, Color)>& mark) {
-    bool hovered = enabled && hover_ == id;
-    bool down = enabled && pressed_ == id;
-    Color background;
-    Color border;
-    Color text;
-    if (primary) {
-        unsigned base = danger ? 0xa8402c : theme::Accent;
-        unsigned hover = danger ? 0xbb4b35 : theme::AccentHover;
-        background = enabled ? rgb(hovered ? hover : base) : rgb(0x513427);
-        border = background;
-        text = enabled ? rgb(0xffffff) : rgb(0xa08a7c);
-    } else {
-        background = !enabled ? rgb(0x1a1d23)
-                              : rgb(hovered ? (down ? 0x20252d : 0x2c333e) : 0x242932);
-        border = !enabled ? rgb(0x242932) : rgb(theme::BorderStrong);
-        text = !enabled ? rgb(0x69707d)
-                        : (danger ? rgb(0xff9a86) : rgb(theme::Text));
-    }
-    painter_.fill_round(rect.box(), 8, background);
-    painter_.stroke_round(rect.box(), 8, border, 1);
-    if (mark) {
-        mark(rect, text);
-    } else {
-        painter_.text_clipped(elide(label, face, rect.w - 12.0f),
-                              RectF(rect.x + 6, rect.y, rect.x + rect.w - 6, rect.y + rect.h),
-                              face, text, TextAlign::Center);
-    }
-    if (enabled) register_hit(id, rect);
-}
-
-void App::link(Id id, const Rect& rect, const std::wstring& label, bool enabled) {
-    bool hovered = enabled && hover_ == id;
-    bool down = enabled && pressed_ == id;
-    Color text = enabled ? rgb(hovered ? (down ? 0x8fb4ff : 0xb6cdff) : theme::Link)
-                         : rgb(0x69707d);
-    painter_.text_clipped(elide(label, Face::Tiny, rect.w),
-                          RectF(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h),
-                          Face::Tiny, text, TextAlign::Center);
-    if (enabled) register_hit(id, rect);
-}
-
-void App::checkbox(Id id, float x, float y, const std::wstring& label, bool checked,
-                   bool enabled) {
-    Rect box{x, y, 17, 17};
-    Color border = enabled ? (checked ? rgb(theme::Accent) : rgb(theme::BorderStrong))
-                           : rgb(0x2c313a);
-    if (checked) {
-        painter_.fill_round(box.box(), 4, enabled ? rgb(theme::Accent) : rgb(0x513427));
-    } else {
-        painter_.fill_round(box.box(), 4, rgb(0x1b1e25));
-    }
-    painter_.stroke_round(box.box(), 4, border, 1);
-    if (checked) {
-        painter_.line(box.x + 4, box.y + 8.5f, box.x + 7, box.y + 12, rgb(0xffffff), 1.8f);
-        painter_.line(box.x + 7, box.y + 12, box.x + 13, box.y + 5, rgb(0xffffff), 1.8f);
-    }
-    float label_width = text_width(label, Face::Small);
-    painter_.text(label, RectF(x + 24, y - 2, x + 24 + label_width + 8, y + 20),
-                  Face::Small, enabled ? rgb(theme::Text) : rgb(0x69707d));
-    if (enabled) register_hit(id, Rect{x, y - 4, 24 + label_width + 4, 25});
-}
-
-void App::scale_combo(Id id, const Rect& rect, bool enabled) {
-    bool hovered = enabled && hover_ == id;
-    painter_.fill_round(rect.box(), 8, rgb(hovered ? 0x2c333e : 0x242932));
-    painter_.stroke_round(rect.box(), 8, rgb(theme::BorderStrong), 1);
-    painter_.text(scale_label(settings_.scale),
-                  RectF(rect.x + 10, rect.y, rect.x + rect.w - 26, rect.y + rect.h),
-                  Face::Small, enabled ? rgb(theme::Text) : rgb(0x69707d),
-                  TextAlign::Leading, TextVAlign::Center, false);
-    float chevron_x = rect.x + rect.w - 16;
-    float chevron_y = rect.y + rect.h / 2 - 2;
-    painter_.line(chevron_x - 4, chevron_y, chevron_x, chevron_y + 4, rgb(theme::Muted), 1.6f);
-    painter_.line(chevron_x, chevron_y + 4, chevron_x + 4, chevron_y, rgb(theme::Muted), 1.6f);
-    if (enabled) register_hit(id, rect);
-}
-
-void App::pill(const Rect& rect, const std::wstring& text, Pill state) {
-    Color dot = rgb(theme::Muted);
-    switch (state) {
-        case Pill::Ok: dot = rgb(theme::Ok); break;
-        case Pill::Warn: dot = rgb(theme::Warn); break;
-        case Pill::Bad: dot = rgb(theme::Bad); break;
-        case Pill::Muted: break;
-    }
-    painter_.circle(rect.x + 7, rect.y + rect.h / 2, 3.5f, dot);
-    painter_.text(text, RectF(rect.x + 16, rect.y, rect.x + rect.w, rect.y + rect.h),
-                  Face::Small, rgb(0xcfd5e2), TextAlign::Leading,
-                  TextVAlign::Center, false);
-}
-
-void App::card_box(const Rect& rect) {
-    painter_.fill_round(rect.box(), 14, rgb(theme::Card));
-    painter_.stroke_round(rect.box(), 14, rgb(theme::Border), 1);
-}
-
-float App::text_width(const std::wstring& text, Face face) {
-    return painter_.measure(text, face);
-}
-
-std::wstring App::elide(const std::wstring& text, Face face, float width) {
-    if (width <= 0) return L"";
-    if (text_width(text, face) <= width) return text;
-    std::wstring suffix = L"…";
-    size_t low = 0, high = text.size();
-    while (low < high) {
-        size_t mid = (low + high + 1) / 2;
-        if (text_width(text.substr(0, mid) + suffix, face) <= width) {
-            low = mid;
-        } else {
-            high = mid - 1;
-        }
-    }
-    return text.substr(0, low) + suffix;
-}
-
-// A path keeps both ends: the folder it is in and the name that is being replaced. Cut
-// short from the end alone it would read "~/Documents/Projects/Fun st…", which says
-// nothing about what is being replaced.
-std::wstring App::elide_middle(const std::wstring& text, Face face, float width) {
-    if (width <= 0) return L"";
-    if (text_width(text, face) <= width) return text;
-    const std::wstring mark = L"…";
-    size_t keep = text.size() / 2;
-    while (keep > 0) {
-        const size_t tail = std::max<size_t>(1, keep / 2);
-        const std::wstring candidate =
-            text.substr(0, keep) + mark + text.substr(text.size() - tail);
-        if (text_width(candidate, face) <= width) return candidate;
-        --keep;
-    }
-    return mark + text.substr(text.size() - std::min<size_t>(text.size(), 3));
-}
-
-void App::register_hit(Id id, const Rect& rect) { hits_.push_back({rect, id}); }
-
-Id App::hit_at(float x, float y) const {
-    for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
-        if (it->rect.contains(x, y)) return it->id;
-    }
-    return Id::None;
-}
 
 void App::paint_picker() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
@@ -1634,12 +1472,12 @@ void App::paint_picker() {
     painter_.fill_round(field.box(), 8, rgb(picker_editing_ ? 0x20252d : 0x1b1e25));
     painter_.stroke_round(field.box(), 8,
                           rgb(picker_editing_ ? theme::Accent : theme::BorderStrong), 1);
-    painter_.text(elide(picker_path_, Face::Small, field.w - 24),
+    painter_.text(ui_.elide(picker_path_, Face::Small, field.w - 24),
                   RectF(field.x + 10, field.y, field.x + field.w - 10, field.y + field.h),
                   Face::Small, rgb(theme::Text), TextAlign::Leading, TextVAlign::Center,
                   false);
-    register_hit(Id::PickerPath, field);
-    button(Id::PickerUp, Rect{field.x + field.w + 10, field.y, 66, 34}, L"Up", false, true);
+    ui_.register_hit(Id::PickerPath, field);
+    ui_.button(Id::PickerUp, Rect{field.x + field.w + 10, field.y, 66, 34}, L"Up", false, true);
 
     Rect list{left, panel.y + 100, content_w, panel.h - 100 - 76};
     painter_.fill_round(list.box(), 10, rgb(theme::Log));
@@ -1657,7 +1495,7 @@ void App::paint_picker() {
         Id id = static_cast<Id>(static_cast<int>(Id::PickerEntry) + index);
         if (picker_selected_ == index) {
             painter_.fill_round(item.box(), 6, rgb(0x2b3340));
-        } else if (hover_ == id) {
+        } else if (ui_.hover() == id) {
             painter_.fill_round(item.box(), 6, rgb(0x222732));
         }
         std::wstring label = entry.name;
@@ -1666,7 +1504,7 @@ void App::paint_picker() {
                                   item.y + item.h),
                       Face::Small, entry.directory ? rgb(0xc8cede) : rgb(theme::Text),
                       TextAlign::Leading, TextVAlign::Center, false);
-        register_hit(id, item);
+        ui_.register_hit(id, item);
     }
     if (picker_entries_.empty()) {
         painter_.text(picker_ == PickerKind::Image
@@ -1687,10 +1525,10 @@ void App::paint_picker() {
                        panel.y + panel.h - 44),
                   Face::Tiny, picker_note_.empty() ? rgb(theme::Muted) : rgb(theme::Warn));
 
-    button(Id::PickerCancel,
+    ui_.button(Id::PickerCancel,
            Rect{panel.x + panel.w - 24 - 100, panel.y + panel.h - 52, 100, 34}, L"Cancel",
            false, true);
-    button(Id::PickerAccept,
+    ui_.button(Id::PickerAccept,
            Rect{panel.x + panel.w - 24 - 100 - 8 - 176, panel.y + panel.h - 52, 176, 34},
            picker_ == PickerKind::Folder ? L"Use This Folder" : L"Choose Image", true, true);
 }

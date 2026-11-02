@@ -87,7 +87,7 @@ void App::show_update_prompt() {
         // part of "what gets replaced" as the name is, and a path left to wrap breaks at a
         // slash in the middle of nothing.
         text += L"\n\nIt replaces:\n" +
-                elide_middle(path_display(target), Face::Body, kMessagePanelWidth - 52.0f);
+                ui_.elide_middle(path_display(target), Face::Body, kMessagePanelWidth - 52.0f);
     }
     show_confirm(format(L"Version %ls is available", update_release_.version.c_str()), text,
                  L"Update now", [this] { begin_update(); });

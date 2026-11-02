@@ -13,6 +13,7 @@
 #include <SDL.h>
 
 #include "painter.h"
+#include "ui.h"
 #include "catalog.h"
 #include "codes.h"
 #include "jobs.h"
@@ -24,75 +25,6 @@
 #include "window.h"
 
 namespace nla {
-
-// The console's four controller sockets: the pads a game polls for players.
-constexpr int kPads = 4;
-// How many code rows the Geckos panel draws at once. A disc's guide can hold far more, so
-// the panel scrolls rather than growing past the window.
-constexpr int kCodeRows = 12;
-
-struct Rect {
-    float x = 0, y = 0, w = 0, h = 0;
-
-    RectF box() const { return RectF{x, y, x + w, y + h}; }
-    bool contains(float px, float py) const {
-        return px >= x && px <= x + w && py >= y && py <= y + h;
-    }
-    Rect inset(float amount) const {
-        return {x + amount, y + amount, w - 2 * amount, h - 2 * amount};
-    }
-};
-
-enum class Id {
-    None,
-    Launch,
-    Stop,
-    LogToggle,
-    CopyLog,
-    ClearLog,
-    OpenSettings,
-    SettingsClose,
-    SettingsToggleUpdates,
-    SettingsCheckNow,
-    SettingsInstallUpdate,
-    UpdateBanner,
-    Scale,
-    Scale1,
-    Scale2,
-    Scale3,
-    Scale4,
-    SettingsPlayers,
-    SettingsRefreshDevices,
-    ModsFolder,
-    ModRow,  // a mod in the Mods table; the rest follow it
-    ModRowEnd = ModRow + 12,
-    ModApply,   // download what is missing and write the checked mods
-    ModChoose,  // add a disc patch from this machine to the table
-    PadRow,                       // a player row in the Players panel: +0 Player 1, then 2 to 4
-    PadRowEnd = PadRow + 4,
-    PadOption,                    // what a player row offers: +0 Not set, +1 the keyboard, then
-                                  // the controllers
-    PadOptionEnd = PadOption + 20,
-    OverlayAction,
-    OverlayCancel,
-    OverlaySecondary,
-    PickerUp,
-    PickerPath,
-    PickerAccept,
-    PickerCancel,
-    Play,         // start the game the page has selected
-    Mods,         // change what that game plays
-    Geckos,       // switch that game's Gecko codes on and off
-    CodeApply,    // write the checks, and any code pasted into the box
-    CodeRefresh,  // ask for the guide's list again
-    CodeBox,      // the box a block of codes is pasted into
-    // Ranges whose ids are computed as base + index must come last, so nothing follows them.
-    GameCover,    // the first game's cover on the main page; the rest follow it
-    GameCoverEnd = GameCover + 32,
-    CodeRow,  // a code in the Geckos table; the rest follow it
-    CodeRowEnd = CodeRow + kCodeRows,
-    PickerEntry,  // the first entry row; the rest follow it
-};
 
 class App {
   public:
@@ -114,11 +46,6 @@ class App {
     static constexpr float kMessagePanelWidth = 620.0f;
 
   private:
-    struct Hit {
-        Rect rect;
-        Id id;
-    };
-
     struct PickerEntry {
         std::wstring name;
         bool directory = false;
@@ -131,7 +58,6 @@ class App {
         int height = 0;
         std::vector<std::uint32_t> pixels;
     };
-    enum class Pill { Muted, Ok, Warn, Bad };
     enum class PickerKind { None, Folder, Image, Patch };
     // What came of looking for a newer release.
     enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
@@ -152,29 +78,6 @@ class App {
     void paint_pad_menu();
     void paint_picker();
     void paint_scale_menu();
-
-    // `mark` draws the button instead of a label: the square buttons a narrow column puts
-    // beside Play, which have room for a shape but not for a word.
-    void button(Id id, const Rect& rect, const std::wstring& label, bool primary,
-                bool enabled, bool danger = false, Face face = Face::Button,
-                const std::function<void(const Rect&, Color)>& mark = {});
-    void link(Id id, const Rect& rect, const std::wstring& label, bool enabled = true);
-    void checkbox(Id id, float x, float y, const std::wstring& label, bool checked,
-                  bool enabled = true);
-    void scale_combo(Id id, const Rect& rect, bool enabled);
-    // A row in the Players panel: the player on the left, the device playing as it on the
-    // right. An empty row's value is the muted "Not set".
-    void pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled,
-                   bool empty);
-    void pill(const Rect& rect, const std::wstring& text, Pill state);
-    void card_box(const Rect& rect);
-
-    float text_width(const std::wstring& text, Face face);
-    std::wstring elide(const std::wstring& text, Face face, float width);
-    // The same for a path, which is cut in the middle so both the folder and the name stay.
-    std::wstring elide_middle(const std::wstring& text, Face face, float width);
-    void register_hit(Id id, const Rect& rect);
-    Id hit_at(float x, float y) const;
 
     void refresh();
     void locate_project();
@@ -326,6 +229,7 @@ class App {
     Window window_;
     Dispatcher dispatcher_;
     Painter painter_;
+    UiContext ui_{painter_};
 
     Settings settings_;
     std::optional<Project> project_;
@@ -467,9 +371,6 @@ class App {
     std::vector<PickerEntry> picker_entries_;
     std::function<void(const fs::path&)> picker_accept_;
 
-    Id hover_ = Id::None;
-    Id pressed_ = Id::None;
-    std::vector<Hit> hits_;
     float width_ = 1060;
     float height_ = 820;
     Rect log_rect_{};

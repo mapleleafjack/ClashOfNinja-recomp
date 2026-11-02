@@ -65,7 +65,8 @@ set(NLA_SOURCES
   src/main.cpp
   # The launcher's window class, split by what each part of it does: the shell and its
   # input, the drawing, the file picker, the jobs it runs, the games it lists, the mods it
-  # applies, and its own updates.
+  # applies, and its own updates. The window draws through ui.cpp, which holds the widgets
+  # and the hit list, so nothing it paints has to be an App.
   src/app.cpp
   src/app_geckos.cpp
   src/app_games.cpp
@@ -94,6 +95,7 @@ set(NLA_SOURCES
   src/settings.cpp
   src/tools.cpp
   src/tools_package.cpp
+  src/ui.cpp
   src/update.cpp
   src/util.cpp
   src/window.cpp
