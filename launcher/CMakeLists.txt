@@ -479,6 +479,9 @@ add_executable(geckos_screen_test
   src/project_templates.cpp
   src/settings.cpp
   src/jobs.cpp
+src/painter.cpp
+src/font.cpp
+src/ui.cpp
   src/tools.cpp
   src/util.cpp
 )

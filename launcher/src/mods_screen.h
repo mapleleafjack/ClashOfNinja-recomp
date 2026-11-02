@@ -45,6 +45,9 @@ class ModsScreen : public Screen {
     const ModSelection& selection() const { return selection_; }
     const std::wstring& note() const { return note_; }
     const std::wstring& patch_note() const { return patch_note_; }
+    // The table as the panel draws it: the rows, the note under them and the buttons. The
+    // frame around it is the window's, because every page over the main one gets the same.
+    void paint_table(const PaintContext& ctx, const Rect& panel, bool busy);
 
   private:
     void refresh_patch();

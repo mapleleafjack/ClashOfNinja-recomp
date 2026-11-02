@@ -391,4 +391,133 @@ void GeckosScreen::activate(Id id) {
     }
 }
 
+void GeckosScreen::paint_table(const PaintContext& ctx, const Rect& panel, bool busy) {
+        // One row per code this disc can be played with, its own and the guide's. The checks
+        // are the choice Apply writes; a code the recompiler cannot run is listed so it can
+        // be read, and cannot be switched on.
+        const float left = panel.x + 26;
+        const float right = panel.x + panel.w - 26;
+        const float source_right = right;
+        const float source_left = right - 96;
+        float y = panel.y + 58;
+        const std::wstring lead =
+            model_.project() ? L"Only codes written for this disc are listed. Each is switched on by "
+                       L"itself."
+                     : L"Set up the game folder first: the codes are kept beside it.";
+        ctx.painter.text(ctx.ui.elide(lead, Face::Tiny, right - left),
+                      RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
+        y += 20;
+        std::wstring second;
+        if (fetching_) {
+            second = L"Fetching what the guide for this disc holds\u2026";
+        } else if (!online_label_.empty()) {
+            second = L"The guide's list is here (" + online_label_ + L").";
+        } else if (model_.project()) {
+            second = L"Fetch to see the codes the community's guide holds for this disc.";
+        }
+        if (!second.empty()) {
+            ctx.painter.text(ctx.ui.elide(second, Face::Tiny, right - left),
+                          RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
+        }
+        y += 22;
+        ctx.painter.text(L"On", RectF(left, y, left + 24, y + 16), Face::Tiny, rgb(theme::Muted));
+        ctx.painter.text(L"Code", RectF(left + 30, y, source_left - 6, y + 16), Face::Tiny,
+                      rgb(theme::Muted));
+        ctx.painter.text(L"From", RectF(source_left, y, source_right, y + 16), Face::Tiny,
+                      rgb(theme::Muted), TextAlign::Trailing);
+        y += 20;
+
+        const std::size_t rows = codes_.rows(rows_fit_);
+        clamp_offset();
+        for (std::size_t i = 0; i < rows; ++i) {
+            const CodeEntry& entry = codes_.entries()[offset_ + i];
+            Id id = static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i));
+            const bool usable = entry.runnable && !busy;
+            // A code this recompiler cannot run is listed so it can be read, and says so in
+            // the row: a grey check with no reason beside it reads as a bug.
+            std::wstring label = entry.name;
+            if (!entry.runnable) label += L" · can't run here";
+            ctx.ui.checkbox(id, left, y + 3, ctx.ui.elide(label, Face::Small, source_left - left - 30),
+                     codes_.checked(entry.name), usable);
+            ctx.painter.text(entry.online ? L"guide" : L"yours",
+                          RectF(source_left, y + 3, source_right, y + 19), Face::Tiny,
+                          entry.runnable ? rgb(theme::Muted) : rgb(0x69707d),
+                          TextAlign::Trailing);
+            if (usable) ctx.ui.register_hit(id, Rect{left - 4, y - 3, right - left + 8, 24});
+            y += 22;
+        }
+
+        // The line under the table: what Apply did, or what the row under the cursor is.
+        std::wstring note = note_;
+        if (note.empty()) {
+            for (std::size_t i = 0; i < rows; ++i) {
+                if (ctx.ui.hover() !=
+                    static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i)))
+                    continue;
+                const CodeEntry& entry = codes_.entries()[offset_ + i];
+                if (!entry.runnable) {
+                    note = entry.warning.empty()
+                               ? std::wstring(L"This code does nothing this game can run.")
+                               : entry.warning;
+                } else {
+                    note = format(L"%zu operation(s) run once a frame.", entry.ops);
+                }
+                break;
+            }
+        }
+        if (note.empty()) {
+            const bool staged = codes_.staged();
+            note = staged ? L"Apply to write these changes to the game."
+                          : format(L"%zu code(s) on for this game.", codes_.enabled().size());
+        }
+        if (codes_.entries().size() > rows && note_.empty() && ctx.ui.hover() == Id::None) {
+            // A list longer than the panel says so, because the wheel is the only sign of it.
+            note = format(L"%zu codes; scroll for the rest. %zu on for this game.",
+                          codes_.entries().size(), codes_.enabled().size());
+        }
+
+        // The box a block pasted from an editor goes into, and what that block becomes.
+        const float box_h = 66.0f;
+        Rect editor{left, panel.y + panel.h - 162, right - left, box_h};
+        ctx.painter.fill_round(editor.box(), 6, rgb(editing_ ? 0x1d222b : 0x171b21));
+        ctx.painter.stroke_round(editor.box(), 6,
+                              rgb(editing_ ? theme::Accent : theme::BorderStrong), 1);
+        const float line_h = ctx.painter.line_height(Face::Tiny);
+        const int fits = std::max(1, static_cast<int>((box_h - 10.0f) / line_h));
+        if (edit_.empty()) {
+            ctx.painter.text(L"Paste a block of codes here, then Apply.",
+                          RectF(editor.x + 8, editor.y + 6, editor.x + editor.w - 8,
+                                editor.y + 6 + line_h),
+                          Face::Tiny, rgb(0x69707d));
+        } else {
+            auto lines = split(edit_, L'\n');
+            const int first = std::max(0, static_cast<int>(lines.size()) - fits);
+            float line_y = editor.y + 6;
+            for (int i = first; i < static_cast<int>(lines.size()); ++i) {
+                ctx.painter.text_clipped(lines[static_cast<size_t>(i)],
+                                      RectF(editor.x + 8, line_y, editor.x + editor.w - 8,
+                                            line_y + line_h),
+                                      Face::Tiny, rgb(theme::Text));
+                line_y += line_h;
+            }
+        }
+        // The box takes the click whether or not it has focus: that is how it gets focus.
+        if (!busy) ctx.ui.register_hit(Id::CodeBox, editor);
+
+        // The guide's list is fetched on its own, so the only thing wanted here is a way to
+        // ask again -- after a fetch that failed, or for a guide that has been updated.
+        const std::wstring refresh = fetching_ ? L"Fetching…" : L"Refresh list";
+        const float refresh_w = ctx.ui.text_width(refresh, Face::Tiny) + 10.0f;
+        ctx.ui.link(Id::CodeRefresh, Rect{right - refresh_w, panel.y + panel.h - 86, refresh_w, 18},
+             refresh, model_.project() != std::nullopt && !fetching_);
+        ctx.painter.text(ctx.ui.elide(note, Face::Small, right - left - refresh_w - 16.0f),
+                      RectF(left, panel.y + panel.h - 84, right - refresh_w - 12.0f,
+                            panel.y + panel.h - 66),
+                      Face::Small, rgb(theme::Muted));
+        const bool staged = codes_.pending() != codes_.enabled() || !edit_.empty();
+        ctx.ui.button(Id::CodeApply,
+               Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
+               L"Apply", true, !busy && model_.project() != std::nullopt && staged);
+}
+
 }  // namespace nla

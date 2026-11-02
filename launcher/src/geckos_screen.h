@@ -58,6 +58,9 @@ class GeckosScreen : public Screen {
     const std::wstring& edit() const { return edit_; }
     bool fetching() const { return fetching_; }
     bool editing() const { return editing_; }
+    // The table as the panel draws it: the rows, the note under them and the buttons. The
+    // frame around it is the window's, because every page over the main one gets the same.
+    void paint_table(const PaintContext& ctx, const Rect& panel, bool busy);
     std::size_t offset() const { return offset_; }
     std::size_t rows_fit() const { return rows_fit_; }
     void set_rows_fit(std::size_t rows) { rows_fit_ = rows; }

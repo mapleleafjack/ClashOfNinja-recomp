@@ -640,4 +640,86 @@ void ModsScreen::activate(Id id) {
     }
 }
 
+void ModsScreen::paint_table(const PaintContext& ctx, const Rect& panel, bool busy) {
+        // One row per mod this disc allows: a folder in mods/, or a disc patch. The checks
+        // are the choice Apply writes; a known mod whose files are not here yet is
+        // downloaded when it is checked.
+        const float left = panel.x + 26;
+        const float right = panel.x + panel.w - 26;
+        const float version_right = right - 150;
+        const float version_left = version_right - 90;
+        float y = panel.y + 60;
+        ctx.painter.text(L"Only mods this disc can play are listed. A disc patch replaces the "
+                      L"whole disc. Apply writes the checks.",
+                      RectF(left, y, right, y + 20), Face::Tiny, rgb(theme::Muted));
+        y += 26;
+        ctx.painter.text(L"On", RectF(left, y, left + 24, y + 16), Face::Tiny,
+                      rgb(theme::Muted));
+        ctx.painter.text(L"Mod", RectF(left + 30, y, version_left - 6, y + 16), Face::Tiny,
+                      rgb(theme::Muted));
+        ctx.painter.text(L"Version", RectF(version_left, y, version_right - 6, y + 16),
+                      Face::Tiny, rgb(theme::Muted), TextAlign::Trailing);
+        ctx.painter.text(L"Author", RectF(version_right, y, right, y + 16), Face::Tiny,
+                      rgb(theme::Muted), TextAlign::Trailing);
+        y += 22;
+        for (size_t i = 0; i < selection_.rows(); ++i) {
+            const ModChoice& entry = selection_.entries()[i];
+            Id id = static_cast<Id>(static_cast<int>(Id::ModRow) + static_cast<int>(i));
+            const bool available = selection_.downloadable(entry.id);
+            std::wstring label = entry.name;
+            if (entry.patch) label += L" · disc patch";
+            else if (!entry.mod.gecko_files.empty()) label += L" · codes";
+            if (!entry.installed) label += L" · download";
+            ctx.ui.checkbox(id, left, y + 6, ctx.ui.elide(label, Face::Small, version_left - left - 30),
+                     selection_.checked(entry.id), !busy && available);
+            ctx.painter.text(ctx.ui.elide(entry.version, Face::Tiny, 84),
+                          RectF(version_left, y + 4, version_right - 6, y + 26), Face::Tiny,
+                          rgb(theme::Muted), TextAlign::Trailing);
+            ctx.painter.text(ctx.ui.elide(entry.author, Face::Tiny, right - version_right),
+                          RectF(version_right, y + 4, right, y + 26), Face::Tiny,
+                          rgb(theme::Muted), TextAlign::Trailing);
+            // The whole row is the checkbox, so a click anywhere on it is the same choice.
+            if (available && !busy) ctx.ui.register_hit(id, Rect{left - 4, y - 4, right - left + 8, 30});
+            y += 34;
+        }
+
+        // What the row under the cursor is, or what the panel will do when Apply is
+        // pressed. The description is here rather than in a column because it is the one
+        // thing about a mod a table cannot keep short.
+        const ModChoice* hovered = nullptr;
+        for (size_t i = 0; i < selection_.rows(); ++i) {
+            if (ctx.ui.hover() == static_cast<Id>(static_cast<int>(Id::ModRow) + static_cast<int>(i)))
+                hovered = &selection_.entries()[i];
+        }
+        const bool staged =
+            selection_.staged();
+        std::wstring note;
+        if (hovered && !hovered->description.empty()) {
+            note = hovered->description;
+        } else if (!note_.empty()) {
+            note = note_;
+        } else if (staged) {
+            note = L"Apply to write these changes to the game.";
+        } else {
+            note = summary();
+        }
+        ctx.painter.text(ctx.ui.elide(note, Face::Small, right - left),
+                      RectF(left, y + 8, right, y + 30), Face::Small, rgb(theme::Muted));
+        if (!patch_note_.empty()) {
+            ctx.painter.text(ctx.ui.elide(patch_note_, Face::Tiny, right - left),
+                          RectF(left, y + 30, right, y + 48), Face::Tiny, rgb(theme::Muted));
+        } else if (selection_.rows() < selection_.entries().size()) {
+            ctx.painter.text(format(L"… and %zu more in the mods folder.",
+                                 selection_.entries().size() - selection_.rows()),
+                          RectF(left, y + 30, right, y + 48), Face::Tiny, rgb(theme::Muted));
+        }
+        ctx.ui.link(Id::ModsFolder, Rect{left, panel.y + panel.h - 84, 160, 18},
+             L"Open the mods folder");
+        ctx.ui.link(Id::ModChoose, Rect{left + 172, panel.y + panel.h - 84, 190, 18},
+             L"Choose a patch file…");
+        ctx.ui.button(Id::ModApply,
+               Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
+               L"Apply", true, !busy && staged);
+}
+
 }  // namespace nla
