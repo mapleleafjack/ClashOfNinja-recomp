@@ -52,18 +52,6 @@ std::vector<std::wstring> list_disc_files(const fs::path& disc_dir) {
     return files;
 }
 
-// A delta in patches/ that a catalog entry names: SCON4-2.1.0.xdelta and scon4.xdelta are
-// both SCON4's. The version is the catalog's business, not the file's, so an older download
-// still counts as the entry being here.
-bool delta_belongs(const std::wstring& id, const std::wstring& name, const fs::path& delta) {
-    const auto file = to_lower(delta.filename().wstring());
-    if (!ends_with_ci(file, L".xdelta")) return false;
-    const auto wanted_id = to_lower(id);
-    const auto wanted_name = to_lower(name);
-    return file == wanted_id + L".xdelta" || file == wanted_name + L".xdelta" ||
-           file.rfind(wanted_name + L"-", 0) == 0;
-}
-
 std::vector<fs::path> list_deltas(const fs::path& dir) {
     std::vector<fs::path> deltas;
     std::error_code ec;
@@ -80,6 +68,15 @@ std::vector<fs::path> list_deltas(const fs::path& dir) {
 }
 
 }  // namespace
+
+bool delta_belongs(const std::wstring& id, const std::wstring& name, const fs::path& delta) {
+    const auto file = to_lower(delta.filename().wstring());
+    if (!ends_with_ci(file, L".xdelta")) return false;
+    const auto wanted_id = to_lower(id);
+    const auto wanted_name = to_lower(name);
+    return file == wanted_id + L".xdelta" || file == wanted_name + L".xdelta" ||
+           file.rfind(wanted_name + L"-", 0) == 0;
+}
 
 bool parse_mod_manifest(const std::wstring& text, ModInfo* info) {
     if (!info) return false;

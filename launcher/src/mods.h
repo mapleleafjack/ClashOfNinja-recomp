@@ -72,6 +72,11 @@ std::vector<ModChoice> collect_mods(const std::vector<CatalogMod>& catalog,
                                     const fs::path& mods_dir, const fs::path& patches_dir,
                                     const std::wstring& disc_id);
 
+// Whether a delta file is the one a mod names: SCON4-2.1.0.xdelta and scon4.xdelta are both
+// SCON4's. The version is the catalog's business, not the file's, so an older download still
+// counts as the mod being here, wherever the delta is kept.
+bool delta_belongs(const std::wstring& id, const std::wstring& name, const fs::path& delta);
+
 // What the Mods panel offers, and what is checked on it.
 //
 // Two sets of ids, and the difference between them is the point: `pending` and

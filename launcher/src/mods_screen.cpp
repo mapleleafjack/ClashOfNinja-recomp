@@ -89,6 +89,11 @@ struct Fetch {
 // beside the games whose mod.txt names it. A mod written for another build is never
 // offered, so nothing lands on addresses it was not written for.
 void ModsScreen::refresh() {
+    // The rows are read from the disk again, but the checks the player has staged are theirs
+    // until Apply writes them: a refresh in between - a download finishing, the folder
+    // changing under the panel - must not silently drop the choice Apply is about to write.
+    const std::vector<std::wstring> staged = selection_.pending();
+    const std::wstring staged_patch = selection_.pending_patch();
     selection_.clear();
 
     // Stand-ins for the renders: the same table and the same picks wherever this is
@@ -168,22 +173,52 @@ void ModsScreen::refresh() {
         }
     }
 
-    if (patch_delta_.empty()) return;
-    for (const auto& entry : selection_.entries()) {
-        if (!entry.patch || !same_path(entry.delta, patch_delta_)) continue;
-        selection_.applied_patch() = entry.id;
-        return;
+    if (!patch_delta_.empty()) {
+        bool matched = false;
+        for (const auto& entry : selection_.entries()) {
+            if (!entry.patch || !same_path(entry.delta, patch_delta_)) continue;
+            selection_.applied_patch() = entry.id;
+            matched = true;
+            break;
+        }
+        // A delta the catalog names is that mod, even when it is kept outside patches/ or is
+        // a different copy from the one there: a copy this install did not write, or the
+        // setting another install of the launcher left behind. It is the entry's own delta,
+        // not a second row beside it.
+        if (!matched) {
+            for (auto& entry : selection_.entries()) {
+                if (!entry.patch) continue;
+                if (!delta_belongs(entry.id, entry.name, patch_delta_)) continue;
+                entry.delta = patch_delta_;
+                entry.installed = true;
+                selection_.applied_patch() = entry.id;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            // A patch chosen earlier and kept elsewhere, whose mod nothing here names, is
+            // still a row, so the table can show what is applied and switch it off.
+            ModChoice local;
+            local.id =
+                unique_mod_id(selection_.entries(), L"patch:" + patch_delta_.filename().wstring());
+            local.name = patch_delta_.stem().wstring();
+            local.patch = true;
+            local.installed = true;
+            local.delta = patch_delta_;
+            selection_.applied_patch() = local.id;
+            selection_.entries().push_back(std::move(local));
+        }
     }
-    // A patch chosen earlier and kept elsewhere is still a row, so the table can show what
-    // is applied and switch it off.
-    ModChoice local;
-    local.id = unique_mod_id(selection_.entries(), L"patch:" + patch_delta_.filename().wstring());
-    local.name = patch_delta_.stem().wstring();
-    local.patch = true;
-    local.installed = true;
-    local.delta = patch_delta_;
-    selection_.applied_patch() = local.id;
-    selection_.entries().push_back(std::move(local));
+
+    // The staged checks, as far as the rebuilt table still has those rows: a mod folder that
+    // was deleted, or a delta that has moved, is no longer something Apply could write.
+    for (const auto& id : staged) {
+        const ModChoice* entry = selection_.find(id);
+        if (entry && !entry->patch) selection_.pending().push_back(id);
+    }
+    if (const ModChoice* entry = selection_.find(staged_patch); entry && entry->patch)
+        selection_.pending_patch() = staged_patch;
 }
 
 std::wstring ModsScreen::summary() const {

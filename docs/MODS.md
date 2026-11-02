@@ -87,13 +87,17 @@ own `mod.txt`, and the catalog only says where a row comes from when its files a
 The **Mods** button beside **Play** opens the table for the game that is selected, and only
 what that game's disc can play is in it: the folders in `mods/` whose `mod.txt` names its ID,
 the disc patches in `patches/` that `mods.json` names for it (a delta no entry names is a row
-of its own), and the known mods in `mods.json` that have not been downloaded. Each row has a
-checkbox;
+of its own), and the known mods in `mods.json` that have not been downloaded. The patch the
+game is played with is always a row, and one the catalog names is that entry wherever its
+delta is kept: a copy outside `patches/`, or the one an earlier install recorded, is shown as
+the entry rather than as a second row beside it. Each row has a checkbox;
 checking a row stages it, and **Apply** is what changes the game:
 
 - A checked mod that is not on this machine yet is downloaded and unpacked into `mods/`
   first, so a row can be chosen from the catalog before it has any files.
-- A checked patch that is not in `patches/` yet is fetched the same way.
+- A checked patch that is not in `patches/` yet is fetched the same way. What is checked
+  stays checked while that download runs, so the **Apply** that fetched it is the one that
+  writes it.
 - Anything unchecked is removed: the overlay and `patch.manifest` are rewritten from the
   table, so a mod or patch that was on and is not checked is off.
 - Closing the panel without Apply writes nothing.

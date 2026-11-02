@@ -85,6 +85,18 @@ fs::path make_project() {
     return root;
 }
 
+// The same folder with the disc the shipped catalog's SCON4 names, so the entry is a row.
+fs::path make_gnt4_project() {
+    const fs::path root = nla::temp_dir() / L"nla-mods-screen-test-gnt4";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / L"gnt4", ec);
+    nla::write_text_file(root / L"gnt4" / L"CMakeLists.txt",
+                         "gcn_add_game(\n  NAME gnt4\n  TITLE \"GNT4\"\n"
+                         "  DISC_ID G4NJDA\n)\n");
+    return root;
+}
+
 void the_ids_it_owns() {
     Panel p;
     check(p.mods.handles(nla::Id::ModRow), "the first mod row");
@@ -213,6 +225,88 @@ void writing_the_overlay() {
     check(p.host.logged.empty(), "a render writes no overlay and says nothing about it");
 }
 
+// A delta the catalog names is that mod, even when it is kept outside this install's
+// patches/: the setting an earlier install left behind must not add a row beside the one
+// the catalog already lists.
+void a_patch_kept_outside_the_install() {
+    Panel p;
+    const fs::path root = make_gnt4_project();
+    std::error_code ec;
+    fs::create_directories(root / L"elsewhere", ec);
+    const fs::path delta = root / L"elsewhere" / L"SCON4-2.1.0.xdelta";
+    nla::write_text_file(delta, "not a real delta; only the name is read here");
+    p.host.state.set_project(root, L"gnt4");
+    p.host.state.settings().patches[L"gnt4"] = delta.wstring();
+
+    p.mods.open();
+    const auto& entries = p.mods.selection().entries();
+    check(entries.size() == 1, "a recorded patch the catalog names is one row, not two");
+    if (entries.size() == 1) {
+        check(entries[0].id == L"scon4", "and it is the catalog's entry");
+        check(entries[0].installed, "read as installed, because the delta it names is here");
+        check(entries[0].delta == delta, "with the delta it was played with");
+        check(p.mods.selection().checked(L"scon4"), "and checked, as what the game plays");
+    }
+    check(p.mods.summary() == L"1 of 1 on.", "so the table is one row, and it is on");
+
+    // A delta nothing names is still a row of its own, with no name, version or author.
+    p.host.state.settings().patches[L"gnt4"] = (root / L"elsewhere" / L"Unknown-1.0.xdelta").wstring();
+    nla::write_text_file(root / L"elsewhere" / L"Unknown-1.0.xdelta", "x");
+    p.mods.open();
+    check(p.mods.selection().entries().size() == 2,
+          "a delta the catalog does not name keeps its own row beside the entry");
+}
+
+// The applied delta may be a different copy from the one in patches/. It is still the same
+// mod, so the table is one row, checked, and the delta the game plays is that copy.
+void an_applied_delta_that_is_another_copy() {
+    Panel p;
+    const fs::path root = make_gnt4_project();
+    std::error_code ec;
+    const fs::path in_patches = root / L"patches" / L"SCON4-2.1.0.xdelta";
+    const fs::path elsewhere = root / L"elsewhere" / L"SCON4-2.1.0.xdelta";
+    fs::create_directories(in_patches.parent_path(), ec);
+    fs::create_directories(elsewhere.parent_path(), ec);
+    nla::write_text_file(in_patches, "the copy patches/ holds");
+    nla::write_text_file(elsewhere, "the copy the game plays");
+    p.host.state.set_project(root, L"gnt4");
+    p.host.state.settings().patches[L"gnt4"] = elsewhere.wstring();
+
+    p.mods.open();
+    const auto& entries = p.mods.selection().entries();
+    check(entries.size() == 1, "one mod played from another copy is still one row");
+    if (entries.size() == 1) {
+        check(entries[0].id == L"scon4", "the catalog's entry");
+        check(entries[0].delta == elsewhere, "showing the copy the game plays");
+        check(p.mods.selection().checked(L"scon4"), "and checked");
+    }
+}
+
+// A refresh re-reads the disk, but the checks the player has staged are still theirs until
+// Apply writes them; one whose row is gone is dropped.
+void a_refresh_keeps_the_staged_checks() {
+    Panel p;
+    const fs::path root = make_project();
+    std::error_code ec;
+    fs::create_directories(root / L"mods" / L"alt-colours", ec);
+    nla::write_text_file(root / L"mods" / L"alt-colours" / L"mod.txt",
+                         "name=Alternate Colours\ndisc_id=ZZZZZZ\n");
+    p.host.state.set_project(root, L"naruto");
+
+    p.mods.open();
+    p.mods.toggle(L"alt-colours");
+    check(p.mods.selection().checked(L"alt-colours"), "a check is staged");
+
+    p.mods.refresh();
+    check(p.mods.selection().checked(L"alt-colours"),
+          "and a refresh in between does not drop it");
+    check(p.mods.selection().staged(), "so Apply still has something to write");
+
+    fs::remove_all(root / L"mods" / L"alt-colours", ec);
+    p.mods.refresh();
+    check(!p.mods.selection().staged(), "a check whose row went away is dropped");
+}
+
 int run() {
     the_ids_it_owns();
     the_stand_in_table();
@@ -222,6 +316,9 @@ int run() {
     the_summary();
     staging_a_patch();
     writing_the_overlay();
+    a_patch_kept_outside_the_install();
+    an_applied_delta_that_is_another_copy();
+    a_refresh_keeps_the_staged_checks();
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;
 }
