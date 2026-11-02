@@ -144,9 +144,6 @@ class App {
     // What this disc offers and what settings has switched on, read back from disk.
     void refresh_geckos();
     void toggle_code(const std::wstring& name);
-    bool code_checked(const std::wstring& name) const;
-    std::size_t code_rows() const;
-    const CodeEntry* find_code(const std::wstring& name) const;
     // Reads the box, adds what can run, then writes the checks and the program.
     void apply_geckos();
     // Fetches the guide's answer for this disc into geckos/online/, without blocking the
@@ -276,12 +273,8 @@ class App {
     std::wstring patch_note_;
 
 
-    // The Geckos table. `code_entries_` is every code this disc offers; `pending_codes_` is
-    // the staged choice the panel shows, and `enabled_codes_` is what has been written. The
-    // order is the order they were switched on, so a later code wins at a shared address.
-    std::vector<CodeEntry> code_entries_;
-    std::vector<std::wstring> enabled_codes_;
-    std::vector<std::wstring> pending_codes_;
+    // The Geckos table: every code this disc offers, and what is written against what is staged.
+    CodeSelection codes_;
     // How many rows the panel has room for at this window size. The panel is a list of
     // unknown length rather than a fixed one, so the count comes from the height it is
     // drawn in: a short window shows fewer rows instead of a panel taller than the window.

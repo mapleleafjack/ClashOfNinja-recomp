@@ -16,42 +16,41 @@
 namespace nla {
 
 void App::refresh_geckos() {
-    code_entries_.clear();
-    enabled_codes_.clear();
+    codes_.clear();
     online_label_.clear();
 
     // Stand-ins for the renders: the same list and the same picks wherever this is checked,
     // so the drawing does not depend on a machine's disk or network.
     if (rendering_) {
-        code_entries_.push_back(
+        codes_.entries().push_back(
             {L"Infinite Time [Ralf]", L"040374B8 60000000\n", false, true, 1, {}});
-        code_entries_.push_back(
+        codes_.entries().push_back(
             {L"Unlock Everything [Nick]", L"02223258 0017FFFF\n042232E8 0001FF03\n", false,
              true, 2, {}});
-        code_entries_.push_back({L"Skip Three Intro Videos [Nick]",
+        codes_.entries().push_back({L"Skip Three Intro Videos [Nick]",
                                  L"0400CB14 60000000\n0400CB28 60000000\n0400CB3C 60000000\n",
                                  false, true, 3, {}});
-        code_entries_.push_back(
+        codes_.entries().push_back(
             {L"Default Round Time [Ralf]", L"042232E8 0001FF03\n", true, true, 1, {}});
         // The one the panel has to show as present but unusable: a code this recompiler
         // cannot run, because it inserts instructions where a recompiled game has none.
-        code_entries_.push_back(
+        codes_.entries().push_back(
             {L"Enable DPad During Fights [Ralf]",
              L"C200E51C 00000002\n80030000 540007BD\n60000000 00000000\n", true, false, 0,
              L"an inserted assembly block needs a PowerPC core, which a recompiled game has "
              L"not at run time"});
-        enabled_codes_.push_back(L"Infinite Time [Ralf]");
+        codes_.enabled().push_back(L"Infinite Time [Ralf]");
         online_label_ = L"GNT4";
         return;
     }
 
     if (!project_) return;
     const std::wstring disc_id = project_->disc_id();
-    code_entries_ = read_codes(project_->root(), disc_id);
+    codes_.entries() = read_codes(project_->root(), disc_id);
 
     CodeSource source;
     const bool has_guide = online_code_source(disc_id, &source);
-    for (const auto& entry : code_entries_) {
+    for (const auto& entry : codes_.entries()) {
         if (!entry.online) continue;
         online_label_ = source.label;
         break;
@@ -76,27 +75,12 @@ void App::refresh_geckos() {
     auto saved = settings_.codes.find(project_->game());
     if (saved == settings_.codes.end()) return;
     for (const auto& name : saved->second) {
-        for (const auto& entry : code_entries_) {
+        for (const auto& entry : codes_.entries()) {
             if (entry.name != name) continue;
-            enabled_codes_.push_back(name);
+            codes_.enabled().push_back(name);
             break;
         }
     }
-}
-
-std::size_t App::code_rows() const {
-    return std::min<std::size_t>(code_rows_fit_, code_entries_.size());
-}
-
-const CodeEntry* App::find_code(const std::wstring& name) const {
-    for (const auto& entry : code_entries_) {
-        if (entry.name == name) return &entry;
-    }
-    return nullptr;
-}
-
-bool App::code_checked(const std::wstring& name) const {
-    return std::find(pending_codes_.begin(), pending_codes_.end(), name) != pending_codes_.end();
 }
 
 void App::open_geckos() {
@@ -107,13 +91,13 @@ void App::open_geckos() {
         codes_fetch_failed_ = false;
     }
     refresh_geckos();
-    pending_codes_ = enabled_codes_;
+    codes_.take_from_written();
     codes_note_.clear();
     gecko_edit_.clear();
     gecko_editing_ = false;
     code_offset_ = 0;
     window_.set_text_input(false);
-    if (code_entries_.empty() && !rendering_) {
+    if (codes_.entries().empty() && !rendering_) {
         CodeSource source;
         if (!project_) {
             codes_note_ = L"Set up the game folder first: the codes are kept beside it.";
@@ -138,22 +122,14 @@ void App::open_geckos() {
 }
 
 void App::toggle_code(const std::wstring& name) {
-    const CodeEntry* entry = find_code(name);
-    if (!entry) return;
-    // A code this recompiler cannot run would be a check that changes nothing, so it is
-    // listed to be read and not switched on, the way a mod with no files cannot be.
-    if (!entry->runnable) {
+    // A code this recompiler cannot run is listed to be read, not switched on: it would be a
+    // check that changes nothing, the way a mod with no files cannot be applied.
+    if (!codes_.toggle(name)) {
         codes_note_ = format(L"%ls needs instructions this game cannot run, so it cannot be "
                             L"switched on.",
                             name.c_str());
         invalidate();
         return;
-    }
-    auto found = std::find(pending_codes_.begin(), pending_codes_.end(), name);
-    if (found == pending_codes_.end()) {
-        pending_codes_.push_back(name);
-    } else {
-        pending_codes_.erase(found);
     }
     codes_note_.clear();
     invalidate();
@@ -161,9 +137,9 @@ void App::toggle_code(const std::wstring& name) {
 
 std::vector<CodeEntry> App::enabled_code_entries() const {
     std::vector<CodeEntry> chosen;
-    if (!project_ || rendering_ || enabled_codes_.empty()) return chosen;
+    if (!project_ || rendering_ || codes_.enabled().empty()) return chosen;
     const auto mine = read_codes(project_->root(), project_->disc_id());
-    for (const auto& name : enabled_codes_) {
+    for (const auto& name : codes_.enabled()) {
         for (const auto& entry : mine) {
             if (entry.name != name) continue;
             chosen.push_back(entry);
@@ -198,7 +174,7 @@ void App::apply_geckos() {
                 break;
             }
             if (!replaced) mine.push_back(code);
-            if (!code_checked(code.name)) pending_codes_.push_back(code.name);
+            if (!codes_.checked(code.name)) codes_.pending().push_back(code.name);
         }
         if (!write_code_file(path, mine)) {
             codes_note_ = L"The codes could not be written to geckos/.";
@@ -210,11 +186,11 @@ void App::apply_geckos() {
         gecko_edit_.clear();
     }
 
-    enabled_codes_ = pending_codes_;
-    if (enabled_codes_.empty()) {
+    codes_.commit();
+    if (codes_.enabled().empty()) {
         settings_.codes.erase(project_->game());
     } else {
-        settings_.codes[project_->game()] = enabled_codes_;
+        settings_.codes[project_->game()] = codes_.enabled();
     }
     save_settings();
 
@@ -223,7 +199,7 @@ void App::apply_geckos() {
     // refresh() reads the disk back and writes the program, so the panel shows the state
     // the runtime will.
     refresh();
-    pending_codes_ = enabled_codes_;
+    codes_.take_from_written();
 
     if (!pasted.empty()) {
         codes_note_ = format(L"Added %zu code(s). Applied: the game reads this the next time "

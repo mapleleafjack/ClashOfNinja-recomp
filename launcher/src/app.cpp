@@ -215,9 +215,9 @@ void App::handle_event(const SDL_Event& event) {
             } else if (overlay_.is(OverlayPage::Geckos)) {
                 // The guide's list is longer than the panel: the wheel is how the rest of
                 // it is reached.
-                const std::size_t rows = code_rows();
+                const std::size_t rows = codes_.rows(code_rows_fit_);
                 const std::size_t most =
-                    code_entries_.size() > rows ? code_entries_.size() - rows : 0;
+                    codes_.entries().size() > rows ? codes_.entries().size() - rows : 0;
                 const long wanted = static_cast<long>(code_offset_) -
                                     static_cast<long>(event.wheel.y) * 3;
                 code_offset_ = static_cast<std::size_t>(
@@ -462,8 +462,8 @@ void App::activate(Id id) {
     if (overlay_.is(OverlayPage::Geckos)) {
         const int row = static_cast<int>(id) - static_cast<int>(Id::CodeRow);
         if (id >= Id::CodeRow && id < Id::CodeRowEnd && row >= 0 &&
-            row < static_cast<int>(code_rows())) {
-            toggle_code(code_entries_[code_offset_ + static_cast<size_t>(row)].name);
+            row < static_cast<int>(codes_.rows(code_rows_fit_))) {
+            toggle_code(codes_.entries()[code_offset_ + static_cast<size_t>(row)].name);
             return;
         }
         switch (id) {

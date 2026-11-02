@@ -354,4 +354,46 @@ std::vector<CodeEntry> parse_online_codes(const std::wstring& markdown) {
     return codes;
 }
 
+void CodeSelection::clear() {
+    entries_.clear();
+    enabled_.clear();
+    pending_.clear();
+}
+
+void CodeSelection::take_from_written() { pending_ = enabled_; }
+
+void CodeSelection::commit() { enabled_ = pending_; }
+
+const CodeEntry* CodeSelection::find(const std::wstring& name) const {
+    for (const auto& entry : entries_) {
+        if (entry.name == name) return &entry;
+    }
+    return nullptr;
+}
+
+bool CodeSelection::checked(const std::wstring& name) const {
+    return std::find(pending_.begin(), pending_.end(), name) != pending_.end();
+}
+
+bool CodeSelection::runnable(const std::wstring& name) const {
+    const CodeEntry* entry = find(name);
+    return entry && entry->runnable;
+}
+
+std::size_t CodeSelection::rows(std::size_t fit) const {
+    return std::min(fit, entries_.size());
+}
+
+bool CodeSelection::toggle(const std::wstring& name) {
+    const CodeEntry* entry = find(name);
+    if (!entry || !entry->runnable) return false;
+    auto found = std::find(pending_.begin(), pending_.end(), name);
+    if (found == pending_.end()) {
+        pending_.push_back(name);
+    } else {
+        pending_.erase(found);
+    }
+    return true;
+}
+
 }  // namespace nla

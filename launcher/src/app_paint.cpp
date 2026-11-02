@@ -1135,7 +1135,7 @@ void App::paint_overlay() {
                     : overlay_.is(OverlayPage::Mods)
                         ? 250.0f + 34.0f * static_cast<float>(mods_.rows())
                     : overlay_.is(OverlayPage::Geckos)
-                        ? 308.0f + 22.0f * static_cast<float>(code_rows())
+                        ? 308.0f + 22.0f * static_cast<float>(codes_.rows(code_rows_fit_))
                         : std::clamp(60.0f + message_lines * painter_.line_height(Face::Body) +
                                          16.0f + 56.0f + 24.0f,
                                      220.0f, height_ - 80.0f);
@@ -1290,12 +1290,12 @@ void App::paint_overlay() {
                       rgb(theme::Muted), TextAlign::Trailing);
         y += 20;
 
-        const std::size_t rows = code_rows();
-        if (rows > 0 && code_offset_ + rows > code_entries_.size())
-            code_offset_ = code_entries_.size() - rows;
+        const std::size_t rows = codes_.rows(code_rows_fit_);
+        if (rows > 0 && code_offset_ + rows > codes_.entries().size())
+            code_offset_ = codes_.entries().size() - rows;
         if (rows == 0) code_offset_ = 0;
         for (std::size_t i = 0; i < rows; ++i) {
-            const CodeEntry& entry = code_entries_[code_offset_ + i];
+            const CodeEntry& entry = codes_.entries()[code_offset_ + i];
             Id id = static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i));
             const bool usable = entry.runnable && !busy_;
             // A code this recompiler cannot run is listed so it can be read, and says so in
@@ -1303,7 +1303,7 @@ void App::paint_overlay() {
             std::wstring label = entry.name;
             if (!entry.runnable) label += L" · can't run here";
             ui_.checkbox(id, left, y + 3, ui_.elide(label, Face::Small, source_left - left - 30),
-                     code_checked(entry.name), usable);
+                     codes_.checked(entry.name), usable);
             painter_.text(entry.online ? L"guide" : L"yours",
                           RectF(source_left, y + 3, source_right, y + 19), Face::Tiny,
                           entry.runnable ? rgb(theme::Muted) : rgb(0x69707d),
@@ -1319,7 +1319,7 @@ void App::paint_overlay() {
                 if (ui_.hover() !=
                     static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i)))
                     continue;
-                const CodeEntry& entry = code_entries_[code_offset_ + i];
+                const CodeEntry& entry = codes_.entries()[code_offset_ + i];
                 if (!entry.runnable) {
                     note = entry.warning.empty()
                                ? std::wstring(L"This code does nothing this game can run.")
@@ -1331,14 +1331,14 @@ void App::paint_overlay() {
             }
         }
         if (note.empty()) {
-            const bool staged = pending_codes_ != enabled_codes_;
+            const bool staged = codes_.staged();
             note = staged ? L"Apply to write these changes to the game."
-                          : format(L"%zu code(s) on for this game.", enabled_codes_.size());
+                          : format(L"%zu code(s) on for this game.", codes_.enabled().size());
         }
-        if (code_entries_.size() > rows && codes_note_.empty() && ui_.hover() == Id::None) {
+        if (codes_.entries().size() > rows && codes_note_.empty() && ui_.hover() == Id::None) {
             // A list longer than the panel says so, because the wheel is the only sign of it.
             note = format(L"%zu codes; scroll for the rest. %zu on for this game.",
-                          code_entries_.size(), enabled_codes_.size());
+                          codes_.entries().size(), codes_.enabled().size());
         }
 
         // The box a block pasted from an editor goes into, and what that block becomes.
@@ -1379,7 +1379,7 @@ void App::paint_overlay() {
                       RectF(left, panel.y + panel.h - 84, right - refresh_w - 12.0f,
                             panel.y + panel.h - 66),
                       Face::Small, rgb(theme::Muted));
-        const bool staged = pending_codes_ != enabled_codes_ || !gecko_edit_.empty();
+        const bool staged = codes_.pending() != codes_.enabled() || !gecko_edit_.empty();
         ui_.button(Id::CodeApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && project_ != std::nullopt && staged);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -22,6 +24,43 @@ struct CodeEntry {
     std::size_t ops = 0;
     // Why a code cannot run here, in the parser's own words, so the panel can say it.
     std::wstring warning;
+};
+
+// What the Geckos panel offers, and what is checked on it.
+//
+// `pending` is the check the panel is showing and `enabled` is what has been written; Apply
+// is the step between them. The order is the order they were switched on, so a later code
+// wins at a shared address.
+class CodeSelection {
+  public:
+    std::vector<CodeEntry>& entries() { return entries_; }
+    const std::vector<CodeEntry>& entries() const { return entries_; }
+    std::vector<std::wstring>& enabled() { return enabled_; }
+    const std::vector<std::wstring>& enabled() const { return enabled_; }
+    std::vector<std::wstring>& pending() { return pending_; }
+    const std::vector<std::wstring>& pending() const { return pending_; }
+
+    void clear();
+    // The panel is opened: it shows what is written, so nothing reads as changed.
+    void take_from_written();
+    // Apply wrote it, so what was staged is now what the game reads.
+    void commit();
+    bool staged() const { return pending_ != enabled_; }
+
+    const CodeEntry* find(const std::wstring& name) const;
+    bool checked(const std::wstring& name) const;
+    // A code this recompiler cannot run is listed to be read, not switched on: it would be a
+    // check that changes nothing. The panel says why, in its own note.
+    bool runnable(const std::wstring& name) const;
+    // The rows the panel draws, of the ones that fit.
+    std::size_t rows(std::size_t fit) const;
+    // Flips a code's check. False when the code cannot be switched on here.
+    bool toggle(const std::wstring& name);
+
+  private:
+    std::vector<CodeEntry> entries_;
+    std::vector<std::wstring> enabled_;
+    std::vector<std::wstring> pending_;
 };
 
 // Where a disc's codes live: geckos/<DISCID>.txt beside the games, and the guide's answer
