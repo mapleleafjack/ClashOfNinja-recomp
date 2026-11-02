@@ -1298,6 +1298,13 @@ void App::refresh() {
 
 void App::write_game_entry() {
     if (!project_ || headless_) return;
+#if defined(__APPLE__)
+    // A macOS entry would be a symlink, and a symlink cannot carry the arguments play()
+    // passes -- so it would start the game with defaults and ignore the settings -- and a
+    // link to the bare game binary is not something Finder launches. A Mac starts a game
+    // from the launcher's own window instead.
+    return;
+#endif
     // The arguments mirror play()'s, but they are frozen into the entry, so a change to
     // any of them has to rewrite it: the settings are part of the key.
     std::wstring key = project_->game() + L"|" + std::to_wstring(settings_.scale) + L"|" +
@@ -1316,12 +1323,14 @@ void App::write_game_entry() {
     args.push_back(L"--controls=" + project_->controls().wstring());
     std::wstring error;
     fs::path link = folder / game_entry_name(project_->game());
+    // Recorded before the attempt, so a folder that cannot be written to is reported once
+    // instead of on every refresh until the settings change again.
+    game_entry_for_ = key;
     if (!create_shortcut(link, project_->binary(), project_->game_dir(), project_->title(),
                          L"Starts " + project_->title(), args, &error)) {
         append_log(L"[launcher] the menu entry was not written: " + error + L"\n");
         return;
     }
-    game_entry_for_ = key;
     append_log(format(L"[launcher] menu entry: %ls\n", link.c_str()));
 }
 

@@ -498,8 +498,14 @@ function(gcn_add_game)
     # telemetry's socket.
     list(APPEND GCN_PLATFORM_LIBS opengl32 dbghelp ws2_32)
   else()
-    find_package(OpenGL REQUIRED)
-    list(APPEND GCN_PLATFORM_LIBS OpenGL::GL)
+    # Every GL entry point comes from glad, resolved through SDL_GL_GetProcAddress at run
+    # time, so nothing of ours names a GL symbol and libGL does not have to be linked. It
+    # is linked where it is installed, which keeps a machine without Mesa's development
+    # package -- a Steam Deck, whose SteamOS has no such thing -- able to build the game.
+    find_package(OpenGL QUIET)
+    if(OpenGL_FOUND)
+      list(APPEND GCN_PLATFORM_LIBS OpenGL::GL)
+    endif()
   endif()
 
   # What the runtime knows about the game it was built for. The image, the label and the
