@@ -1298,6 +1298,13 @@ void App::refresh() {
 
 void App::write_game_entry() {
     if (!project_ || headless_) return;
+#if defined(__APPLE__)
+    // A macOS entry would be a symlink, and a symlink cannot carry the arguments play()
+    // passes -- so it would start the game with defaults and ignore the settings -- and a
+    // link to the bare game binary is not something Finder launches. A Mac starts a game
+    // from the launcher's own window instead.
+    return;
+#endif
     // The arguments mirror play()'s, but they are frozen into the entry, so a change to
     // any of them has to rewrite it: the settings are part of the key.
     std::wstring key = project_->game() + L"|" + std::to_wstring(settings_.scale) + L"|" +
