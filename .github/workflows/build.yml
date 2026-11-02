@@ -1,7 +1,7 @@
 name: Build
 
 # A tag publishes a release; every other event is a build check. The game itself cannot
-# be built here — it needs the user's own disc image — so only the launcher is built, and
+# be built here â€” it needs the user's own disc image â€” so only the launcher is built, and
 # only the launcher's windowless render tests run. `tools/check_publish.py` is the guard
 # that nothing derived from the disc is in the tree being built.
 
@@ -70,8 +70,8 @@ jobs:
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
-        # update_test is a ctest case of its own, so it has to exist before ctest runs.
-        run: ninja -C launcher/build-ci NarutoLauncher update_test
+        # The tests are ctest cases of their own, so they have to exist before ctest runs.
+        run: ninja -C launcher/build-ci NarutoLauncher update_test mods_test gecko_test project_test boot_test
 
       - name: Test
         run: ctest --test-dir launcher/build-ci --output-on-failure
@@ -143,6 +143,8 @@ jobs:
           cp -R gcn-recomp "$res/gcn-recomp"
           mkdir -p "$res/tools"
           cp tools/extract_disc.py tools/setup.sh "$res/tools/"
+          # The mods the launcher knows before any is downloaded, and where each comes from.
+          cp launcher/mods.json "$res/mods.json"
 
       - name: The bundled tools run
         shell: bash
@@ -155,6 +157,7 @@ jobs:
           test -f "$res/tools/sdl2/lib/cmake/SDL2/SDL2Config.cmake"
           test -f "$res/gcn-recomp/CMakeLists.txt"
           test -f "$res/tools/extract_disc.py"
+          test -f "$res/mods.json"
           test ! -e "$res/project"
 
       - name: Sign ad hoc and package
@@ -235,8 +238,8 @@ jobs:
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
 
       - name: Build
-        # update_test is a ctest case of its own, so it has to exist before ctest runs.
-        run: ninja -C launcher/build-ci NarutoLauncher update_test
+        # The tests are ctest cases of their own, so they have to exist before ctest runs.
+        run: ninja -C launcher/build-ci NarutoLauncher update_test mods_test gecko_test project_test boot_test
 
       - name: Test
         # The render and click cases draw a frame, so they need a display. Xvfb gives them
@@ -262,6 +265,7 @@ jobs:
           stage="launcher/build-ci/package/NarutoLauncher Linux ${version}"
           mkdir -p "$stage"
           cp launcher/build-ci/NarutoLauncher "$stage/"
+          cp launcher/mods.json "$stage/"
           cp LICENSE THIRD-PARTY-NOTICES.md "$stage/"
           cp -R licenses "$stage/licenses"
           tar -cJf "launcher/build-ci/NarutoLauncher-Linux-x64-v${version}.tar.xz" \
@@ -363,7 +367,7 @@ jobs:
           -DNLA_TOOLS_BYTES="${{ env.NLA_TOOLS_BYTES }}"
 
       - name: Build
-        run: ninja -C launcher/build-release NarutoLauncher update_test
+        run: ninja -C launcher/build-release NarutoLauncher update_test mods_test gecko_test project_test boot_test
 
       - name: Test
         run: ctest --test-dir launcher/build-release --output-on-failure
@@ -425,7 +429,7 @@ jobs:
           # launcher writes them into the folder a player chooses, and dtk makes each one's
           # symbol map from that player's own disc, so nothing derived from a disc is here.
           $out = Join-Path 'launcher/dist' 'NarutoLauncher'
-          foreach ($needed in 'NarutoLauncher.exe', 'gcn-recomp\CMakeLists.txt',
+          foreach ($needed in 'NarutoLauncher.exe', 'mods.json', 'gcn-recomp\CMakeLists.txt',
                              'tools\extract_disc.py', 'tools\setup.sh') {
             if (-not (Test-Path (Join-Path $out $needed))) {
               throw "the release is missing $needed"

@@ -79,6 +79,13 @@ DialogAnswer show_native_dialog(DialogKind kind, SDL_Window* parent,
         };
         dialog->SetFileTypes(2, images);
         dialog->SetFileTypeIndex(1);
+    } else if (kind == DialogKind::Patch) {
+        static const COMDLG_FILTERSPEC patches[] = {
+            {L"Disc patches", L"*.xdelta;*.vcdiff;*.xdelta3"},
+            {L"All files", L"*.*"},
+        };
+        dialog->SetFileTypes(2, patches);
+        dialog->SetFileTypeIndex(1);
     }
 
     fs::path folder;
@@ -226,7 +233,9 @@ DialogAnswer show_native_dialog(DialogKind kind, SDL_Window*, const std::wstring
     } else {
         argv.push_back("--getopenfilename");
         argv.push_back(start_argument(start));
-        argv.push_back("*.iso *.ciso *.rvz *.wia *.gcz *.wbfs *.tgc *.nfs|Disc images");
+        argv.push_back(kind == DialogKind::Patch
+                           ? "*.xdelta *.vcdiff *.xdelta3|Disc patches"
+                           : "*.iso *.ciso *.rvz *.wia *.gcz *.wbfs *.tgc *.nfs|Disc images");
     }
     return from_capture(run_capture(argv));
 }

@@ -25,9 +25,18 @@ bool has_game(const fs::path& root, const std::wstring& folder) {
     return fs::is_regular_file(root / folder / L"CMakeLists.txt", ec);
 }
 
-// The game the project supplies, preferring the one asked for.
+bool is_known_game(const std::wstring& folder) {
+    for (const auto& game : kGames) {
+        if (game.folder == folder) return true;
+    }
+    return false;
+}
+
+// The game the project supplies, preferring the one asked for. A game the launcher knows is
+// the game asked for even before its folder is written: its folder is written as it is
+// chosen, and answering with another game would leave the player on that one instead.
 std::wstring pick_game(const fs::path& root, const std::wstring& wanted) {
-    if (!wanted.empty() && has_game(root, wanted)) return wanted;
+    if (!wanted.empty() && (is_known_game(wanted) || has_game(root, wanted))) return wanted;
     for (const auto& game : kGames) {
         if (has_game(root, game.folder)) return game.folder;
     }
@@ -145,10 +154,14 @@ fs::path Project::build_dir() const { return game_dir() / L"build"; }
 fs::path Project::binary() const {
     return build_dir() / (game_ + exe_suffix());
 }
+fs::path Project::code_stamp() const { return build_dir() / L"mods-code.stamp"; }
 fs::path Project::controls() const { return game_dir() / L"controls.txt"; }
 fs::path Project::saves() const { return game_dir() / L"saves"; }
 fs::path Project::extract_script() const { return root_ / L"tools" / L"extract_disc.py"; }
 fs::path Project::cmake_lists() const { return game_dir() / L"CMakeLists.txt"; }
+// The mods are the launcher's, not a game's: one folder each, beside the games, and a mod
+// names the discs it may be used with.
+fs::path Project::mods_dir() const { return root_ / L"mods"; }
 fs::path Project::analysis_symbols() const {
     return game_dir() / L"analysis" / L"symbols.txt";
 }
@@ -215,6 +228,9 @@ bool Project::create(const fs::path& root, std::wstring* error) {
                     L"package, not just the executable.");
     }
     fs::create_directories(root / L"tools", ec);
+    // The mods the launcher offers are folders here, beside the games: one disc tree each
+    // that the runtime serves in place of files on the user's own disc.
+    fs::create_directories(root / L"mods", ec);
     for (const wchar_t* name : {L"extract_disc.py", L"setup.sh"}) {
         if (!fs::is_regular_file(tools / name, ec)) continue;
         if (fs::exists(root / L"tools" / name, ec)) continue;
@@ -261,6 +277,11 @@ ProjectStatus Project::status() const {
     status.disc = disc_status();
     std::error_code ec;
     status.built = fs::is_regular_file(binary(), ec);
+    // The mods' instruction words are compiled in, so a game built before they changed is
+    // not the game the launcher is showing. Switching the last code mod off is a change
+    // too: the binary still carries its words until it is built again.
+    if (status.built) status.stale_code = read_text_file(code_stamp()) !=
+                                          read_text_file(disc() / L"mods.code");
     return status;
 }
 

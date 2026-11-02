@@ -28,7 +28,7 @@ gh workflow run build.yml -f bundle=true     # exercise the bundle without a rel
 | Asset | Holds |
 | --- | --- |
 | `NarutoLauncher-macOS-arm64-v<version>.zip` | the `.app`, with the build tools and the recompiler inside, plus the notices |
-| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, `gcn-recomp\`, `tools\extract_disc.py` and the notices; no game folder |
+| `NarutoLauncher-Windows-x64-v<version>.zip` | the launcher, `mods.json`, `gcn-recomp\`, `tools\extract_disc.py` and the notices; no game folder |
 | `NarutoLauncher-tools-windows-x64-v<version>.zip` | the toolchain the launcher downloads on first use |
 
 The tag also names the version: the workflow passes it as `NLA_VERSION`, which becomes the
@@ -60,7 +60,8 @@ powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -S
 powershell -ExecutionPolicy Bypass -File launcher\packaging\build-release.ps1 -Lean -SkipBuild -Zip -Version 1.0.1
 ```
 
-Both forms carry the same launcher folder: `NarutoLauncher.exe`, `gcn-recomp\` (the project's
+Both forms carry the same launcher folder: `NarutoLauncher.exe`, `mods.json` (the mods the
+launcher can offer before they are downloaded), `gcn-recomp\` (the project's
 own recompiler, which every game project adds), `tools\extract_disc.py` and
 `tools\setup.sh`, `covers\` if the machine had any, and the notices. There is no game folder:
 the launcher writes `naruto\`, `naruto2\`, `gnt3\`, `gnt4\` and `narutoeu\` into the folder it

@@ -13,7 +13,9 @@
 #include <SDL.h>
 
 #include "painter.h"
+#include "catalog.h"
 #include "jobs.h"
+#include "mods.h"
 #include "project.h"
 #include "settings.h"
 #include "tools.h"
@@ -21,6 +23,9 @@
 #include "window.h"
 
 namespace nla {
+
+// The console's four controller sockets: the pads a game polls for players.
+constexpr int kPads = 4;
 
 struct Rect {
     float x = 0, y = 0, w = 0, h = 0;
@@ -54,18 +59,28 @@ enum class Id {
     Scale4,
     SettingsPlayers,
     SettingsRefreshDevices,
-    PadRow,                       // a player row in Settings: +0 the keyboard, then the controllers
-    PadRowEnd = PadRow + 8,
-    PadOption,                    // the pads a row may be set to: +0 Automatic, then 1 to 4
-    PadOptionEnd = PadOption + 8,
+    ModsFolder,
+    ModRow,  // a mod in the Mods table; the rest follow it
+    ModRowEnd = ModRow + 12,
+    ModApply,   // download what is missing and write the checked mods
+    ModChoose,  // add a disc patch from this machine to the table
+    PadRow,                       // a player row in the Players panel: +0 Player 1, then 2 to 4
+    PadRowEnd = PadRow + 4,
+    PadOption,                    // what a player row offers: +0 Not set, +1 the keyboard, then
+                                  // the controllers
+    PadOptionEnd = PadOption + 20,
     OverlayAction,
     OverlayCancel,
     PickerUp,
     PickerPath,
     PickerAccept,
     PickerCancel,
-    PickerEntry,  // the first entry row; the rest follow it
+    Play,         // start the game the page has selected
+    Mods,         // change what that game plays
+    // Ranges whose ids are computed as base + index must come last, so nothing follows them.
     GameCover,    // the first game's cover on the main page; the rest follow it
+    GameCoverEnd = GameCover + 32,
+    PickerEntry,  // the first entry row; the rest follow it
 };
 
 class App {
@@ -102,7 +117,7 @@ class App {
         std::vector<std::uint32_t> pixels;
     };
     enum class Pill { Muted, Ok, Warn, Bad };
-    enum class PickerKind { None, Folder, Image };
+    enum class PickerKind { None, Folder, Image, Patch };
     // What came of looking for a newer release.
     enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
 
@@ -129,8 +144,10 @@ class App {
     void checkbox(Id id, float x, float y, const std::wstring& label, bool checked,
                   bool enabled = true);
     void scale_combo(Id id, const Rect& rect, bool enabled);
-    // A row in Settings: a name on the left, the pad it plays as on the right.
-    void pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled);
+    // A row in the Players panel: the player on the left, the device playing as it on the
+    // right. An empty row's value is the muted "Not set".
+    void pad_combo(Id id, const Rect& rect, const std::wstring& value, bool enabled,
+                   bool empty);
     void pill(const Rect& rect, const std::wstring& text, Pill state);
     void card_box(const Rect& rect);
 
@@ -173,8 +190,48 @@ class App {
     // The controllers the game would see, and the pads they play as, from the game's
     // --list-devices. Row 0 is the keyboard.
     void open_players();
+    // The Mods panel: the mods this game's disc allows, from `mods.json` and the folders
+    // beside the games, with the ones that will be written when Apply is pressed.
+    void open_mods();
+    // The mods this disc allows and their state on disk, plus what is applied from settings.
+    void refresh_mods();
+    // Checks or unchecks a row. Nothing is written until apply_mods(): closing the panel
+    // without it leaves the game as it was.
+    void toggle_mod(const std::wstring& id);
+    bool mod_checked(const std::wstring& id) const;
+    // Whether a row can be applied at all: its files are here, or the catalog says where
+    // to get them.
+    bool mod_downloadable(const std::wstring& id) const;
+    std::wstring mods_summary() const;
+    // How many mod rows the panel draws, so a folder with a dozen mods still opens.
+    std::size_t mod_rows() const;
+    const ModChoice* find_mod(const std::wstring& id) const;
+    // Fetches the checked mods this machine does not have, then writes the overlay and
+    // the patch the runtime reads.
+    void apply_mods();
+    void apply_mods_now();
+    void commit_mods(const fs::path& delta, const PatchFit& fit);
+    void download_mods(const std::vector<std::wstring>& ids);
+    // Lays the applied mods' files over the extracted disc, as the list the runtime reads.
+    void write_mod_overlay();
+    // The disc patch this game is played with: what the tree carries, else what was chosen.
+    void refresh_patch();
+    void choose_patch();
+    // Adds a delta from this machine to the table, checked, without applying it.
+    void stage_patch(const fs::path& delta);
     void refresh_devices();
     void write_pad_pins();
+    // The pad each controller plays as: the pins first, then the pads still free.
+    std::vector<int> resolved_pads() const;
+    // The device that plays as a player, as the game works it out. -1 is the keyboard, or
+    // nothing when the player has no device.
+    int player_device(int player) const;
+    bool player_is_keyboard(int player) const;
+    std::wstring player_device_label(int player) const;
+    // What a player row offers: Not set, the keyboard, then each controller.
+    std::vector<std::wstring> pad_options() const;
+    // Picks a row's device: it takes the pad from whatever was on it.
+    void assign_player(int player, int choice);
     void activate(Id id);
     bool modal_active() const { return settings_open_ || overlay_open_ || picker_ != PickerKind::None; }
 
@@ -248,6 +305,11 @@ class App {
     bool quit_ = false;
     bool job_exits_ = false;
     bool job_then_launch_ = false;
+    // The job in flight is a build, so what it compiled in is recorded when it succeeds.
+    bool job_build_ = false;
+    // A mod download or patch check says why it failed in its own panel, so the generic
+    // "the step did not finish" prompt would only close that panel as it appeared.
+    bool job_quiet_ = false;
     std::function<void(int)> job_done_;
     bool launch_wanted_ = false;
     int progress_ = -1;
@@ -272,9 +334,31 @@ class App {
     std::vector<DeviceRow> devices_;
     std::wstring devices_note_;  // why the list is empty, when it is
     int keyboard_pad_ = 1;
-    int pad_menu_row_ = -1;  // the row whose menu is open, -1 for none
+    int pad_menu_row_ = -1;  // the player whose menu is open, 0 for Player 1; -1 for none
     Rect pad_menu_anchor_{};
+    Rect pad_menu_panel_{};  // the panel the menu sits in, so a low row can open upwards
     bool rendering_ = false;  // --render: no game to ask, so the rows are stand-ins
+
+    // The Mods table. `mod_entries_` is what this disc may play; `pending_mods_` and
+    // `pending_patch_` are the checks the panel shows, and `enabled_mods_` and
+    // `applied_patch_id_` are what has been written. A later mod wins where two replace
+    // the same file, so `enabled_mods_` keeps the order they were switched on.
+    std::vector<CatalogMod> catalog_mods_;
+    std::vector<ModChoice> mod_entries_;
+    std::vector<std::wstring> enabled_mods_;
+    std::vector<std::wstring> pending_mods_;
+    std::wstring applied_patch_id_;
+    std::wstring pending_patch_;
+    std::wstring mods_note_;   // the line under the table: why it is empty, or what Apply did
+    std::wstring mods_log_;    // what the Activity log already says about the mods
+    std::wstring catalog_log_; // the catalog error Activity already reported
+    bool overlay_mods_ = false;
+    // The disc patch the game is played with, and what checking it against the extracted
+    // disc found. The delta lives wherever the player keeps it; only its path is recorded.
+    fs::path patch_delta_;
+    PatchFit patch_fit_;
+    bool patch_checking_ = false;
+    std::wstring patch_note_;
 
     bool overlay_open_ = false;
     bool overlay_confirm_ = false;

@@ -18,15 +18,6 @@ std::wstring latest_release_url() {
     return std::wstring(L"https://api.github.com/repos/") + kRepository + L"/releases/latest";
 }
 
-// bsdtar reads zip on all three systems, so unpacking needs no second tool.
-std::wstring tar_tool() {
-#if defined(_WIN32)
-    return find_tool_from({L"C:\\Windows\\System32\\tar.exe"}, L"tar.exe");
-#else
-    return find_tool_from({L"/usr/bin/tar", L"/usr/local/bin/tar"}, L"tar");
-#endif
-}
-
 // The string value of `key`, searched from `from`. `after` receives the offset just past
 // the closing quote, so a caller can walk a list of values.
 std::wstring json_string(const std::wstring& json, const wchar_t* key, size_t from,
@@ -135,6 +126,15 @@ fs::path find_payload(const fs::path& root) {
 }
 
 }  // namespace
+
+// bsdtar reads zip on all three systems, so unpacking needs no second tool.
+std::wstring tar_tool() {
+#if defined(_WIN32)
+    return find_tool_from({L"C:\\Windows\\System32\\tar.exe"}, L"tar.exe");
+#else
+    return find_tool_from({L"/usr/bin/tar", L"/usr/local/bin/tar"}, L"tar");
+#endif
+}
 
 bool is_newer_version(const std::wstring& candidate, const std::wstring& current) {
     auto left = version_fields_of(candidate);

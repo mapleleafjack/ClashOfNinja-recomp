@@ -63,14 +63,30 @@ endif()
 
 set(NLA_SOURCES
   src/main.cpp
+  # The launcher's window class, split by what each part of it does: the shell and its
+  # input, the drawing, the file picker, the jobs it runs, the games it lists, the mods it
+  # applies, and its own updates.
   src/app.cpp
+  src/app_games.cpp
+  src/app_jobs.cpp
+  src/app_mods.cpp
+  src/app_paint.cpp
+  src/app_picker.cpp
+  src/app_update.cpp
+  src/catalog.cpp
   src/dialog.cpp
   src/disc.cpp
   src/font.cpp
+  src/gecko.cpp
   src/git.cpp
   src/image.cpp
   src/painter.cpp
   src/jobs.cpp
+  src/mods.cpp
+  src/patches.cpp
+  # The delta reader is the runtime's own, so a patch the launcher says fits is read
+  # exactly as the game will read it.
+  ../gcn-recomp/runtime/hw/patch.cpp
   src/project.cpp
   src/project_templates.cpp
   src/settings.cpp
@@ -113,6 +129,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/logo_data.h"
 
 target_include_directories(NarutoLauncher PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../gcn-recomp/runtime/hw"
   "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -248,10 +265,22 @@ add_test(NAME click-details
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-details.bmp" click:530,665)
 add_test(NAME render-players
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-players.bmp" players)
-# Picks a pad for the second controller on the panel: opens its menu, then takes item 2.
+# Picks the first controller for player 1: opens its menu, then takes item 2.
 add_test(NAME click-players
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-players.bmp"
-                 "players-click:735,433;690,510")
+                 "players-click:739,358;739,471")
+# The Mods panel, and checking its first row and pressing Apply: the rows are drawn from
+# stand-ins in a render, so the drawing and the click path are the same on every machine.
+add_test(NAME render-mods
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-mods.bmp" mods)
+add_test(NAME click-mods
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-mods.bmp"
+                 "mods-click:255,350;671,548")
+# The Mods button belongs to the game's page: it opens that game's panel, and Escape closes
+# it back to the page rather than to Settings.
+add_test(NAME mods-from-game
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render
+                 "${CMAKE_CURRENT_BINARY_DIR}/mods-from-game.bmp" mods-from-game)
 add_test(NAME render-update
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-update.bmp" update)
 add_test(NAME render-update-banner
@@ -259,6 +288,12 @@ add_test(NAME render-update-banner
 # Clicks the Update button in the header, which must open the prompt.
 add_test(NAME click-update
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-update.bmp" update-click:871,41)
+# Clicks a cover: the page must leave the game it is on for the one clicked, whether or not
+# that game's folder is set up yet, so choosing a game cannot land on another one.
+foreach(game_index RANGE 0 4)
+  add_test(NAME click-cover-${game_index}
+           COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-cover-${game_index}.bmp" cover-click:${game_index})
+endforeach()
 
 # The update check's offline half: version comparison, reading a release out of GitHub's
 # JSON, and the helper that swaps a downloaded version in. It runs the helper for real
@@ -283,6 +318,95 @@ else()
   target_link_libraries(update_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME update-logic COMMAND $<TARGET_FILE:update_test>)
+
+# The mod loader's offline half: reading a mod.txt and laying its files over an extracted
+# disc's manifest. Needs no game and no network.
+add_executable(mods_test
+  tests/mods_test.cpp
+  src/catalog.cpp
+  src/gecko.cpp
+  src/mods.cpp
+  src/util.cpp
+  ../gcn-recomp/runtime/hw/patch.cpp
+)
+target_include_directories(mods_test PRIVATE src ../gcn-recomp/runtime/hw)
+if(WIN32)
+  target_compile_definitions(mods_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(mods_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(mods_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(mods_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME mods-logic COMMAND $<TARGET_FILE:mods_test>)
+
+# The Gecko codes' half: codetypes become the operations the runtime runs and the words
+# recompilation applies, and what cannot be done is said rather than dropped.
+add_executable(gecko_test
+  tests/gecko_test.cpp
+  src/gecko.cpp
+  src/util.cpp
+)
+target_include_directories(gecko_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(gecko_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(gecko_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(gecko_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(gecko_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME gecko-logic COMMAND $<TARGET_FILE:gecko_test>)
+
+# Which game a project folder answers with: a game the launcher knows is the game asked
+# for even before its folder is written, so the cover grid cannot silently land on another
+# game. Needs no disc and no network.
+add_executable(project_test
+  tests/project_test.cpp
+  src/project.cpp
+  src/project_templates.cpp
+  src/util.cpp
+)
+target_include_directories(project_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(project_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(project_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(project_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(project_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME project-logic COMMAND $<TARGET_FILE:project_test>)
+
+# Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
+# so the check is made against the tree the patch decodes from. The runtime has no test
+# project of its own, and this one needs nothing but its header.
+add_executable(boot_test
+  tests/boot_test.cpp
+)
+target_include_directories(boot_test PRIVATE ../gcn-recomp/runtime)
+if(WIN32)
+  target_compile_definitions(boot_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  if(MINGW)
+    target_link_options(boot_test PRIVATE -static -municode)
+  endif()
+endif()
+add_test(NAME boot-logic COMMAND $<TARGET_FILE:boot_test>)
+
+# The recompiler's side of the same file: the words a mod's codes write into code are laid
+# over the DOL before it is translated, and words for data are left to the runtime.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME mods-patches
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../gcn-recomp/recomp/modspatch.py)
+endif()
 
 install(TARGETS NarutoLauncher
   BUNDLE DESTINATION .

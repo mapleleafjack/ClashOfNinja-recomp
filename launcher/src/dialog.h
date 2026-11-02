@@ -10,7 +10,7 @@
 namespace nla {
 
 // Which of the platform's own choosers to show.
-enum class DialogKind { Folder, Image };
+enum class DialogKind { Folder, Image, Patch };
 
 // What a chooser answered. `shown` keeps "the user cancelled" apart from "this machine
 // has no chooser to show", where the launcher falls back to its own picker.

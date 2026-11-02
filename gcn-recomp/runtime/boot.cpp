@@ -1,5 +1,7 @@
 // Boot: emulate what the IPL + apploader leave behind, load the DOL, start __start.
 #include "runtime.h"
+#include "boot.h"
+#include "gecko.h"
 #include <vector>
 
 static uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
@@ -23,11 +25,28 @@ static uint32_t disc_tv_mode(const uint8_t* hdr) {
 
 uint32_t boot_load(const char* iso_path) {
     di_init(iso_path);
+    // A mod's Gecko codes are read now, before the game's first instruction: the program
+    // they became is run from the Video Interface's first frame on.
+    gecko_init(iso_path);
     uint8_t hdr[0x440];
     if (!iso_read(0, hdr, sizeof(hdr))) fatal("cannot read disc header");
     uint32_t dol_off = be32(hdr + 0x420), fst_off = be32(hdr + 0x424), fst_size = be32(hdr + 0x428), fst_max = be32(hdr + 0x42C);
     LOG(LOG_OS, "disc %.6s \"%s\" dol@%X fst@%X size %X", (const char*)hdr, (const char*)hdr + 0x20, dol_off, fst_off, fst_size);
-    if (memcmp(hdr, GCN_DISC_ID, 6) != 0) fatal("this build was recompiled from disc %s, not %.6s", GCN_DISC_ID, (const char*)hdr);
+    // A patch is a whole disc of its own, and a hack may rename the ID it carries: SCON4 is
+    // SG4JDA over a G4NJDA disc. The tree the patch decodes from is still the disc this
+    // build was made for, so that is the header boot_check_disc() is given while one is on.
+    uint8_t tree_hdr[0x20];
+    const uint8_t* tree = nullptr;
+    if (di_patch_active() && di_source_read(0, tree_hdr, sizeof(tree_hdr))) tree = tree_hdr;
+    switch (boot_check_disc(hdr, tree, GCN_DISC_ID)) {
+    case DiscCheck::Matched:
+        break;
+    case DiscCheck::WrongTree:
+        fatal("this build was recompiled from disc %s, and the disc it patches is %.6s",
+              GCN_DISC_ID, (const char*)tree);
+    case DiscCheck::WrongDisc:
+        fatal("this build was recompiled from disc %s, not %.6s", GCN_DISC_ID, (const char*)hdr);
+    }
 
     // ---- DOL ----
     uint8_t dh[0x100];

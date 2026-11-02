@@ -44,7 +44,11 @@ v1.5.1).
 3. **Click a cover and choose your disc image.** The first click writes that game's folder
    into the launcher's own folder, extracts the disc and builds the game, which takes a few
    minutes; on Windows it first fetches about 190 MB of build tools, with a progress bar.
-4. **Play.** After that a click starts the game. Saves and controller mappings stay in that
+4. **Play.** A cover only chooses the game: **Play** starts it, and **Mods** changes what it
+   plays — a file mod, Gecko codes, or a disc patch such as SCON4, with only the mods that
+   game's disc can play listed. The table lists the ones
+   `mods.json` knows even before they are downloaded, and **Apply** writes the checked rows,
+   fetching any that are not on the machine. Saves and controller mappings stay in that
    game's folder.
 
 The `NarutoLauncher-tools-windows-x64-v<version>.zip` asset is that same toolchain, for anyone
@@ -66,6 +70,7 @@ WBFS, TGC or NFS. It is read once and can be deleted afterwards.
 | [Building and running](docs/BUILDING.md) | disc setup, a build from source, the command line |
 | [The launcher](docs/LAUNCHER.md) | what it does, and how to build it |
 | [Recompilation notes](docs/RECOMPILATION.md) | how far each game gets, how the disc reaches it, the steering tables, what each disc turned out to be |
+| [Mods](docs/MODS.md) | what a mod is, and how the launcher and the runtime serve it over your own disc |
 | [Releases](docs/RELEASING.md) | CI, the Windows and macOS packages, and what may be published |
 
 ## Licensing

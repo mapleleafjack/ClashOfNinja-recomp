@@ -1,0 +1,732 @@
+// The steps a build or a download runs, the log they report into, and starting the
+// game.
+
+#include "app.h"
+
+#include "disc.h"
+#include "tools_package.h"
+
+#include "util.h"
+
+#include <chrono>
+#include <thread>
+
+namespace nla {
+
+void App::start_job(std::vector<Task> tasks, bool then_launch, bool exits,
+                    std::function<void(int)> done) {
+    if (busy_ || tasks.empty()) return;
+    busy_ = true;
+    job_then_launch_ = then_launch;
+    job_exits_ = exits;
+    job_done_ = std::move(done);
+    progress_ = -1;
+    stage_.clear();
+    log_visible_ = true;
+    log_offset_ = 0;
+    next_frame_ = 0;
+    job_.start(
+        std::move(tasks),
+        [this](const std::wstring& text) { post([this, text] { on_log(text); }); },
+        [this](const std::wstring& text) { post([this, text] { on_stage(text); }); },
+        [this](int percent) { post([this, percent] { on_progress(percent); }); },
+        [this](int code) { post([this, code] { on_job_done(code); }); });
+    refresh();
+}
+
+void App::on_log(const std::wstring& text) { append_log(text); }
+
+void App::on_stage(const std::wstring& text) {
+    stage_ = text;
+    invalidate();
+}
+
+void App::on_progress(int percent) {
+    progress_ = percent > 0 ? percent : -1;
+    invalidate();
+}
+
+void App::on_job_done(int code) {
+    busy_ = false;
+    progress_ = -1;
+    stage_.clear();
+    bool then_launch = job_then_launch_;
+    bool exits = job_exits_;
+    bool built = job_build_;
+    bool quiet = job_quiet_;
+    job_then_launch_ = false;
+    job_exits_ = false;
+    job_build_ = false;
+    job_quiet_ = false;
+    if (code == 0) {
+        append_log(L"[launcher] done\n");
+        // A job can be the one that installed the tools, so look for them again.
+        tools_ = check_tools();
+        // Back to the clean one-button view when there is nothing to read.
+        log_visible_ = false;
+        // What the mods' codes were when this build went in: a later change says the game
+        // has to be built again.
+        if (built && project_) {
+            std::error_code ec;
+            fs::create_directories(project_->build_dir(), ec);
+            write_text_file(project_->code_stamp(),
+                            narrow(read_text_file(project_->disc() / L"mods.code")));
+        }
+    } else if (code == 130) {
+        append_log(L"[launcher] cancelled\n");
+    } else {
+        append_log(format(L"[launcher] failed (status %d); see the output above\n", code));
+        if (!quiet) {
+            show_message(L"The step did not finish",
+                         L"See Activity for the command and the output it printed. The "
+                         L"details there usually name the missing file or tool.");
+        }
+    }
+    refresh();
+    if (code == 0 && then_launch) continue_launch();
+    // The helper that swaps in the new version is waiting for this process to go.
+    if (code == 0 && exits) quit_ = true;
+    if (job_done_) {
+        auto follow_up = std::move(job_done_);
+        job_done_ = nullptr;
+        follow_up(code);
+    }
+}
+
+void App::append_log(const std::wstring& text) {
+    std::wstring current;
+    for (wchar_t character : text) {
+        if (character == L'\r') continue;
+        if (character == L'\n') {
+            log_.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(character);
+        }
+    }
+    if (!current.empty()) log_.push_back(current);
+    while (log_.size() > 4000) log_.pop_front();
+    invalidate();
+}
+
+void App::copy_log() {
+    std::wstring text;
+    for (const auto& line : log_) {
+        text += line;
+        text += L"\r\n";
+    }
+    window_.set_clipboard(text);
+}
+
+bool App::check_required_tools() {
+    std::wstring lines;
+    for (const auto& tool : tools_) {
+        if (tool.required && !tool.found()) {
+            if (!lines.empty()) lines += L"\n";
+            lines += L"  " + tool.name + L": " + tool.hint;
+        }
+    }
+    if (lines.empty()) return true;
+    append_log(L"[launcher] missing build tools:\n" + lines + L"\n");
+#if defined(__APPLE__)
+    // The compiler and python3 are the only things the release does not carry, and Apple
+    // installs both with one command that needs no account.
+    if (!command_line_tools_installed()) {
+        show_confirm(
+            L"Apple's command line tools are needed",
+            L"The game is compiled from your own disc, so it needs a C++ compiler, and on a "
+            L"Mac that comes from Apple's command line tools.\n\n"
+            L"They are free, need no Apple account, and the launcher starts Apple's own "
+            L"installer and waits for it to finish (about 2 GB).",
+            L"Install", [this] { start_job(apple_tools_tasks(), true); });
+        return false;
+    }
+#endif
+    if (tools_package_available()) {
+        show_confirm(L"Build tools needed",
+                     L"The build needs these tools, which were not found on PATH or beside "
+                     L"the launcher:\n\n" + lines + L"\n\nThe launcher can download them (" +
+                         tools_package_size() + L") into tools\\ beside itself.",
+                     L"Download", [this] { install_tools(true); });
+        return false;
+    }
+    show_message(L"Missing build tools",
+                 L"The build needs these tools, which were not found on PATH or beside "
+                 L"the launcher:\n\n" + lines);
+    return false;
+}
+
+void App::install_tools(bool then_launch) {
+    if (busy_) return;
+    if (tools_package_available()) {
+        append_log(L"[launcher] fetching the build tools\n");
+        start_job(tools_package_tasks(), then_launch);
+        return;
+    }
+#if defined(__APPLE__)
+    start_job(apple_tools_tasks(), then_launch);
+#endif
+}
+
+std::vector<Task> App::apple_tools_tasks() {
+    std::vector<Task> tasks;
+#if defined(__APPLE__)
+    if (command_line_tools_installed()) return tasks;
+    tasks.push_back({L"Opening Apple's installer…", [](Job& job) -> int {
+                         job.log(L"$ xcode-select --install\n");
+                         // Apple's command hands the download to its own process and
+                         // returns, so the wait below is what sees it finish.
+                         job.run_process(L"/usr/bin/xcode-select", {L"--install"}, home_dir());
+                         job.log(L"[launcher] Apple's installer is open; it downloads about "
+                                 L"2 GB\n");
+                         return 0;
+                     }});
+    tasks.push_back({L"Waiting for the compiler…", [](Job& job) -> int {
+                         for (int waited = 0; waited < 1800; waited += 2) {
+                             if (job.cancel_flag().load()) {
+                                 job.log(L"[launcher] stopped waiting; Apple's installer "
+                                         L"carries on by itself\n");
+                                 return 130;
+                             }
+                             for (const auto& tool : check_tools()) {
+                                 if (tool.name == L"compiler" && tool.found()) {
+                                     job.log(L"[launcher] the compiler is in place\n");
+                                     return 0;
+                                 }
+                             }
+                             std::this_thread::sleep_for(std::chrono::seconds(2));
+                         }
+                         job.log(L"[launcher] Apple's installer has not finished; when it "
+                                 L"does, start the game again\n");
+                         return 1;
+                     }});
+#endif
+    return tasks;
+}
+
+void App::start_setup(const fs::path& image) {
+    if (!project_ || busy_) return;
+    bool then_launch = launch_wanted_;
+    launch_wanted_ = false;
+    std::error_code ec;
+    if (!fs::is_regular_file(image, ec)) {
+        show_message(L"Disc image", L"No such file:\n\n" + image.wstring());
+        return;
+    }
+    // The game folders are the launcher's to write: a release carries none, so the first
+    // disc chosen for a game sets it up where the launcher lives.
+    if (!fs::is_regular_file(project_->cmake_lists(), ec)) {
+        std::wstring error;
+        if (!Project::create(project_->root(), &error)) {
+            show_message(L"Could not set the folder up", error);
+            return;
+        }
+        auto root = project_->root();
+        auto game = project_->game();
+        project_.emplace(root, game);
+        save_settings();
+        append_log(format(L"[launcher] wrote the game folders in %ls\n",
+                          project_->root().wstring().c_str()));
+        refresh();
+    }
+    if (fs::exists(project_->dol(), ec)) {
+        show_confirm(L"Replace the extracted disc?",
+                     L"A disc is already extracted. Extract again from this image and "
+                     L"replace it?",
+                     L"Extract", [this, image, then_launch] { begin_setup(image, then_launch); });
+        return;
+    }
+    begin_setup(image, then_launch);
+}
+
+void App::begin_setup(const fs::path& image, bool then_launch) {
+    if (!project_ || busy_) return;
+    settings_.last_image = image.wstring();
+    save_settings();
+    append_log(format(L"[launcher] image: %ls\n", image.c_str()));
+
+    fs::path disc_dir = project_->disc();
+    std::wstring disc_id = project_->disc_id();
+    std::wstring expected = project_->expected_sha1();
+    bool convert = needs_nodtool(image);
+
+    auto converted = std::make_shared<std::wstring>();
+    std::vector<Task> tasks;
+
+    if (convert) {
+        tasks.push_back({
+            L"Converting the image to ISO…",
+            [this, image, converted](Job& job) -> int {
+                auto nodtool = find_tool(L"nodtool" + wstring(exe_suffix()));
+                if (nodtool.empty()) {
+                    job.log(L"[launcher] this image needs nodtool, which was not found. "
+                            L"Install it with: cargo install --locked nodtool\n");
+                    return 127;
+                }
+                fs::path output = fs::temp_directory_path() / L"naruto-launcher" / L"disc.iso";
+                std::error_code ec;
+                fs::create_directories(output.parent_path(), ec);
+                fs::remove(output, ec);
+                job.log(L"$ nodtool convert " + image.wstring() + L" " + output.wstring() +
+                        L"\n");
+                int code = job.run_process(nodtool, {L"convert", image.wstring(),
+                                                     output.wstring()},
+                                           project_ ? project_->root() : fs::path());
+                if (code == 0) *converted = output.wstring();
+                return code;
+            }});
+    }
+
+    tasks.push_back({
+        L"Extracting the disc…",
+        [this, image, converted, convert, disc_dir, disc_id, expected](Job& job) -> int {
+            fs::path source = convert ? fs::path(*converted) : image;
+            if (source.empty()) {
+                job.log(L"[launcher] the converted image is missing\n");
+                return 1;
+            }
+            ExtractRequest request{source, disc_dir, disc_id, expected};
+            auto progress = [&job](int percent, const std::wstring& stage_text) {
+                job.progress(percent);
+                job.stage(stage_text);
+            };
+            auto outcome = extract_disc(request, progress, job.cancel_flag());
+            if (!outcome.ok) {
+                job.log(L"[launcher] " + outcome.error + L"\n");
+                return 1;
+            }
+            job.log(format(L"[launcher] %d files, %.1f MiB extracted\n", outcome.file_count,
+                           static_cast<double>(outcome.bytes) / (1024.0 * 1024.0)));
+            job.log(format(L"[launcher] main.dol %ls matches the supported disc\n",
+                           outcome.dol_sha1.substr(0, 12).c_str()));
+            if (convert) {
+                std::error_code remove_ec;
+                fs::remove(source, remove_ec);
+            }
+            return 0;
+        }});
+
+    start_job(std::move(tasks), then_launch);
+}
+
+std::vector<Task> App::build_tasks() {
+    std::vector<Task> tasks;
+    if (!project_) return tasks;
+    auto cmake = find_tool(L"cmake" + wstring(exe_suffix()));
+    auto ninja = find_tool(L"ninja" + wstring(exe_suffix()));
+    if (cmake.empty() || ninja.empty()) return tasks;
+
+    fs::path game_dir = project_->game_dir();
+    fs::path build = project_->build_dir();
+    fs::path root = project_->root();
+    std::vector<std::wstring> configure = {
+        L"-S", game_dir.wstring(), L"-B", build.wstring(), L"-G", L"Ninja",
+        L"-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+    };
+    auto sdl = bundled_sdl2_prefix();
+    if (!sdl.empty()) configure.push_back(L"-DGCN_SDL2_PREFIX=" + sdl.wstring());
+
+    // In a release, name the bundled interpreter so CMake does not prefer a Python
+    // registered elsewhere on the machine (or the Microsoft Store alias).
+    auto python = find_tool(L"python" + wstring(exe_suffix()));
+    if (python.empty()) python = find_tool(L"python3" + wstring(exe_suffix()));
+    if (!python.empty()) {
+        auto python_key = to_lower(python);
+        auto tools_key = to_lower(launcher_tools_dir().wstring());
+        if (!tools_key.empty() && python_key.rfind(tools_key, 0) == 0)
+            configure.push_back(L"-DPython3_EXECUTABLE=" + python);
+    }
+#ifdef _WIN32
+    // The OpenXR loader (used by --vr) does not compile with MinGW-w64. Without MSVC's
+    // cl.exe the launcher configures the game without the PC VR frontend, as the rest of
+    // the desktop build does not need it.
+    if (find_tool(L"cl.exe").empty()) configure.push_back(L"-DGCN_OPENXR=OFF");
+#endif
+
+    // The recompiler needs the disc's function map, and a project the launcher wrote starts
+    // without one: dtk makes it from the DOL the launcher extracted. dtk resolves the paths
+    // in its config against the working directory and misreads a Windows drive letter, so
+    // everything is relative to the game folder, which is where it runs.
+    std::error_code symbols_ec;
+    if (!fs::is_regular_file(project_->analysis_symbols(), symbols_ec)) {
+        auto game_dir = project_->game_dir();
+        auto hash = project_->expected_sha1();
+        // A release carries dtk; a -Lean release or a checkout does not, and then the
+        // pinned build is fetched once, so the first build needs nothing installed by hand.
+        auto dtk = std::make_shared<std::wstring>(find_tool(L"dtk" + wstring(exe_suffix())));
+        if (dtk->empty()) {
+            tasks.push_back({L"Fetching dtk…", [dtk](Job& job) -> int {
+                                 std::wstring error;
+                                 *dtk = ensure_dtk(job, &error);
+                                 if (dtk->empty()) {
+                                     job.log(L"[launcher] dtk was not found and could not be "
+                                             L"fetched: " + error + L"\n");
+                                     return 127;
+                                 }
+                                 return 0;
+                             }});
+        }
+        tasks.push_back({L"Reading the disc's symbols…", [dtk, game_dir,
+                                                          hash](Job& job) -> int {
+                             if (dtk->empty()) return 127;  // the step above said why
+                             std::error_code ec;
+                             fs::path work = fs::path(L"build") / L"dtk";
+                             fs::create_directories(game_dir / work, ec);
+                             fs::create_directories(game_dir / L"analysis", ec);
+                             fs::path config = work / L"config.yml";
+                             const std::wstring text =
+                                 L"object: \"rom/disc/sys/main.dol\"\nhash: " + hash +
+                                 L"\nsymbols: \"analysis/symbols.txt\"\n"
+                                 L"splits: \"build/dtk/splits.txt\"\n";
+                             if (!write_text_file(game_dir / config, narrow(text))) {
+                                 job.log(L"[launcher] could not write " +
+                                         (game_dir / config).wstring() + L"\n");
+                                 return 1;
+                             }
+                             job.log(L"$ dtk dol split " + config.wstring() + L" " +
+                                     work.wstring() + L"\n");
+                             int code = job.run_process(
+                                 *dtk, {L"dol", L"split", config.wstring(), work.wstring()},
+                                 game_dir);
+                             if (code != 0) return code;
+                             if (!fs::is_regular_file(game_dir / L"analysis" / L"symbols.txt",
+                                                      ec)) {
+                                 job.log(L"[launcher] dtk wrote no symbol map\n");
+                                 return 1;
+                             }
+                             return 0;
+                         }});
+    }
+
+    tasks.push_back({L"Configuring CMake…", [cmake, configure, root](Job& job) -> int {
+                         job.log(L"$ " + command_line(cmake, configure) + L"\n");
+                         return job.run_process(cmake, configure, root);
+                     }});
+    tasks.push_back({L"Compiling the game…", [ninja, build, root](Job& job) -> int {
+                         std::vector<std::wstring> args = {L"-C", build.wstring()};
+                         job.log(L"$ " + command_line(ninja, args) + L"\n");
+                         return job.run_process(ninja, args, root);
+                     }});
+    return tasks;
+}
+
+void App::start_build(bool then_launch) {
+    if (!project_ || busy_) return;
+    if (!check_required_tools()) return;
+    auto tasks = build_tasks();
+    if (tasks.empty()) {
+        show_message(L"Cannot build", L"cmake and ninja were not found.");
+        return;
+    }
+    if (!status_.disc.extracted) {
+        show_message(L"Build the game",
+                     L"The build needs the extracted disc. Press Launch the game to choose "
+                     L"your disc image first.");
+        return;
+    }
+    job_build_ = true;
+    start_job(std::move(tasks), then_launch);
+}
+
+void App::launch() {
+    if (busy_) return;
+    if (game_.running()) {
+        game_.stop();
+        return;
+    }
+    if (!project_) {
+        launch_wanted_ = true;
+        locate_project();
+        return;
+    }
+    refresh();
+    if (!status_.disc.verified) {
+        launch_wanted_ = true;
+        choose_image();
+        return;
+    }
+    continue_launch();
+}
+
+void App::continue_launch() {
+    if (!project_ || busy_) return;
+    refresh();
+    if (!status_.disc.verified) return;
+    if (status_.built && !status_.stale_code) {
+        play();
+        return;
+    }
+    start_build(true);
+}
+
+void App::play() {
+    if (!project_ || busy_ || game_.running()) return;
+    if (!status_.built || !status_.disc.verified) {
+        refresh();
+        return;
+    }
+    // The runtime reads the mod list at boot, so it is brought up to date first: the disc
+    // may have been extracted, or a mod switched on, since the last refresh.
+    write_mod_overlay();
+    std::vector<std::wstring> args = {
+        L"--scale=" + std::to_wstring(settings_.scale),
+    };
+    if (settings_.mute_music) args.push_back(L"--no-music");
+    if (!settings_.input_log) args.push_back(L"--no-input-log");
+    // One pad per controller, and never fewer than the pads the picker names.
+    int players = settings_.players;
+    for (const auto& device : devices_) players = std::max(players, device.pad);
+    args.push_back(L"--players=" + std::to_wstring(std::clamp(players, 1, 4)));
+    args.push_back(L"--controls=" + project_->controls().wstring());
+
+    settings_.game = project_->game();
+    save_settings();
+    append_log(L"\n$ " + command_line(project_->binary().wstring(), args) + L"\n");
+    play_status_ = L"Starting…";
+    bool started =
+        game_.start(project_->binary().wstring(), args, project_->game_dir(),
+                    [this](const std::wstring& text) {
+                        post([this, text] { append_log(text); });
+                    },
+                    [this](int code, bool stopped) {
+                        post([this, code, stopped] {
+                            play_status_ = stopped
+                                               ? L"Stopped from the launcher."
+                                               : format(L"The game exited with status %d.",
+                                                        code);
+                            append_log(stopped
+                                           ? L"[launcher] game stopped\n"
+                                           : format(L"[launcher] game exited with status %d\n",
+                                                    code));
+                            refresh();
+                        });
+                    });
+    if (!started) {
+        play_status_.clear();
+        show_message(L"The game did not start",
+                     L"The launcher could not start the game. Build it first, then try "
+                     L"again.");
+    } else {
+        play_status_ = L"Press Stop the game to end it.";
+    }
+    refresh();
+}
+
+void App::open_path(const fs::path& path) {
+    if (path.empty()) return;
+    std::error_code ec;
+    if (!fs::exists(path, ec)) {
+        show_message(L"Not there yet", L"Nothing at:\n\n" + path.wstring());
+        return;
+    }
+    std::wstring error;
+    if (!nla::open_path(path, &error)) {
+        show_message(L"Cannot open", error.empty() ? L"This system could not open:\n\n" +
+                                                         path.wstring()
+                                                   : error);
+    }
+}
+
+// Who plays as whom: a row per console pad, and the device that plays as it.
+void App::open_players() {
+    refresh_devices();
+    overlay_open_ = true;
+    overlay_players_ = true;
+    overlay_mods_ = false;
+    overlay_confirm_ = false;
+    overlay_update_ = false;
+    overlay_callback_ = nullptr;
+    overlay_title_ = L"Players";
+    overlay_action_ = L"Done";
+    settings_open_ = false;
+    scale_open_ = false;
+    pad_menu_row_ = -1;
+    invalidate();
+}
+
+void App::refresh_devices() {
+    devices_.clear();
+    keyboard_pad_ = 1;
+    devices_note_.clear();
+    // A stand-in list for the renders: the same devices whatever this machine has
+    // plugged in, so the drawing is the same everywhere it is checked.
+    if (rendering_) {
+        devices_ = {{L"Xbox Wireless Controller", 1, 0}, {L"PS4 Controller", 1, 2}};
+        return;
+    }
+    std::error_code ec;
+    // The game answers for itself: its own SDL sees the devices, and it names them exactly
+    // as the pad pins in controls.txt do.
+    if (!project_ || !fs::exists(project_->binary(), ec)) {
+        devices_note_ = L"Build the game first: the launcher asks it which controllers it sees.";
+        return;
+    }
+    std::string out;
+    if (!capture_output(project_->binary().wstring(),
+                        {L"--list-devices", L"--controls=" + project_->controls().wstring()}, &out))
+        return;
+    for (const auto& line : split(widen(out), L'\n')) {
+        auto fields = split(line, L'\t');
+        if (fields.size() >= 2 && fields[0] == L"keyboard") {
+            keyboard_pad_ = std::clamp(std::atoi(narrow(fields[1]).c_str()), 1, 4);
+        } else if (fields.size() >= 4 && fields[0] == L"device") {
+            DeviceRow device;
+            device.nth = std::atoi(narrow(fields[1]).c_str());
+            device.pad = std::atoi(narrow(fields[2]).c_str());
+            device.name = fields[3];
+            devices_.push_back(device);
+        }
+    }
+    if (devices_.empty()) devices_note_ = L"No controller found. Plug one in and press Refresh.";
+}
+
+// The pad each controller plays as: the pins first, in the order the game lists the
+// devices, then the pads still free. A pin to a pad another device has is passed over, and
+// the keyboard's pad is not offered, so one pad is one device.
+std::vector<int> App::resolved_pads() const {
+    std::vector<int> pads(devices_.size(), 0);
+    bool taken[kPads + 1] = {};
+    if (keyboard_pad_ >= 1 && keyboard_pad_ <= kPads) taken[keyboard_pad_] = true;
+    for (size_t i = 0; i < devices_.size(); ++i) {
+        const int pin = devices_[i].pad;
+        if (pin < 1 || pin > kPads || taken[pin]) continue;
+        taken[pin] = true;
+        pads[i] = pin;
+    }
+    for (size_t i = 0; i < devices_.size(); ++i) {
+        for (int free = 1; free <= kPads && pads[i] == 0; ++free) {
+            if (taken[free]) continue;
+            taken[free] = true;
+            pads[i] = free;
+        }
+    }
+    return pads;
+}
+
+int App::player_device(int player) const {
+    const std::vector<int> pads = resolved_pads();
+    for (size_t i = 0; i < pads.size(); ++i)
+        if (pads[i] == player) return static_cast<int>(i);
+    return -1;
+}
+
+bool App::player_is_keyboard(int player) const {
+    return keyboard_pad_ == player && player >= 1 && player <= kPads;
+}
+
+// What a player's row shows: the device playing as that pad, or the muted "Not set".
+std::wstring App::player_device_label(int player) const {
+    if (player_is_keyboard(player)) return L"Keyboard";
+    const int device = player_device(player);
+    if (device < 0) return L"Not set";
+    std::wstring label = devices_[static_cast<size_t>(device)].name;
+    if (devices_[static_cast<size_t>(device)].nth > 1)
+        label += L" #" + std::to_wstring(devices_[static_cast<size_t>(device)].nth);
+    return label;
+}
+
+std::vector<std::wstring> App::pad_options() const {
+    constexpr std::size_t kMost =
+        static_cast<std::size_t>(static_cast<int>(Id::PadOptionEnd) - static_cast<int>(Id::PadOption));
+    std::vector<std::wstring> options{L"Not set", L"Keyboard"};
+    for (size_t i = 0; i < devices_.size() && options.size() < kMost; ++i) {
+        std::wstring label = devices_[i].name;
+        if (devices_[i].nth > 1) label += L" #" + std::to_wstring(devices_[i].nth);
+        options.push_back(label);
+    }
+    return options;
+}
+
+// A pick takes the pad from whatever was on it, and the keyboard, which always plays as one
+// pad, moves to the first pad no controller is pinned to when a controller takes its own.
+void App::assign_player(int player, int choice) {
+    if (player < 1 || player > kPads) return;
+    const int pad = player;
+    auto displace_keyboard = [&] {
+        if (keyboard_pad_ != pad) return;
+        for (int candidate = 1; candidate <= kPads; ++candidate) {
+            if (candidate == pad) continue;
+            bool taken = false;
+            for (const auto& device : devices_)
+                if (device.pad == candidate) taken = true;
+            if (!taken) {
+                keyboard_pad_ = candidate;
+                return;
+            }
+        }
+    };
+    if (choice == 1) {  // the keyboard
+        for (auto& device : devices_)
+            if (device.pad == pad) device.pad = 0;
+        keyboard_pad_ = pad;
+        return;
+    }
+    const size_t index = choice >= 2 ? static_cast<size_t>(choice - 2) : devices_.size();
+    if (index < devices_.size() && devices_[index].pad == pad) return;  // already here
+    for (auto& device : devices_)
+        if (device.pad == pad) device.pad = 0;
+    displace_keyboard();
+    if (index < devices_.size()) devices_[index].pad = pad;
+}
+
+// The pads this picker owns are the `pad = "<device>" <n>` and `keyboard_pad = <n>` lines.
+// Everything else in controls.txt is the player's own mapping and is kept as written, and
+// so is a pin for a controller that is unplugged right now: it is still who plays next
+// time it is plugged in.
+void App::write_pad_pins() {
+    // A render checks the panel, not the player's disk: it runs with no game to read back
+    // from, so its device list is a stand-in and must not reach controls.txt.
+    if (!project_ || rendering_) return;
+    const fs::path path = project_->controls();
+    std::wstring text;
+    std::error_code ec;
+    if (fs::exists(path, ec)) text = read_text_file(path);
+    std::map<std::wstring, int> pins;
+    std::wstring kept;
+    for (const auto& line : split(text, L'\n')) {
+        auto words = split(trim(line), L' ');
+        if (!words.empty() && words[0] == L"pad") {
+            const size_t open = line.find(L'"', line.find(L"pad"));
+            const size_t close = line.rfind(L'"');
+            if (open != std::wstring::npos && close != std::wstring::npos && close > open) {
+                const int pad = std::atoi(narrow(line.substr(close + 1)).c_str());
+                if (pad >= 1 && pad <= 4) pins[line.substr(open + 1, close - open - 1)] = pad;
+            }
+            continue;
+        }
+        if (!words.empty() && words[0] == L"keyboard_pad") continue;
+        kept += line;
+        kept += L'\n';
+    }
+    // What the panel shows is what the game gets: every controller the panel finds a pad
+    // for is pinned to it, so the first-free rule has nothing left to decide.
+    const std::vector<int> pads = resolved_pads();
+    for (size_t i = 0; i < devices_.size(); ++i) {
+        std::wstring label = devices_[i].name;
+        if (devices_[i].nth > 1) label += L" #" + std::to_wstring(devices_[i].nth);
+        if (pads[i] == 0) pins.erase(label);
+        else pins[label] = pads[i];
+    }
+    if (keyboard_pad_ != 1)
+        kept += L"keyboard_pad = " + std::to_wstring(keyboard_pad_) + L"\n";
+    int highest = 1;
+    for (const auto& [label, pad] : pins) {
+        kept += L"pad = \"" + label + L"\" " + std::to_wstring(pad) + L"\n";
+        highest = std::max(highest, pad);
+    }
+    if (!write_text_file(path, narrow(kept))) {
+        show_message(L"Player pads", L"The launcher could not write\n\n" + path.wstring());
+        return;
+    }
+    // A pad past the cap would be ignored by the game, so the cap follows the picks.
+    settings_.players = std::max(settings_.players, highest);
+    save_settings();
+    append_log(L"[launcher] players: keyboard is player " + std::to_wstring(keyboard_pad_) + L"\n");
+    for (const auto& [label, pad] : pins)
+        append_log(L"[launcher] players: \"" + label + L"\" is player " +
+                   std::to_wstring(pad) + L"\n");
+    refresh_devices();  // so the rows show what the game now reads back
+    invalidate();
+}
+
+}  // namespace nla

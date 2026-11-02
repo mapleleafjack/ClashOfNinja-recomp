@@ -65,6 +65,22 @@ Settings Settings::load() {
     settings.window_height = read_int(values, L"windowHeight", 820);
     if (settings.window_width < 940) settings.window_width = 940;
     if (settings.window_height < 700) settings.window_height = 700;
+    // `mods.<game> = <mod>,<mod>`: one key per game, so the list a game has does not
+    // depend on the order the launcher wrote them in.
+    for (const auto& [key, value] : values) {
+        if (key.rfind(L"mods.", 0) != 0 || key.size() <= 5) continue;
+        std::vector<wstring> folder_names;
+        for (const auto& part : split(value, L',')) {
+            auto name = trim(part);
+            if (!name.empty()) folder_names.push_back(name);
+        }
+        settings.mods[key.substr(5)] = std::move(folder_names);
+    }
+    // `patch.<game> = <delta path>`: the disc patch that game is played with.
+    for (const auto& [key, value] : values) {
+        if (key.rfind(L"patch.", 0) != 0 || key.size() <= 6) continue;
+        if (!trim(value).empty()) settings.patches[key.substr(6)] = trim(value);
+    }
     return settings;
 }
 
@@ -86,6 +102,12 @@ void Settings::save() const {
     put(L"skippedUpdate", skipped_update);
     put(L"windowWidth", std::to_wstring(window_width));
     put(L"windowHeight", std::to_wstring(window_height));
+    for (const auto& [game, folder_names] : mods) {
+        put((L"mods." + game).c_str(), join(folder_names, L","));
+    }
+    for (const auto& [game, delta] : patches) {
+        put((L"patch." + game).c_str(), delta);
+    }
     write_text_file(fs::path(file_path()), narrow(text));
 }
 

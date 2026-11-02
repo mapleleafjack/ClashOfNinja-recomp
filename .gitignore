@@ -46,10 +46,27 @@ build-*/
 # publisher, so it stays on the machine that has it. `git add -f` a file you drew yourself.
 covers/
 
+# Mods: a folder per mod with the files it puts in place of the disc's, which come off the
+# game. They stay on the machine that has the disc, like the extracted tree they sit over.
+mods/
+
+# Disc patches: the deltas the launcher downloads are made from a disc, so they stay on
+# the machine that has one, like the tree they are decoded over.
+patches/
+*.xdelta
+
 # The launcher's build output.
 launcher/build/
 launcher/build-release/
 launcher/dist/
+/NarutoLauncher.exe
+
+# The prebuilt decomp toolkit the launcher downloads; gcn-recomp/.gitignore keeps its copy
+# out too. It is a third-party release, fetched rather than committed.
+tools/dtk/
+
+# graphify's index of the tree: rebuilt from the sources with `graphify update .`.
+graphify-out/
 
 __pycache__/
 *.pyc

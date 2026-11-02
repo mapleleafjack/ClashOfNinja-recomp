@@ -27,6 +27,10 @@ struct DiscStatus {
 struct ProjectStatus {
     DiscStatus disc;
     bool built = false;
+    // The mods' instruction words changed since the build that is there: what the
+    // recompiler made no longer matches the mods that are on, so the game has to be built
+    // again before it is played.
+    bool stale_code = false;
 };
 
 class Project {
@@ -50,8 +54,14 @@ class Project {
     fs::path disc() const;
     fs::path dol() const;
     fs::path manifest() const;
+    // The mods the launcher offers: one folder each, beside the games.
+    fs::path mods_dir() const;
     fs::path build_dir() const;
     fs::path binary() const;
+    // What the build last compiled in: the mods' instruction words (`mods.code` beside the
+    // disc) as they were when the game was built. Written after a build that worked, so a
+    // mod whose codes changed says the game needs building again.
+    fs::path code_stamp() const;
     fs::path controls() const;
     fs::path saves() const;
     fs::path extract_script() const;

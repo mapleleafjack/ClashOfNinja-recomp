@@ -182,3 +182,15 @@ uint32_t efb_peek(uint32_t addr); void efb_poke(uint32_t addr, uint32_t v);
 
 // iso reading
 bool iso_read(uint64_t offset, void* dst, uint32_t len);
+// The tree the game reads before any patch, and whether one is on. A patch is a disc of its
+// own and a hack may rename the ID it carries -- SCON4 is SG4JDA over a G4NJDA disc -- so
+// the tree's own bytes are what say whether the game is the one this build was recompiled
+// from while a patch is on.
+bool di_source_read(uint64_t offset, void* dst, uint32_t len);
+bool di_patch_active();
+// --verify-patch: decodes every window of the patch the game's tree carries and checks it
+// against the checksums the delta holds. False when the tree carries no patch.
+// `decoded` counts windows that rebuilt at all, `matched` those whose checksum agreed: the
+// two differ where this disc and the one the patch was made from disagree in space no file
+// owns, which the game reads just the same.
+bool di_verify_patch(int* decoded, int* matched, int* windows, uint64_t* first_unmatched);

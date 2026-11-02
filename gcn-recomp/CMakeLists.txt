@@ -288,6 +288,19 @@ function(gcn_add_game)
 
     file(GLOB RECOMP_TOOL_SOURCES ${GCN_RECOMP_DIR}/recomp/*.py ${G_TABLES}/*.txt)
     set(RECOMP_DOL ${GAME_DOL})
+    # A mod's instruction words: the launcher writes `mods.code` beside the disc tree when
+    # a mod with Gecko codes is on, and recompilation lays those words over the DOL
+    # (recomp/modspatch.py) -- a write into code cannot affect instructions that have
+    # already been recompiled. The tree is where the launcher always extracts, so it is
+    # looked for there even when this build was pointed at the image instead. A change to
+    # the file reconfigures, so the game rebuilds.
+    set(GAME_MODS_CODE "")
+    foreach(_mods_code "${GAME_ISO}/mods.code" "${G_IMAGE_DIR}/disc/mods.code")
+      if(EXISTS "${_mods_code}")
+        set(GAME_MODS_CODE "${_mods_code}")
+        break()
+      endif()
+    endforeach()
     if(G_DOL_FIXUP)
       set(RECOMP_DOL ${CMAKE_BINARY_DIR}/main_recomp.dol)
       execute_process(COMMAND ${Python3_EXECUTABLE} ${G_DOL_FIXUP} ${GAME_DOL} ${RECOMP_DOL} ${GAME_ISO}
@@ -353,11 +366,15 @@ function(gcn_add_game)
     endif()
     execute_process(COMMAND ${Python3_EXECUTABLE} ${GCN_RECOMP_DIR}/recomp/recomp.py
                             ${RECOMP_DOL} ${G_SYMBOLS} ${RECOMP_GEN_DIR} ${G_TABLES}
+                            "${GAME_MODS_CODE}"
                     RESULT_VARIABLE RECOMP_RESULT)
     if(NOT RECOMP_RESULT EQUAL 0)
       message(FATAL_ERROR "recompilation failed")
     endif()
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${RECOMP_TOOL_SOURCES} ${GAME_ISO} ${G_SYMBOLS})
+    if(GAME_MODS_CODE)
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${GAME_MODS_CODE})
+    endif()
     include(${RECOMP_GEN_DIR}/sources.cmake)
 
     add_library(game_recomp STATIC ${RECOMP_SOURCES})

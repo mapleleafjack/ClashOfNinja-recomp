@@ -33,6 +33,10 @@ struct UpdateCheck {
 // thread. A build without a released version never asks.
 UpdateCheck check_for_update();
 
+// The tar the launcher unpacks archives with: bsdtar, which reads a zip on all three
+// systems. Empty when this machine has none.
+std::wstring tar_tool();
+
 // Dotted versions, compared field by field; a leading v and a -suffix are ignored, so
 // "v1.2.0" is newer than "1.1.9" and "1.2.0-beta1" is not newer than "1.2.0".
 bool is_newer_version(const std::wstring& candidate, const std::wstring& current);
