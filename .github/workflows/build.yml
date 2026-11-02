@@ -230,15 +230,17 @@ jobs:
       - name: Build the tool archive
         shell: bash
         # The archive a player downloads on a machine with no toolchain, which is what
-        # SteamOS is. Written here so the packaging script is exercised on every run, not
-        # only when a release is cut.
+        # SteamOS is. Written by the same script that assembles the release, and here so
+        # that path is exercised on every run, not only when a release is cut.
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.value }}"
           stage="$RUNNER_TEMP/tool-stage"
           mkdir -p "$stage/archive"
-          ./launcher/packaging/build-tools-linux.sh "$stage/tools" \
-            "$stage/archive/NarutoLauncher-tools-linux-x64-v${version}.tar.xz"
+          bash launcher/packaging/build-release-linux.sh \
+            --version "$version" \
+            --out "$stage/archive" \
+            --tools-only
 
       - name: Pin the tool archive
         shell: bash

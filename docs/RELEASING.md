@@ -49,10 +49,10 @@ is how CI's use of it is checked.
 
 Linux has neither of those shortcuts: SteamOS, which a Steam Deck runs, is immutable and ships
 no C++ compiler, and a distribution's gcc is not relocatable. So
-`launcher/packaging/build-tools-linux.sh` writes the Linux archive from pinned releases —
-Kitware's standalone CMake, Ninja, a static SDL2 and Zig, which `zig cc` uses to target glibc
-without needing anything installed on the player's machine. It fails rather than ship an SDL2
-without its X11 or audio backends, and it prints the digest and size to pin with
+`launcher/packaging/build-release-linux.sh --tools-only` writes the Linux archive from pinned
+releases — Kitware's standalone CMake, Ninja, a static SDL2 and Zig, which `zig cc` uses to
+target glibc without needing anything installed on the player's machine. It fails rather than
+ship an SDL2 without its X11 or audio backends, and it prints the digest and size to pin with
 `NLA_TOOLS_SHA256` and `NLA_TOOLS_BYTES`. The player's machine still needs `python3` for the
 recompiler and `xz` for the archive, both of which SteamOS provides.
 
@@ -175,14 +175,21 @@ bash launcher/packaging/build-release-linux.sh --version 1.0.1 \
   --tools /path/to/linux-tools --split
 ```
 
-`--split` writes `NarutoLauncher-tools.tar.xz`, holding `tools/` at its root, and prints the
-SHA-256 and size to pin, exactly as the Windows tools archive is pinned. The published asset
-is made by `build-tools-linux.sh`, under the release name the workflow pins:
+`--split` writes `NarutoLauncher-tools-linux-x64-v<version>.tar.xz`, holding `tools/` at its
+root, and prints the SHA-256 and size to pin, exactly as the Windows tools archive is pinned.
+`--tools-only` makes that archive on its own, from the pinned releases, with no launcher build
+and no tree to pass in; it is what the workflow publishes:
+
+```sh
+bash launcher/packaging/build-release-linux.sh --version 1.0.1 --out dist --tools-only
+```
+
+Pin it when configuring the launcher:
 
 ```sh
 cmake -S launcher -B launcher/build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DNLA_VERSION=1.0.1 \
-  -DNLA_TOOLS_URL=https://github.com/<owner>/<repo>/releases/download/v1.0.1/NarutoLauncher-tools.tar.xz \
+  -DNLA_TOOLS_URL=https://github.com/<owner>/<repo>/releases/download/v1.0.1/NarutoLauncher-tools-linux-x64-v1.0.1.tar.xz \
   -DNLA_TOOLS_SHA256=<hex> -DNLA_TOOLS_BYTES=<bytes>
 ```
 
