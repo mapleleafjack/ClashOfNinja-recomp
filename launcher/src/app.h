@@ -173,7 +173,9 @@ class App {
     // Picks a row's device: it takes the pad from whatever was on it.
     void assign_player(int player, int choice);
     void activate(Id id);
-    bool modal_active() const { return settings_open_ || overlay_open_ || picker_ != PickerKind::None; }
+    bool modal_active() const {
+        return settings_open_ || overlay_.open() || picker_ != PickerKind::None;
+    }
 
     // `exits` ends the launcher once the steps succeed: an update hands over to its
     // helper, which cannot swap this copy while it is running. `done` runs after the
@@ -230,6 +232,7 @@ class App {
     Dispatcher dispatcher_;
     Painter painter_;
     UiContext ui_{painter_};
+    Overlay overlay_;
 
     Settings settings_;
     std::optional<Project> project_;
@@ -303,7 +306,6 @@ class App {
     std::wstring mods_note_;   // the line under the table: why it is empty, or what Apply did
     std::wstring mods_log_;    // what the Activity log already says about the mods
     std::wstring catalog_log_; // the catalog error Activity already reported
-    bool overlay_mods_ = false;
     // The disc patch the game is played with, and what checking it against the extracted
     // disc found. The delta lives wherever the player keeps it; only its path is recorded.
     fs::path patch_delta_;
@@ -311,11 +313,6 @@ class App {
     bool patch_checking_ = false;
     std::wstring patch_note_;
 
-    bool overlay_open_ = false;
-    bool overlay_confirm_ = false;
-    bool overlay_update_ = false;
-    bool overlay_players_ = false;
-    bool overlay_geckos_ = false;
 
     // The Geckos table. `code_entries_` is every code this disc offers; `pending_codes_` is
     // the staged choice the panel shows, and `enabled_codes_` is what has been written. The
@@ -343,13 +340,7 @@ class App {
     bool codes_fetch_failed_ = false;
     std::thread codes_thread_;
     std::atomic_bool codes_stop_{false};
-    std::wstring overlay_title_;
-    std::wstring overlay_text_;
-    std::wstring overlay_action_;    std::function<void()> overlay_callback_;
-    // The button beside the action's, and what it does: "Use a different image" on a step
-    // that failed.
-    std::wstring overlay_second_;
-    std::function<void()> overlay_second_callback_;
+
 
     // The newest release, and what came of looking for it.
     UpdateState update_state_ = UpdateState::Never;

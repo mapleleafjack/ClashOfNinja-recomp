@@ -567,15 +567,7 @@ void App::open_path(const fs::path& path) {
 // Who plays as whom: a row per console pad, and the device that plays as it.
 void App::open_players() {
     refresh_devices();
-    overlay_open_ = true;
-    overlay_players_ = true;
-    overlay_mods_ = false;
-    overlay_geckos_ = false;
-    overlay_confirm_ = false;
-    overlay_update_ = false;
-    overlay_callback_ = nullptr;
-    overlay_title_ = L"Players";
-    overlay_action_ = L"Done";
+    overlay_.show_panel(OverlayPage::Players, L"Players");
     settings_open_ = false;
     scale_open_ = false;
     pad_menu_row_ = -1;

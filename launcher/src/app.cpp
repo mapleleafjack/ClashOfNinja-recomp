@@ -212,7 +212,7 @@ void App::handle_event(const SDL_Event& event) {
             if (picker_ != PickerKind::None) {
                 picker_offset_ = std::max(0, picker_offset_ - event.wheel.y);
                 invalidate();
-            } else if (overlay_open_ && overlay_geckos_) {
+            } else if (overlay_.is(OverlayPage::Geckos)) {
                 // The guide's list is longer than the panel: the wheel is how the rest of
                 // it is reached.
                 const std::size_t rows = code_rows();
@@ -287,7 +287,7 @@ void App::handle_event(const SDL_Event& event) {
 void App::handle_key(const SDL_KeyboardEvent& key) {
     // The codes box takes held keys like a text field does: Backspace that repeats is how a
     // line is cleared.
-    const bool typing = overlay_open_ && overlay_geckos_ && gecko_editing_;
+    const bool typing = overlay_.is(OverlayPage::Geckos) && gecko_editing_;
     if (key.repeat && picker_ == PickerKind::None && !typing) return;
     const bool command = (key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
 
@@ -335,10 +335,10 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
             } else if (scale_open_) {
                 scale_open_ = false;
                 invalidate();
-            } else if (overlay_open_) {
+            } else if (overlay_.open()) {
                 // The players panel is opened from Settings, so Escape lands back there;
                 // the mods panel belongs to the game page, which is all that is under it.
-                const bool back_to_settings = overlay_players_;
+                const bool back_to_settings = overlay_.is(OverlayPage::Players);
                 close_overlay();
                 if (back_to_settings) open_settings();
             } else if (settings_open_) {
@@ -396,7 +396,7 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
 }
 
 void App::handle_text(const SDL_TextInputEvent& text) {
-    if (overlay_open_ && overlay_geckos_ && gecko_editing_) {
+    if (overlay_.is(OverlayPage::Geckos) && gecko_editing_) {
         gecko_edit_ += widen(text.text);
         invalidate();
         return;
@@ -459,7 +459,7 @@ void App::activate(Id id) {
         return;
     }
 
-    if (overlay_open_ && overlay_geckos_) {
+    if (overlay_.is(OverlayPage::Geckos)) {
         const int row = static_cast<int>(id) - static_cast<int>(Id::CodeRow);
         if (id >= Id::CodeRow && id < Id::CodeRowEnd && row >= 0 &&
             row < static_cast<int>(code_rows())) {
@@ -489,7 +489,7 @@ void App::activate(Id id) {
         }
     }
 
-    if (overlay_open_ && overlay_mods_) {
+    if (overlay_.is(OverlayPage::Mods)) {
         const int row = static_cast<int>(id) - static_cast<int>(Id::ModRow);
         if (id >= Id::ModRow && id < Id::ModRowEnd && row < static_cast<int>(mod_rows())) {
             toggle_mod(mod_entries_[static_cast<size_t>(row)].id);
@@ -515,7 +515,7 @@ void App::activate(Id id) {
         }
     }
 
-    if (overlay_open_ && overlay_players_) {
+    if (overlay_.is(OverlayPage::Players)) {
         if (pad_menu_row_ >= 0) {
             const int player = pad_menu_row_ + 1;
             const int picked = static_cast<int>(id) - static_cast<int>(Id::PadOption);
@@ -552,19 +552,19 @@ void App::activate(Id id) {
         }
     }
 
-    if (overlay_open_) {
+    if (overlay_.open()) {
         if (id == Id::OverlayAction) {
-            auto callback = overlay_callback_;
+            auto callback = overlay_.take_action();
             close_overlay();
             if (callback) callback();
         } else if (id == Id::OverlaySecondary) {
-            auto callback = overlay_second_callback_;
+            auto callback = overlay_.take_second();
             close_overlay();
             if (callback) callback();
         } else if (id == Id::OverlayCancel) {
             // "Not now" on the update prompt is remembered for that version only, so a
             // later release asks again.
-            if (overlay_update_ && !update_release_.version.empty()) {
+            if (overlay_.update() && !update_release_.version.empty()) {
                 settings_.skipped_update = update_release_.version;
                 save_settings();
             }
@@ -670,18 +670,7 @@ void App::activate(Id id) {
 void App::show_message(const std::wstring& title, const std::wstring& text,
                        const std::wstring& action) {
     settings_open_ = false;
-    overlay_open_ = true;
-    overlay_confirm_ = false;
-    overlay_title_ = title;
-    overlay_text_ = text;
-    overlay_action_ = action;
-    overlay_callback_ = nullptr;
-    overlay_second_.clear();
-    overlay_second_callback_ = nullptr;
-    overlay_update_ = false;
-    overlay_players_ = false;
-    overlay_mods_ = false;
-    overlay_geckos_ = false;
+    overlay_.show_message(title, text, action);
     gecko_editing_ = false;
     window_.set_text_input(false);
     scale_open_ = false;
@@ -693,18 +682,8 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
                        const std::wstring& second,
                        std::function<void()> second_action) {
     settings_open_ = false;
-    overlay_open_ = true;
-    overlay_confirm_ = true;
-    overlay_title_ = title;
-    overlay_text_ = text;
-    overlay_action_ = action;
-    overlay_callback_ = std::move(confirmed);
-    overlay_second_ = second;
-    overlay_second_callback_ = std::move(second_action);
-    overlay_update_ = false;
-    overlay_players_ = false;
-    overlay_mods_ = false;
-    overlay_geckos_ = false;
+    overlay_.show_confirm(title, text, action, std::move(confirmed), second,
+                          std::move(second_action));
     gecko_editing_ = false;
     window_.set_text_input(false);
     scale_open_ = false;
@@ -712,20 +691,12 @@ void App::show_confirm(const std::wstring& title, const std::wstring& text,
 }
 
 void App::close_overlay() {
-    overlay_open_ = false;
-    overlay_confirm_ = false;
-    overlay_update_ = false;
-    overlay_players_ = false;
-    overlay_mods_ = false;
-    overlay_geckos_ = false;
+    overlay_.close();
     // The box stops taking keystrokes with the panel: the window hands text back to the
     // picker's own field, which is the only other place that types.
     gecko_editing_ = false;
     window_.set_text_input(false);
     pad_menu_row_ = -1;
-    overlay_callback_ = nullptr;
-    overlay_second_.clear();
-    overlay_second_callback_ = nullptr;
     invalidate();
 }
 

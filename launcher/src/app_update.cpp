@@ -75,7 +75,7 @@ void App::show_update_prompt() {
         text += L" The release page has the download.";
         show_confirm(format(L"Version %ls is available", update_release_.version.c_str()),
                      text, L"Open release page", [this] { open_update_page(); });
-        overlay_update_ = true;
+        overlay_.mark_update();
         return;
     }
     std::wstring text = format(L"You have version %ls. The launcher can download version "
@@ -91,7 +91,7 @@ void App::show_update_prompt() {
     }
     show_confirm(format(L"Version %ls is available", update_release_.version.c_str()), text,
                  L"Update now", [this] { begin_update(); });
-    overlay_update_ = true;
+    overlay_.mark_update();
 }
 
 void App::begin_update() {

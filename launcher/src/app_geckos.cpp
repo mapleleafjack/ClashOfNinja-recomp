@@ -128,15 +128,8 @@ void App::open_geckos() {
                           L"list.";
         }
     }
-    overlay_open_ = true;
-    overlay_geckos_ = true;
-    overlay_mods_ = false;
-    overlay_players_ = false;
-    overlay_confirm_ = false;
-    overlay_update_ = false;
-    overlay_callback_ = nullptr;
-    overlay_title_ = project_ ? L"Geckos — " + project_->title() : L"Geckos";
-    overlay_action_ = L"Done";
+    overlay_.show_panel(OverlayPage::Geckos,
+                        project_ ? L"Geckos — " + project_->title() : L"Geckos");
     settings_open_ = false;
     scale_open_ = false;
     pad_menu_row_ = -1;

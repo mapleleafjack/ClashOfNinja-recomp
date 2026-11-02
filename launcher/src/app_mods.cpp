@@ -251,15 +251,8 @@ void App::open_mods() {
                        L"naming this disc's ID and a disc/ tree of the files it replaces."
                      : L"Set up the game folder first: the mods are kept beside it.";
     }
-    overlay_open_ = true;
-    overlay_mods_ = true;
-    overlay_players_ = false;
-    overlay_geckos_ = false;
-    overlay_confirm_ = false;
-    overlay_update_ = false;
-    overlay_callback_ = nullptr;
-    overlay_title_ = project_ ? L"Mods — " + project_->title() : L"Mods";
-    overlay_action_ = L"Done";
+    overlay_.show_panel(OverlayPage::Mods,
+                        project_ ? L"Mods — " + project_->title() : L"Mods");
     settings_open_ = false;
     scale_open_ = false;
     pad_menu_row_ = -1;

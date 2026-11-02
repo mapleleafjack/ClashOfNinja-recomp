@@ -67,7 +67,7 @@ void App::open_picker(PickerKind kind, const std::wstring& title, const fs::path
     picker_editing_ = false;
     list_picker();
     settings_open_ = false;
-    overlay_open_ = false;
+    overlay_.close();
     scale_open_ = false;
     window_.set_text_input(true);
     invalidate();

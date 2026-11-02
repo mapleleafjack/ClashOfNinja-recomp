@@ -232,11 +232,11 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                           static_cast<int>(mods.y + mods.h / 2));
             if (!click(point)) return 1;
             const std::wstring wanted = L"Mods — " + Project::game_info(game).title;
-            if (!overlay_open_ || !overlay_mods_ || settings_open_ ||
-                overlay_title_ != wanted) {
+            if (!overlay_.is(OverlayPage::Mods) || settings_open_ ||
+                overlay_.title() != wanted) {
                 std::fprintf(stderr, "mods-from-game: %s\n",
-                             narrow(overlay_mods_ ? L"the mods panel says \"" +
-                                                        overlay_title_ + L"\""
+                             narrow(overlay_.is(OverlayPage::Mods) ? L"the mods panel says \"" +
+                                                        overlay_.title() + L"\""
                                                   : L"the Mods button opened no panel")
                                  .c_str());
                 return 1;
@@ -245,7 +245,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             escape.type = SDL_KEYDOWN;
             escape.key.keysym.sym = SDLK_ESCAPE;
             handle_event(escape);
-            if (overlay_open_ || settings_open_) {
+            if (overlay_.open() || settings_open_) {
                 std::fprintf(stderr,
                              "mods-from-game: Escape did not return to the game\n");
                 return 1;
@@ -321,11 +321,11 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                           static_cast<int>(geckos.y + geckos.h / 2));
             if (!click(point)) return 1;
             const std::wstring wanted = L"Geckos \u2014 " + Project::game_info(game).title;
-            if (!overlay_open_ || !overlay_geckos_ || settings_open_ ||
-                overlay_title_ != wanted) {
+            if (!overlay_.is(OverlayPage::Geckos) || settings_open_ ||
+                overlay_.title() != wanted) {
                 std::fprintf(stderr, "geckos-from-game: %s\n",
-                             narrow(overlay_geckos_
-                                        ? L"the geckos panel says \"" + overlay_title_ + L"\""
+                             narrow(overlay_.is(OverlayPage::Geckos)
+                                        ? L"the geckos panel says \"" + overlay_.title() + L"\""
                                         : L"the Geckos button opened no panel")
                                  .c_str());
                 return 1;
@@ -334,7 +334,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             escape.type = SDL_KEYDOWN;
             escape.key.keysym.sym = SDLK_ESCAPE;
             handle_event(escape);
-            if (overlay_open_ || settings_open_) {
+            if (overlay_.open() || settings_open_) {
                 std::fprintf(stderr,
                              "geckos-from-game: Escape did not return to the game\n");
                 return 1;
@@ -494,7 +494,7 @@ void App::paint() {
 
     if (settings_open_) {
         paint_settings();
-    } else if (overlay_open_) {
+    } else if (overlay_.open()) {
         paint_overlay();
     }
     if (picker_ != PickerKind::None) paint_picker();
@@ -1103,32 +1103,29 @@ void App::paint_settings() {
 
 void App::paint_overlay() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
-    float panel_w = overlay_players_ ? 660.0f
-                    : overlay_mods_ ? 720.0f
-                    : overlay_geckos_ ? 760.0f
-                                      : kMessagePanelWidth;
+    float panel_w = overlay_.is(OverlayPage::Players) ? 660.0f
+                    : overlay_.is(OverlayPage::Mods)  ? 720.0f
+                    : overlay_.is(OverlayPage::Geckos) ? 760.0f
+                                                      : kMessagePanelWidth;
     // How many code rows fit: the fixed part of the Geckos panel is the two lines above the
     // table, the line under it, the paste box and the buttons, and the rest is rows. A
     // window too short for all of them shows fewer rather than a panel that does not fit,
     // because a panel taller than the window loses its title and its last rows.
-    if (overlay_geckos_) {
+    if (overlay_.is(OverlayPage::Geckos)) {
         constexpr float kChrome = 150.0f + 26.0f + 66.0f + 96.0f;
         constexpr float kRow = 22.0f;
         int fit = static_cast<int>((height_ - kChrome) / kRow);
         fit = std::clamp(fit, 3, kCodeRows);
         code_rows_fit_ = static_cast<std::size_t>(fit);
     }
-    // A row for each of the console's four pads, and the note above them.
-    //
     // A message is as tall as what it says: the fixed 620×336 panel left half of itself
     // empty for a short prompt, and would have cut a long one off at the bottom.
-    const bool overlay_message = !overlay_players_ && !overlay_mods_ && !overlay_geckos_;
     const float message_lines =
-        static_cast<float>(wrapped_lines(painter_, overlay_text_, Face::Body,
+        static_cast<float>(wrapped_lines(painter_, overlay_.text(), Face::Body,
                                          panel_w - 52.0f));
-    float panel_h = overlay_players_ ? 168.0f + 34.0f * kPads
-                    : overlay_mods_ ? 250.0f + 34.0f * static_cast<float>(mod_rows())
-                    : overlay_geckos_
+    float panel_h = overlay_.is(OverlayPage::Players) ? 168.0f + 34.0f * kPads
+                    : overlay_.is(OverlayPage::Mods) ? 250.0f + 34.0f * static_cast<float>(mod_rows())
+                    : overlay_.is(OverlayPage::Geckos)
                         ? 308.0f + 22.0f * static_cast<float>(code_rows())
                         : std::clamp(60.0f + message_lines * painter_.line_height(Face::Body) +
                                          16.0f + 56.0f + 24.0f,
@@ -1138,10 +1135,10 @@ void App::paint_overlay() {
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
 
-    painter_.text(overlay_title_, RectF(panel.x + 26, panel.y + 20, panel.x + panel.w - 26,
+    painter_.text(overlay_.title(), RectF(panel.x + 26, panel.y + 20, panel.x + panel.w - 26,
                                               panel.y + 50),
                   Face::CardTitle, rgb(theme::Text));
-    if (overlay_players_) {
+    if (overlay_.is(OverlayPage::Players)) {
         // One row per pad, and the device that plays as it: the picks go to the game's
         // controls.txt, which is what the runtime reads.
         float left = panel.x + 26;
@@ -1168,7 +1165,7 @@ void App::paint_overlay() {
             painter_.text(ui_.elide(devices_note_, Face::Tiny, right - left),
                           RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
         }
-    } else if (overlay_mods_) {
+    } else if (overlay_.is(OverlayPage::Mods)) {
         // One row per mod this disc allows: a folder in mods/, or a disc patch. The checks
         // are the choice Apply writes; a known mod whose files are not here yet is
         // downloaded when it is checked.
@@ -1248,7 +1245,7 @@ void App::paint_overlay() {
         ui_.button(Id::ModApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && staged);
-    } else if (overlay_geckos_) {
+    } else if (overlay_.is(OverlayPage::Geckos)) {
         // One row per code this disc can be played with, its own and the guide's. The checks
         // are the choice Apply writes; a code the recompiler cannot run is listed so it can
         // be read, and cannot be switched on.
@@ -1378,7 +1375,7 @@ void App::paint_overlay() {
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && project_ != std::nullopt && staged);
     } else {
-        painter_.text(overlay_text_, RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
+        painter_.text(overlay_.text(), RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
                                                  panel.y + panel.h - 66),
                       Face::Body, rgb(theme::Muted));
     }
@@ -1386,19 +1383,19 @@ void App::paint_overlay() {
     float button_right = panel.x + panel.w - 26;
     const float button_y = panel.y + panel.h - 56;
     button_right -= 130;
-    ui_.button(Id::OverlayAction, Rect{button_right, button_y, 130, 36}, overlay_action_, true,
+    ui_.button(Id::OverlayAction, Rect{button_right, button_y, 130, 36}, overlay_.action(), true,
            true);
-    if (overlay_confirm_) {
+    if (overlay_.confirm()) {
         button_right -= 8 + 100;
         ui_.button(Id::OverlayCancel, Rect{button_right, button_y, 100, 36}, L"Cancel", false,
                true);
     }
-    if (!overlay_second_.empty()) {
+    if (!overlay_.second().empty()) {
         const float second_w =
-            std::max(110.0f, ui_.text_width(overlay_second_, Face::Button) + 26.0f);
+            std::max(110.0f, ui_.text_width(overlay_.second(), Face::Button) + 26.0f);
         button_right -= 8 + second_w;
         ui_.button(Id::OverlaySecondary, Rect{button_right, button_y, second_w, 36},
-               overlay_second_, false, true);
+               overlay_.second(), false, true);
     }
 }
 

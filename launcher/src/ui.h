@@ -80,6 +80,10 @@ enum class Id {
 
 enum class Pill { Muted, Ok, Warn, Bad };
 
+// Which page covers the main one: a message, or one of the launcher's own tables. A page is
+// modal, so there is only ever one.
+enum class OverlayPage { None, Message, Mods, Geckos, Players };
+
 // Where the mouse can be pressed, recorded as a frame is drawn and asked about after it.
 // The last one registered wins, so a menu drawn over a panel takes the click.
 struct Hit {
@@ -135,6 +139,48 @@ class UiContext {
     Id hover_ = Id::None;
     Id pressed_ = Id::None;
     std::vector<Hit> hits_;
+};
+
+
+// What a page over the main one says, and what its buttons do. It holds no window and no
+// painter, so a prompt can be shown and answered without either.
+class Overlay {
+  public:
+    // A message with one button, which only closes it.
+    void show_message(std::wstring title, std::wstring text, std::wstring action);
+    // The same, for a question: the button goes on to do something, and a second button can
+    // offer another way out -- "use a different image" on a step that failed.
+    void show_confirm(std::wstring title, std::wstring text, std::wstring action,
+                      std::function<void()> confirmed, std::wstring second = {},
+                      std::function<void()> second_action = {});
+    // One of the launcher's own tables, which fills its own page and only needs a way out.
+    void show_panel(OverlayPage page, std::wstring title);
+    // The prompt offering a newer release, where closing it means "not this version".
+    void mark_update() { update_ = true; }
+    void close();
+
+    bool open() const { return page_ != OverlayPage::None; }
+    bool is(OverlayPage page) const { return page_ == page; }
+    bool confirm() const { return confirm_; }
+    bool update() const { return update_; }
+    const std::wstring& title() const { return title_; }
+    const std::wstring& text() const { return text_; }
+    const std::wstring& action() const { return action_; }
+    const std::wstring& second() const { return second_; }
+    // Takes the button's work back out of the page, so closing it does not drop it.
+    std::function<void()> take_action();
+    std::function<void()> take_second();
+
+  private:
+    OverlayPage page_ = OverlayPage::None;
+    bool confirm_ = false;
+    bool update_ = false;
+    std::wstring title_;
+    std::wstring text_;
+    std::wstring action_;
+    std::wstring second_;
+    std::function<void()> on_action_;
+    std::function<void()> on_second_;
 };
 
 }  // namespace nla

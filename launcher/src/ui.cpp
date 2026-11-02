@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace nla {
 
@@ -156,5 +157,54 @@ Id UiContext::hit_at(float x, float y) const {
     }
     return Id::None;
 }
+
+// Overlay -------------------------------------------------------------------
+
+void Overlay::show_message(std::wstring title, std::wstring text, std::wstring action) {
+    page_ = OverlayPage::Message;
+    confirm_ = false;
+    update_ = false;
+    title_ = std::move(title);
+    text_ = std::move(text);
+    action_ = std::move(action);
+    second_.clear();
+    on_action_ = nullptr;
+    on_second_ = nullptr;
+}
+
+void Overlay::show_confirm(std::wstring title, std::wstring text, std::wstring action,
+                           std::function<void()> confirmed, std::wstring second,
+                           std::function<void()> second_action) {
+    show_message(std::move(title), std::move(text), std::move(action));
+    confirm_ = true;
+    on_action_ = std::move(confirmed);
+    second_ = std::move(second);
+    on_second_ = std::move(second_action);
+}
+
+void Overlay::show_panel(OverlayPage page, std::wstring title) {
+    page_ = page;
+    confirm_ = false;
+    update_ = false;
+    title_ = std::move(title);
+    text_.clear();
+    action_ = L"Done";
+    second_.clear();
+    on_action_ = nullptr;
+    on_second_ = nullptr;
+}
+
+void Overlay::close() {
+    page_ = OverlayPage::None;
+    confirm_ = false;
+    update_ = false;
+    second_.clear();
+    on_action_ = nullptr;
+    on_second_ = nullptr;
+}
+
+std::function<void()> Overlay::take_action() { return std::move(on_action_); }
+
+std::function<void()> Overlay::take_second() { return std::move(on_second_); }
 
 }  // namespace nla
