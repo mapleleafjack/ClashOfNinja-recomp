@@ -209,3 +209,7 @@ GitHub once and prints the release it finds.
 `--fetch-tools <log>` runs the same download the launcher offers, without a window, and writes
 what its steps report to `log`. A release build uses it to prove the pinned archive still
 downloads and still matches its digest.
+
+`--version` prints the version the launcher was built at — the one it compares a release
+against — and exits. The release checks read it to confirm a download reports the version the
+tag names.

@@ -105,6 +105,15 @@ against the tree and the script fails if the two disagree, then prints the SHA-2
 release notes. They are written with the `tar` that ships with Windows (bsdtar) rather than
 `Compress-Archive`, which left a 4 KB archive and no error after minutes on this tree.
 
+Every run checks the zip the way a player receives it:
+`launcher/packaging/check-release-windows.ps1` unpacks it afresh and confirms the folder holds
+the launcher, the recompiler and the tools, that the executable is an x64 PE that links SDL2
+statically and starts without a console, and that it reports the version the tag names; then it
+runs the launcher itself from the extracted copy to write all five game projects and draw a
+frame, and fails if the folder carries a project, a save or a disc image. Run it by hand against
+a local folder — `-Dir launcher\dist\NarutoLauncher -Version 0.0.0` — to see what a build would
+ship.
+
 The launcher ships no game data: the extracted tree is created in the folder the player chose on
 first use, and `launcher/build/`, `launcher/build-release/` and `launcher/dist/` are gitignored.
 The workflow fails the build if the release ever carries a game folder, any game's `rom/`,
@@ -157,6 +166,14 @@ The tarball is the installer, because a Linux player has no launcher store: it i
 where the games should live and `NarutoLauncher` is run from there. `--make-project DIR` does
 headlessly what clicking a cover does. `launcher/packaging/build-release-linux.sh` writes it,
 and the workflow calls the same script, so a developer's package and CI's cannot drift.
+
+Every run checks the tarball the way a player receives it:
+`launcher/packaging/check-release-linux.sh` unpacks it afresh and confirms the folder name, the
+version the launcher reports, the x86-64 ELF with statically linked SDL2, and that `tools/sdl2`
+travels; then it runs the launcher itself from the extracted copy to write all five game
+projects and draw a frame, and fails if the folder carries a project, box art, a save or a disc
+image. Run it by hand against a local folder — `--dir "launcher/dist/NarutoLauncher Linux 0.0.0"
+--version 0.0.0` — to see what a build would ship.
 
 Three things about the Linux desktop shape the format:
 

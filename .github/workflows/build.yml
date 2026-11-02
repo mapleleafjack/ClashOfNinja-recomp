@@ -349,6 +349,18 @@ jobs:
           done
           echo "the package carries the launcher, the recompiler and the disc script"
 
+      - name: The package works as downloaded
+        shell: bash
+        # The tarball is what a player gets, so it is what is checked: a fresh unpack, the
+        # folder name the update check reads, the version the tag names, an x86-64 launcher
+        # with SDL2 linked statically, and one that writes every game project and draws a
+        # frame -- all from the extracted copy, so a file that only exists in the build
+        # tree cannot hide here.
+        run: |
+          bash launcher/packaging/check-release-linux.sh \
+            "launcher/build-ci/package/NarutoLauncher-Linux-x64-v${{ steps.version.outputs.value }}.tar.xz" \
+            --version "${{ steps.version.outputs.value }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
@@ -519,6 +531,18 @@ jobs:
           foreach ($path in 'naruto', 'naruto2', 'gnt3', 'gnt4', 'config', 'covers') {
             if (Test-Path (Join-Path $out $path)) { throw "the release must not carry $path" }
           }
+
+      - name: The zip works as downloaded
+        shell: pwsh
+        # The zip is what a player gets, so it is what is checked: a fresh unpack, the name
+        # the update check reads, the version the tag names, an x64 launcher with SDL2
+        # linked statically, and one that writes every game project and draws a frame --
+        # all from the extracted copy, so a file that only exists in the build tree cannot
+        # hide here.
+        run: |
+          ./launcher/packaging/check-release-windows.ps1 `
+            -Archive "launcher/dist/NarutoLauncher-Windows-x64-v${{ steps.version.outputs.value }}.zip" `
+            -Version "${{ steps.version.outputs.value }}"
 
       - uses: actions/upload-artifact@v4
         with:
