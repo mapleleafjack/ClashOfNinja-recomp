@@ -437,8 +437,7 @@ void App::download_mods(const std::vector<std::wstring>& ids) {
                          }});
     }
 
-    job_quiet_ = true;
-    start_job(std::move(tasks), false, false, [this](int code) {
+    start_job(std::move(tasks), {.quiet = true, .done = [this](int code) {
         if (code == 0) {
             refresh_mods();
             apply_mods_now();
@@ -449,7 +448,7 @@ void App::download_mods(const std::vector<std::wstring>& ids) {
             mods_note_ = L"The mods could not be downloaded.";
             invalidate();
         }
-    });
+    }});
 }
 
 // Checks the chosen patch, then writes what the panel has checked. The check decodes
@@ -486,8 +485,8 @@ void App::apply_mods_now() {
                          }
                          return 0;
                      }});
-    job_quiet_ = true;
-    start_job(std::move(tasks), false, false, [this, delta, fit](int code) {
+    start_job(std::move(tasks),
+              {.quiet = true, .done = [this, delta, fit](int code) {
         if (code == 130) {
             mods_note_ = L"The check was cancelled; nothing was changed.";
             invalidate();
@@ -511,7 +510,7 @@ void App::apply_mods_now() {
                           : format(L"The patch fits this disc: %d of %d pieces checked match.",
                                    fit->matched, fit->sampled);
         commit_mods(delta, *fit);
-    });
+    }});
 }
 
 // Writes what the panel has checked: the patch manifest, the mods' overlay and the

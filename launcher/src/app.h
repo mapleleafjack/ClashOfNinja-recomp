@@ -168,8 +168,7 @@ class App {
     // `exits` ends the launcher once the steps succeed: an update hands over to its
     // helper, which cannot swap this copy while it is running. `done` runs after the
     // usual reporting, for a step that has its own next move.
-    void start_job(std::vector<Task> tasks, bool then_launch = false, bool exits = false,
-                   std::function<void(int)> done = nullptr);
+    void start_job(std::vector<Task> tasks, JobOptions options = {});
     void on_log(const std::wstring& text);
     void on_stage(const std::wstring& text);
     void on_progress(int percent);
@@ -242,14 +241,9 @@ class App {
     int log_offset_ = 0;
     bool busy_ = false;
     bool quit_ = false;
-    bool job_exits_ = false;
-    bool job_then_launch_ = false;
-    // The job in flight is a build, so what it compiled in is recorded when it succeeds.
-    bool job_build_ = false;
-    // A mod download or patch check says why it failed in its own panel, so the generic
-    // "the step did not finish" prompt would only close that panel as it appeared.
-    bool job_quiet_ = false;
-    std::function<void(int)> job_done_;
+    // What the job in flight was started to do, and what to run when it ends. Replaced only
+    // by a job that actually starts, so a request that is turned away cannot change it.
+    JobOptions job_run_;
     bool launch_wanted_ = false;
     int progress_ = -1;
     std::wstring stage_;

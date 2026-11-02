@@ -53,6 +53,22 @@ class Activity {
     int percent_ = -1;
 };
 
+// What a job is for, as far as the launcher is concerned: whether it starts the game when it
+// finishes, whether finishing it is the cue for the helper that swaps in a new version,
+// whether it records the code stamp a build needs, and whether the caller reports a failure
+// itself -- in which case the generic "the step did not finish" prompt would only be a second
+// one about the same thing.
+//
+// These travel with the request rather than being set on the launcher beforehand, so a job
+// that never starts cannot leave them behind for the one already running.
+struct JobOptions {
+    bool then_launch = false;
+    bool exits = false;
+    bool builds = false;
+    bool quiet = false;
+    std::function<void(int)> done;
+};
+
 // Runs a queue of tasks with the worker's output collected in a string, then writes that
 // to `log`. For a console run with no Activity panel to show the steps in.
 int run_tasks_to_log(std::vector<Task> tasks, const fs::path& log);

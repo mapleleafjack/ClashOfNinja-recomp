@@ -13,13 +13,10 @@
 
 namespace nla {
 
-void App::start_job(std::vector<Task> tasks, bool then_launch, bool exits,
-                    std::function<void(int)> done) {
+void App::start_job(std::vector<Task> tasks, JobOptions options) {
     if (busy_ || tasks.empty()) return;
     busy_ = true;
-    job_then_launch_ = then_launch;
-    job_exits_ = exits;
-    job_done_ = std::move(done);
+    job_run_ = std::move(options);
     activity_.reset();
     log_visible_ = true;
     log_offset_ = 0;
@@ -48,14 +45,13 @@ void App::on_progress(int percent) {
 void App::on_job_done(int code) {
     busy_ = false;
     activity_.reset();
-    bool then_launch = job_then_launch_;
-    bool exits = job_exits_;
-    bool built = job_build_;
-    bool quiet = job_quiet_;
-    job_then_launch_ = false;
-    job_exits_ = false;
-    job_build_ = false;
-    job_quiet_ = false;
+    // Taken out of the run before anything can start another one.
+    JobOptions run = std::move(job_run_);
+    job_run_ = {};
+    const bool then_launch = run.then_launch;
+    const bool exits = run.exits;
+    const bool built = run.builds;
+    const bool quiet = run.quiet;
     if (code == 0) {
         append_log(L"[launcher] done\n");
         // A job can be the one that installed the tools, so look for them again.
@@ -84,9 +80,9 @@ void App::on_job_done(int code) {
     if (code == 0 && then_launch) continue_launch();
     // The helper that swaps in the new version is waiting for this process to go.
     if (code == 0 && exits) quit_ = true;
-    if (job_done_) {
-        auto follow_up = std::move(job_done_);
-        job_done_ = nullptr;
+    if (run.done) {
+        auto follow_up = std::move(run.done);
+        run.done = nullptr;
         follow_up(code);
     }
 }
@@ -118,7 +114,7 @@ bool App::check_required_tools() {
             L"Mac that comes from Apple's command line tools.\n\n"
             L"They are free, need no Apple account, and the launcher starts Apple's own "
             L"installer and waits for it to finish (about 2 GB).",
-            L"Install", [this] { start_job(apple_tools_tasks(), true); });
+            L"Install", [this] { start_job(apple_tools_tasks(), {.then_launch = true}); });
         return false;
     }
 #endif
@@ -140,11 +136,11 @@ void App::install_tools(bool then_launch) {
     if (busy_) return;
     if (tools_package_available()) {
         append_log(L"[launcher] fetching the build tools\n");
-        start_job(tools_package_tasks(), then_launch);
+        start_job(tools_package_tasks(), {.then_launch = then_launch});
         return;
     }
 #if defined(__APPLE__)
-    start_job(apple_tools_tasks(), then_launch);
+    start_job(apple_tools_tasks(), {.then_launch = then_launch});
 #endif
 }
 
@@ -297,8 +293,9 @@ void App::begin_setup(const fs::path& image, bool then_launch) {
 
     // A step that failed offers its retry, and the other way out: another disc image, which
     // is what a player with the wrong disc, or a damaged one, needs next.
-    job_quiet_ = true;
-    start_job(std::move(tasks), then_launch, false, [this, image, then_launch](int code) {
+    start_job(std::move(tasks), {.then_launch = then_launch,
+                                 .quiet = true,
+                                 .done = [this, image, then_launch](int code) {
         if (code == 0 || code == 130) return;
         show_confirm(L"The disc was not set up",
                      L"Activity holds the command and the output it printed. A retry reads "
@@ -306,8 +303,8 @@ void App::begin_setup(const fs::path& image, bool then_launch) {
                      L"not the one you meant, or one that cannot be read.",
                      L"Try again",
                      [this, image, then_launch] { begin_setup(image, then_launch); },
-                     L"Use a different image", [this] { choose_image(); });
-    });
+                          L"Use a different image", [this] { choose_image(); });
+                         }});
 }
 
 std::vector<Task> App::build_tasks() {
@@ -429,11 +426,12 @@ void App::start_build(bool then_launch) {
                      L"your disc image first.");
         return;
     }
-    job_build_ = true;
     // The failure gets a prompt of its own below, which says what can be done about it;
     // the generic "the step did not finish" one would only replace it.
-    job_quiet_ = true;
-    start_job(std::move(tasks), then_launch, false, [this, then_launch](int code) {
+    start_job(std::move(tasks), {.then_launch = then_launch,
+                                 .builds = true,
+                                 .quiet = true,
+                                 .done = [this, then_launch](int code) {
         if (code == 0 || code == 130) return;
         show_confirm(L"The build did not finish",
                      L"Activity holds the command and the output it printed, which usually "
@@ -441,8 +439,8 @@ void App::start_build(bool then_launch) {
                      L"where the folders are; another image is the way out of a disc that is "
                      L"not the one you meant.",
                      L"Try again", [this, then_launch] { start_build(then_launch); },
-                     L"Use a different image", [this] { choose_image(); });
-    });
+                          L"Use a different image", [this] { choose_image(); });
+                         }});
 }
 
 void App::launch() {

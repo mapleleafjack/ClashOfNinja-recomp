@@ -107,7 +107,7 @@ void App::begin_update() {
         open_update_page();
         return;
     }
-    start_job(update_tasks(update_release_), false, true);
+    start_job(update_tasks(update_release_), {.exits = true});
 }
 
 void App::open_update_page() {
