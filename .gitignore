@@ -50,6 +50,10 @@ covers/
 # game. They stay on the machine that has the disc, like the extracted tree they sit over.
 mods/
 
+# Geckos: the codes a player switches on for one disc, and the guide's list fetched for it.
+# They are per-machine like the rest of what the launcher writes beside the games.
+geckos/
+
 # Disc patches: the deltas the launcher downloads are made from a disc, so they stay on
 # the machine that has one, like the tree they are decoded over.
 patches/

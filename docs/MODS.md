@@ -130,6 +130,44 @@ is not overlaid.
   instructions belongs in `mods.code` (below), which is the same write applied where it can
   take effect.
 
+## Geckos: codes chosen on their own
+
+A mod carries whatever codes it carries, and switching the mod on switches all of them on.
+The **Geckos** panel is for the other case: one code at a time, from a list the player
+builds up, so a single tweak does not need a mod folder of its own.
+
+- **Where they are kept.** `geckos/<DISCID>.txt` beside the games, in the format an editor
+  exports: `$Name` on its own line, its words under it, a line of `$`s between codes. It is
+  keyed by disc ID for the same reason a mod's `disc_id` is: a code's addresses are one
+  build's own, so GNT4's codes are never offered for another disc, and the European and
+  American releases of a game keep separate lists. The folder is game data the launcher
+  writes, so it is gitignored like `mods/`.
+- **Where the list comes from.** The community's write-up for that disc is downloaded on its
+  own the first time the launcher runs for it — there is no button to press for it — and
+  **Refresh list** asks for it again, for a fetch that failed or a write-up that has changed.
+  Whatever shape it arrives in, it is written to `geckos/online/<DISCID>.txt` in the same
+  `$Name` format as a player's own codes, so one reader serves every source. Two shapes are
+  read:
+
+  | Source | Discs | Shape |
+  | --- | --- | --- |
+  | [Naruto-GNT-Modding](https://github.com/NicholasMoser/Naruto-GNT-Modding) guides | `G4NJDA`, `GNUEDA` | markdown: a `## Name` or `### Name` heading with a fenced block under it |
+  | Ralf's [gc-forever](https://www.gc-forever.com/forums/) threads | `GNREDA`, `GNUPDA` | the thread's code box: a `Name [Author]` line with its words under it |
+
+  `G3NJDA` (GNT3) has a write-up in neither, so it says there are none rather than offering
+  codes written for another build. Codes are never carried across discs: a disc's addresses
+  are its own.
+- **What a code has to be.** Each pasted `$Named` block is checked on **Apply**. A block
+  this recompiler cannot run — inserted assembly, a switch, a code that keeps its own
+  registers — is left out and named in the Activity log, because a check that changes
+  nothing in the game is worse than no check at all. The panel still lists such a code when
+  it comes from the guide, so a player can see it exists and read why it does nothing here;
+  it cannot be switched on.
+- **What they become.** Nothing new: the chosen codes join the mods' codes in the same
+  `mods.gecko` and `mods.code` (below), after the mods' own, so a code the player picked
+  last wins where it and a mod write the same address. Checking a code that patches
+  instructions rebuilds the game exactly as a mod's would.
+
 ## Codes: what the launcher and the runtime do with them
 
 A Gecko code is a list of 8-byte pairs, `XXXXXXXX YYYYYYYY`. The first byte of the first

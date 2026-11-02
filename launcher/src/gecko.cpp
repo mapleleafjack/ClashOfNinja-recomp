@@ -355,4 +355,81 @@ GeckoProgram parse_gecko(const std::wstring& text, const std::wstring& source) {
     return program;
 }
 
+std::vector<NamedCode> parse_named_codes(const std::wstring& text,
+                                         const std::wstring& fallback) {
+    std::vector<NamedCode> codes;
+    NamedCode current;
+    bool open = false;
+
+    // A block is a code only when something in it is a word: a `$Name` with nothing under
+    // it, or notes alone, is not one a player could switch on.
+    auto flush = [&codes, &current, &open, &fallback] {
+        if (!open) return;
+        open = false;
+        while (!current.text.empty() &&
+               (current.text.back() == L'\n' || current.text.back() == L'\r'))
+            current.text.pop_back();
+        bool has_word = false;
+        for (const auto& line : split(current.text, L'\n')) {
+            const auto trimmed = trim(line);
+            if (!trimmed.empty() && trimmed.front() != L'#' && trimmed.front() != L'*' &&
+                trimmed.front() != L'"') {
+                has_word = true;
+                break;
+            }
+        }
+        if (!has_word) {
+            current = NamedCode{};
+            return;
+        }
+        std::wstring name = trim(current.name);
+        if (name.empty()) name = fallback.empty() ? L"Code" : fallback;
+        // Two codes with one name would be one check in the panel and one entry in
+        // settings, so a repeat is numbered the way an editor's own list does it.
+        std::wstring unique = name;
+        for (int n = 2;; ++n) {
+            bool taken = false;
+            for (const auto& code : codes) {
+                if (code.name == unique) {
+                    taken = true;
+                    break;
+                }
+            }
+            if (!taken) break;
+            unique = format(L"%ls (%d)", name.c_str(), n);
+        }
+        current.name = unique;
+        codes.push_back(current);
+        current = NamedCode{};
+    };
+
+    for (const auto& raw : split(text, L'\n')) {
+        if (!raw.empty() && raw.front() == L'$') {
+            const auto line = trim(raw);
+            bool separator = !line.empty();
+            for (wchar_t c : line) {
+                if (c != L'$') {
+                    separator = false;
+                    break;
+                }
+            }
+            flush();
+            if (separator) continue;
+            current.name = line.substr(1);
+            open = true;
+            continue;
+        }
+        if (!open) {
+            // A note before any name belongs to nothing, so it starts no code.
+            const auto line = trim(raw);
+            if (line.empty() || line.front() == L'#' || line.front() == L'*') continue;
+            open = true;
+        }
+        current.text += raw;
+        current.text += L'\n';
+    }
+    flush();
+    return codes;
+}
+
 }  // namespace nla

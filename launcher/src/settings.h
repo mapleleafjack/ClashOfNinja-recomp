@@ -29,6 +29,10 @@ struct Settings {
     // The disc patch each game folder is played with, by the delta's path. Empty for none:
     // a patch replaces the whole disc, so one is chosen rather than accumulated.
     std::map<std::wstring, std::wstring> patches;
+    // The Gecko codes switched on for each game folder, by a code's `$Name`. Codes are
+    // chosen one at a time, so this is a list rather than a folder: the order is the order
+    // they were switched on, and a later one wins where two write the same address.
+    std::map<std::wstring, std::vector<std::wstring>> codes;
 
     static Settings load();
     void save() const;

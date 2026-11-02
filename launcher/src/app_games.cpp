@@ -51,6 +51,9 @@ void App::refresh() {
     // The mods come first: their files and codes are what the game's status is measured
     // against, so the status is read after they have been written.
     refresh_mods();
+    // The codes chosen on their own are read back here too: the program the runtime runs
+    // holds the mods' codes and these, so both lists must be current before it is written.
+    refresh_geckos();
     write_mod_overlay();
     if (project_) status_ = project_->status();
     invalidate();
@@ -62,9 +65,10 @@ void App::locate_project() {
                 [this](const fs::path& chosen) {
                     Project candidate(chosen, settings_.game);
                     auto text = chosen.wstring();
-                    if (!candidate.valid()) {
+                    if (!candidate.complete()) {
                         // An empty folder is the normal case: the projects are the
-                        // launcher's to write, since they are not in the package.
+                        // launcher's to write, since they are not in the package. A folder
+                        // missing only the recompiler gets it here as well.
                         std::wstring error;
                         if (!Project::create(chosen, &error)) {
                             show_message(L"Could not set the folder up", error);

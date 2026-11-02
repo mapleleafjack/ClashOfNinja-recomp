@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "catalog.h"
+#include "codes.h"
 
 namespace nla {
 
@@ -129,16 +130,21 @@ OverlaySync sync_overlay_manifest(const fs::path& disc_dir, const fs::path& disc
 // changes nothing once the code has been recompiled (see gecko.h).
 struct ModProgram {
     bool wrote = false;   // mods.gecko or mods.code was written, or removed
-    std::size_t codes = 0;  // mods that carry codes
+    std::size_t codes = 0;  // codes that contributed, from a mod or chosen on its own
     std::size_t ops = 0;    // operations in mods.gecko
     std::size_t words = 0;  // instruction words in mods.code
     std::vector<std::wstring> warnings;
 };
 
 // Reads every mod's codes, in the order given, and writes `mods.gecko` and `mods.code`
-// beside `disc.manifest`. Both are removed when no mod carries codes. Only touches a file
+// beside `disc.manifest`. Both are removed when nothing carries codes. Only touches a file
 // when its text changed, so a launcher that refreshes often does not write constantly.
-ModProgram sync_mod_programs(const fs::path& disc_dir, const std::vector<ModInfo>& mods);
+//
+// `codes` are the Gecko codes chosen on their own rather than through a mod, from the
+// Geckos panel. They run in the same program, after the mods, so a code the player picked
+// last wins over a mod's word at the same address.
+ModProgram sync_mod_programs(const fs::path& disc_dir, const std::vector<ModInfo>& mods,
+                             const std::vector<CodeEntry>& codes = {});
 
 // A disc patch: an xdelta (.xdelta) delta that turns the extracted disc into another one --
 // SCON4, a translation, a rebalancing hack. The runtime decodes it window by window over the

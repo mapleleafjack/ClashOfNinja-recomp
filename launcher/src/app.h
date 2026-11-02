@@ -14,6 +14,7 @@
 
 #include "painter.h"
 #include "catalog.h"
+#include "codes.h"
 #include "jobs.h"
 #include "mods.h"
 #include "project.h"
@@ -26,6 +27,9 @@ namespace nla {
 
 // The console's four controller sockets: the pads a game polls for players.
 constexpr int kPads = 4;
+// How many code rows the Geckos panel draws at once. A disc's guide can hold far more, so
+// the panel scrolls rather than growing past the window.
+constexpr int kCodeRows = 12;
 
 struct Rect {
     float x = 0, y = 0, w = 0, h = 0;
@@ -71,15 +75,22 @@ enum class Id {
     PadOptionEnd = PadOption + 20,
     OverlayAction,
     OverlayCancel,
+    OverlaySecondary,
     PickerUp,
     PickerPath,
     PickerAccept,
     PickerCancel,
     Play,         // start the game the page has selected
     Mods,         // change what that game plays
+    Geckos,       // switch that game's Gecko codes on and off
+    CodeApply,    // write the checks, and any code pasted into the box
+    CodeRefresh,  // ask for the guide's list again
+    CodeBox,      // the box a block of codes is pasted into
     // Ranges whose ids are computed as base + index must come last, so nothing follows them.
     GameCover,    // the first game's cover on the main page; the rest follow it
     GameCoverEnd = GameCover + 32,
+    CodeRow,  // a code in the Geckos table; the rest follow it
+    CodeRowEnd = CodeRow + kCodeRows,
     PickerEntry,  // the first entry row; the rest follow it
 };
 
@@ -97,6 +108,10 @@ class App {
     // A window size may be given, so the layout can be checked as a large window draws it.
     int render_to(const std::string& path, float scale, const std::string& view = "main",
                   int window_width = 0, int window_height = 0);
+
+    // The width of the panel a message is shown in. A message written for it can be cut to
+    // fit before it is stored, which is how a long path stays on one line.
+    static constexpr float kMessagePanelWidth = 620.0f;
 
   private:
     struct Hit {
@@ -138,8 +153,11 @@ class App {
     void paint_picker();
     void paint_scale_menu();
 
+    // `mark` draws the button instead of a label: the square buttons a narrow column puts
+    // beside Play, which have room for a shape but not for a word.
     void button(Id id, const Rect& rect, const std::wstring& label, bool primary,
-                bool enabled, bool danger = false, Face face = Face::Button);
+                bool enabled, bool danger = false, Face face = Face::Button,
+                const std::function<void(const Rect&, Color)>& mark = {});
     void link(Id id, const Rect& rect, const std::wstring& label, bool enabled = true);
     void checkbox(Id id, float x, float y, const std::wstring& label, bool checked,
                   bool enabled = true);
@@ -153,6 +171,8 @@ class App {
 
     float text_width(const std::wstring& text, Face face);
     std::wstring elide(const std::wstring& text, Face face, float width);
+    // The same for a path, which is cut in the middle so both the folder and the name stay.
+    std::wstring elide_middle(const std::wstring& text, Face face, float width);
     void register_hit(Id id, const Rect& rect);
     Id hit_at(float x, float y) const;
 
@@ -216,6 +236,26 @@ class App {
     void choose_patch();
     // Adds a delta from this machine to the table, checked, without applying it.
     void stage_patch(const fs::path& delta);
+
+    // The Geckos panel: this disc's own codes and the ones its community guide holds, each
+    // switched on by itself. Unlike a mod, a code adds nothing to the disc, so the panel
+    // writes the same `mods.gecko`/`mods.code` the mods do, alongside theirs.
+    void open_geckos();
+    // What this disc offers and what settings has switched on, read back from disk.
+    void refresh_geckos();
+    void toggle_code(const std::wstring& name);
+    bool code_checked(const std::wstring& name) const;
+    std::size_t code_rows() const;
+    const CodeEntry* find_code(const std::wstring& name) const;
+    // Reads the box, adds what can run, then writes the checks and the program.
+    void apply_geckos();
+    // Fetches the guide's answer for this disc into geckos/online/, without blocking the
+    // window: the panel shows the list it has until the answer arrives.
+    void fetch_online_codes();
+    // The codes switched on, as the program builder wants them, in the order they were
+    // switched on. Read from disk so a run that never opened the panel still gets them.
+    std::vector<CodeEntry> enabled_code_entries() const;
+
     void refresh_devices();
     void write_pad_pins();
     // The pad each controller plays as: the pins first, then the pads still free.
@@ -246,9 +286,18 @@ class App {
 
     void show_message(const std::wstring& title, const std::wstring& text,
                       const std::wstring& action = L"Close");
+    // `second` adds a button to the left of the action's: a step that failed offers the
+    // retry, and the other way out of it, side by side.
     void show_confirm(const std::wstring& title, const std::wstring& text,
-                      const std::wstring& action, std::function<void()> confirmed);
+                      const std::wstring& action, std::function<void()> confirmed,
+                      const std::wstring& second = L"",
+                      std::function<void()> second_action = nullptr);
     void close_overlay();
+
+    // Writes whatever the project folder is missing -- the recompiler, the tool script, a
+    // game's folder -- and puts the project back in place. False when that failed, with the
+    // reason already shown.
+    bool repair_project();
 
     void open_settings();
     void save_settings();
@@ -332,6 +381,10 @@ class App {
     Rect pad_menu_anchor_{};
     Rect pad_menu_panel_{};  // the panel the menu sits in, so a low row can open upwards
     bool rendering_ = false;  // --render: no game to ask, so the rows are stand-ins
+    // A render has no window to click in, so the page's two live states -- a step running,
+    // and the game itself up -- are asked for by name rather than found on the machine.
+    bool forced_busy_ = false;
+    bool forced_running_ = false;
 
     // The Mods table. `mod_entries_` is what this disc may play; `pending_mods_` and
     // `pending_patch_` are the checks the panel shows, and `enabled_mods_` and
@@ -358,10 +411,41 @@ class App {
     bool overlay_confirm_ = false;
     bool overlay_update_ = false;
     bool overlay_players_ = false;
+    bool overlay_geckos_ = false;
+
+    // The Geckos table. `code_entries_` is every code this disc offers; `pending_codes_` is
+    // the staged choice the panel shows, and `enabled_codes_` is what has been written. The
+    // order is the order they were switched on, so a later code wins at a shared address.
+    std::vector<CodeEntry> code_entries_;
+    std::vector<std::wstring> enabled_codes_;
+    std::vector<std::wstring> pending_codes_;
+    // How many rows the panel has room for at this window size. The panel is a list of
+    // unknown length rather than a fixed one, so the count comes from the height it is
+    // drawn in: a short window shows fewer rows instead of a panel taller than the window.
+    std::size_t code_rows_fit_ = kCodeRows;
+    std::wstring codes_note_;  // the line under the table: why it is empty, or what Apply did
+    std::size_t code_offset_ = 0;  // the first row drawn, for a list longer than the panel
+    std::wstring online_label_;    // the guide the cached list came from, when it did
+    // The box a block of codes is pasted into. There is no caret to place: the panel takes
+    // what is typed at the end, and Backspace takes it back.
+    std::wstring gecko_edit_;
+    bool gecko_editing_ = false;
+    bool codes_fetching_ = false;
+    // A guide that could not be fetched is not asked for again this run: refresh() is called
+    // after every change, and a machine with no network would otherwise retry each time.
+    // Opening the panel clears it, because with no button to press that is how a player asks
+    // for another try.
+    bool codes_fetch_tried_ = false;
+    bool codes_fetch_failed_ = false;
+    std::thread codes_thread_;
+    std::atomic_bool codes_stop_{false};
     std::wstring overlay_title_;
     std::wstring overlay_text_;
-    std::wstring overlay_action_;
-    std::function<void()> overlay_callback_;
+    std::wstring overlay_action_;    std::function<void()> overlay_callback_;
+    // The button beside the action's, and what it does: "Use a different image" on a step
+    // that failed.
+    std::wstring overlay_second_;
+    std::function<void()> overlay_second_callback_;
 
     // The newest release, and what came of looking for it.
     UpdateState update_state_ = UpdateState::Never;

@@ -82,7 +82,13 @@ void App::show_update_prompt() {
                                L"%ls, replace this copy and start it again.",
                                launcher_version().c_str(),
                                update_release_.version.c_str());
-    if (!target.empty()) text += L"\n\nIt replaces:\n" + path_display(target);
+    if (!target.empty()) {
+        // The path is cut in the middle, not at the end: the folder it is in is as much
+        // part of "what gets replaced" as the name is, and a path left to wrap breaks at a
+        // slash in the middle of nothing.
+        text += L"\n\nIt replaces:\n" +
+                elide_middle(path_display(target), Face::Body, kMessagePanelWidth - 52.0f);
+    }
     show_confirm(format(L"Version %ls is available", update_release_.version.c_str()), text,
                  L"Update now", [this] { begin_update(); });
     overlay_update_ = true;

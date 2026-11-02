@@ -34,4 +34,18 @@ struct GeckoProgram {
 // warnings, so a player can find the code that was skipped.
 GeckoProgram parse_gecko(const std::wstring& text, const std::wstring& source);
 
+// One code as an editor writes it: the name on its `$` line, and the words and notes under
+// it. `text` keeps the notes, so a code written back out reads as it was written.
+struct NamedCode {
+    std::wstring name;
+    std::wstring text;
+};
+
+// Splits a list into the codes an editor gave names to: `$Name` starts one and a line of
+// `$`s ends it, which is the shape Dolphin and its editors use. Words before the first
+// name become one code called `fallback`, numbered when there is more than one, so a block
+// pasted without names still becomes something a player can switch on.
+std::vector<NamedCode> parse_named_codes(const std::wstring& text,
+                                         const std::wstring& fallback);
+
 }  // namespace nla

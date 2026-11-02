@@ -41,6 +41,9 @@ DENIED_DIRS = (
     'mods/',
     # A downloaded patch is a delta against a disc, so it is the disc's data too.
     'patches/',
+    # Gecko codes are written for one build's addresses, and the guide's list is another
+    # author's work: like a mod, they stay on the machine that built the list.
+    'geckos/',
     'config/GNREDA/',
     'config/GNUEDA/',
     'config/G3NJDA/',

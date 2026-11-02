@@ -145,6 +145,32 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         return true;
     };
 
+    // Clicks the control with this id wherever the layout put it. A point written into a
+    // test stops testing the control the moment the layout moves, which is what happened
+    // to the click that was meant to open the details.
+    auto click_control = [&](Id id, int index = 0) {
+        paint();
+        int seen = 0;
+        Rect target{};
+        bool found = false;
+        for (const auto& hit : hits_) {
+            if (hit.id != id || seen++ != index) continue;
+            target = hit.rect;
+            found = true;
+            break;
+        }
+        if (!found) {
+            std::fprintf(stderr, "click-control: the page has no control %d\n",
+                         static_cast<int>(id));
+            return false;
+        }
+        char point[64] = {};
+        std::snprintf(point, sizeof(point), "%d,%d",
+                      static_cast<int>(target.x + target.w / 2),
+                      static_cast<int>(target.y + target.h / 2));
+        return click(point);
+    };
+
     // A stand-in release, so the update prompt and the header button can be rendered
     // without a network.
     auto fake_update = [this] {
@@ -183,7 +209,9 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         fs::create_directories(scratch, ec);
         for (const wchar_t* game : {L"naruto", L"gnt4"}) {
             project_.emplace(scratch, game);
+            // A disc stands extracted, or the page would not offer the button at all.
             status_ = ProjectStatus{};
+            status_.disc.extracted = true;
             paint();
             Rect mods{};
             bool found = false;
@@ -223,10 +251,146 @@ int App::render_to(const std::string& path, float scale, const std::string& view
                 return 1;
             }
         }
+    } else if (view == "geckos") {
+        open_geckos();
+    } else if (view == "geckos-paste") {
+        // The box is clicked and then handed text the way the window hands it over, so the
+        // path being checked is the one a paste takes, not a shortcut into the buffer.
+        open_geckos();
+        paint();
+        Rect box{};
+        for (const auto& hit : hits_) {
+            if (hit.id != Id::CodeBox) continue;
+            box = hit.rect;
+            break;
+        }
+        if (box.w <= 0) {
+            std::fprintf(stderr, "geckos-paste: the panel has no code box\n");
+            return 1;
+        }
+        char point[64] = {};
+        std::snprintf(point, sizeof(point), "%d,%d", static_cast<int>(box.x + box.w / 2),
+                      static_cast<int>(box.y + box.h / 2));
+        if (!click(point)) return 1;
+        if (!gecko_editing_) {
+            std::fprintf(stderr, "geckos-paste: the box did not take the click\n");
+            return 1;
+        }
+        for (const char* chunk : {"$Infinite Time\n", "040374B8 60000000\n"}) {
+            SDL_Event text{};
+            text.type = SDL_TEXTINPUT;
+            std::snprintf(text.text.text, sizeof(text.text.text), "%s", chunk);
+            handle_event(text);
+        }
+    } else if (view.rfind("geckos-click:", 0) == 0) {
+        open_geckos();
+        if (!click(view.substr(13))) {
+            std::fprintf(stderr, "usage: geckos-click:<x>,<y>\n");
+            return 1;
+        }
+    } else if (view == "geckos-from-game") {
+        // The Geckos button belongs to the game's page the way Mods does: it opens the panel
+        // for the game that is on the page, and Escape closes it back there rather than to
+        // Settings. Two games, so a panel that ignores which game is selected cannot pass.
+        fs::path scratch = fs::path(path);
+        scratch.replace_extension(L".geckos.project");
+        std::error_code ec;
+        fs::create_directories(scratch, ec);
+        for (const wchar_t* game : {L"naruto", L"gnt4"}) {
+            project_.emplace(scratch, game);
+            // A disc stands extracted, or the page would not offer the button at all.
+            status_ = ProjectStatus{};
+            status_.disc.extracted = true;
+            paint();
+            Rect geckos{};
+            bool found = false;
+            for (const auto& hit : hits_) {
+                if (hit.id == Id::Geckos) {
+                    geckos = hit.rect;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                std::fprintf(stderr, "geckos-from-game: the page has no Geckos button\n");
+                return 1;
+            }
+            char point[64] = {};
+            std::snprintf(point, sizeof(point), "%d,%d",
+                          static_cast<int>(geckos.x + geckos.w / 2),
+                          static_cast<int>(geckos.y + geckos.h / 2));
+            if (!click(point)) return 1;
+            const std::wstring wanted = L"Geckos \u2014 " + Project::game_info(game).title;
+            if (!overlay_open_ || !overlay_geckos_ || settings_open_ ||
+                overlay_title_ != wanted) {
+                std::fprintf(stderr, "geckos-from-game: %s\n",
+                             narrow(overlay_geckos_
+                                        ? L"the geckos panel says \"" + overlay_title_ + L"\""
+                                        : L"the Geckos button opened no panel")
+                                 .c_str());
+                return 1;
+            }
+            SDL_Event escape{};
+            escape.type = SDL_KEYDOWN;
+            escape.key.keysym.sym = SDLK_ESCAPE;
+            handle_event(escape);
+            if (overlay_open_ || settings_open_) {
+                std::fprintf(stderr,
+                             "geckos-from-game: Escape did not return to the game\n");
+                return 1;
+            }
+        }
+    } else if (view.rfind("state:", 0) == 0) {
+        // The page's eight states, drawn from the state this render names rather than from
+        // what this machine happens to have. A project folder of its own stands beside the
+        // render, so nothing here depends on the checkout being set up.
+        fs::path scratch = fs::path(path);
+        scratch.replace_extension(L".state.project");
+        std::error_code ec;
+        fs::create_directories(scratch, ec);
+        const std::size_t colon = view.find(':', 6);
+        const std::string state =
+            view.substr(6, colon == std::string::npos ? std::string::npos : colon - 6);
+        // A trailing `:details` opens the details, which is the layout that gives the
+        // buttons the least room and so the one worth drawing.
+        const bool with_details =
+            colon != std::string::npos && view.find("details", colon) != std::string::npos;
+        const bool known =
+            state == "working" || state == "running" || state == "setup" ||
+            state == "needs-disc" || state == "wrong-disc" || state == "not-built" ||
+            state == "mods-changed" || state == "ready";
+        if (!known) {
+            std::fprintf(stderr,
+                         "usage: state:working|running|setup|needs-disc|wrong-disc|"
+                         "not-built|mods-changed|ready[:details]\n");
+            return 1;
+        }
+        project_.emplace(scratch, settings_.game);
+        status_ = ProjectStatus{};
+        // A game with its disc extracted stands behind everything but `setup` and
+        // `needs-disc`; the two live states are that page with a step in flight.
+        const bool installed = state != "setup" && state != "needs-disc";
+        status_.disc.extracted = installed;
+        // A wrong disc is one that was extracted and did not match.
+        status_.disc.verified = installed && state != "wrong-disc";
+        status_.built = state == "mods-changed" || state == "ready";
+        status_.stale_code = state == "mods-changed";
+        if (state == "setup") project_.reset();
+        if (state == "working") forced_busy_ = true;
+        if (state == "running") forced_running_ = true;
+        if (with_details && !click_control(Id::LogToggle)) return 1;
+    } else if (view == "scale-menu" || view.rfind("scale-menu:", 0) == 0) {
+        open_settings();
+        if (!click_control(Id::Scale)) return 1;
+    } else if (view == "pad-menu" || view.rfind("pad-menu:", 0) == 0) {
+        // The device list: one row's menu, and the last row's, which has to open upwards
+        // rather than off the bottom of the panel.
+        const bool last = view.find(":last") != std::string::npos;
+        open_players();
+        if (!click_control(Id::PadRow, last ? kPads - 1 : 0)) return 1;
     } else if (view == "picker") {
         open_picker(PickerKind::Image, L"Choose your own disc image",
-                    project_ ? project_->root() : home_dir(), [](const fs::path&) {});
-    } else if (view == "update") {
+                    project_ ? project_->root() : home_dir(), [](const fs::path&) {});    } else if (view == "update") {
         fake_update();
         show_update_prompt();
     } else if (view == "update-banner") {
@@ -376,18 +540,22 @@ void App::paint_games() {
     constexpr float kHeaderBottom = 86.0f;
     auto games = available_games();
     bool compact = log_visible_;
+    // The one step in flight, and the game that is up: a render names them instead of
+    // finding them, so a state that no machine happens to be in can still be drawn.
+    const bool busy = busy_ || forced_busy_;
+    const bool running = forced_running_ || game_.running();
 
     std::wstring title;
     std::wstring detail;
     std::wstring pill_text;
     Pill pill_state = Pill::Warn;
 
-    if (busy_) {
+    if (busy) {
         title = stage_.empty() ? L"Working…" : stage_;
         detail = L"The launcher is running this step. Details holds its output.";
         pill_text = L"working";
         pill_state = Pill::Muted;
-    } else if (game_.running()) {
+    } else if (running) {
         title = L"The game is running";
         detail = L"It opens in its own window. Close that window, or stop it here.";
         pill_text = L"running";
@@ -449,32 +617,101 @@ void App::paint_games() {
             }
         }
     };
-    // What the page offers once a game is picked: one button to start it and one to change
-    // what it plays. A cover only chooses the game, so nothing starts by accident.
-    auto draw_game_buttons = [&](float center_x, float top, float width = 360.0f) {
-        const bool waiting = busy_ || game_.running();
-        // Play asks for a disc when there is no verified tree, which is what launch() does:
-        // the button says so rather than starting and then asking.
-        const bool needs_disc = !project_ || !status_.disc.verified;
-        const std::wstring play_label = needs_disc ? L"Set up the disc…" : L"Play";
-        const float button_w = std::min(180.0f, width * 0.5f - 8.0f);
-        const float gap = 16.0f;
-        const float left = center_x - button_w - gap / 2;
-        // A narrow column drops to the smaller face rather than clipping the label.
-        auto face_for = [this, button_w](const std::wstring& label) {
-            return text_width(label, Face::ButtonLarge) <= button_w - 12.0f
+    // What the page offers once a game is picked: one button to start it, and one for each
+    // way of changing what it plays -- the mods, and the Gecko codes chosen on their own. A
+    // cover only chooses the game, so nothing starts by accident.
+    //
+    // Play asks for a disc when there is no verified tree, which is what launch() does: the
+    // button says so rather than starting and then asking.
+    const std::wstring play_label =
+        (!project_ || !status_.disc.verified) ? L"Set up the disc\u2026" : L"Play";
+    // The mods and the codes change what an extracted disc plays. Before there is one there
+    // is nothing to change, so the page offers Play on its own.
+    const bool changeable = project_ != std::nullopt && status_.disc.extracted;
+
+    constexpr float kButtonGap = 12.0f;
+    constexpr float kButtonHeight = 50.0f;
+    constexpr float kIconButton = 50.0f;
+    constexpr float kButtonPad = 12.0f;
+    constexpr float kLoneWidth = 240.0f;
+
+    struct ButtonPlan {
+        float play_width;
+        float other_width;  // a Mods or Geckos button; 0 when the page offers neither
+        bool icons;         // the two are square marks rather than words
+    };
+    // A wide page puts the three side by side as words. A narrow column cannot hold
+    // "Set up the disc…" three times over -- drawn that way it clipped at both ends, "et up
+    // the disc." -- so Play keeps its label at the width left over and the other two become
+    // square marks. With no disc there is only Play, and it takes a wider button.
+    auto plan_buttons = [&](float width) -> ButtonPlan {
+        if (!changeable) return {std::min(kLoneWidth, width), 0.0f, false};
+        const float row_w = std::min(170.0f, (width - kButtonGap * 2.0f) / 3.0f);
+        const bool fits = elide(play_label, Face::Button, row_w - kButtonPad) == play_label &&
+                          elide(L"Geckos", Face::Button, row_w - kButtonPad) == L"Geckos";
+        if (fits) return {row_w, row_w, false};
+        return {std::max(kIconButton, width - 2.0f * (kIconButton + kButtonGap)),
+                kIconButton, true};
+    };
+
+    // The two marks a narrow column puts beside Play: the mods table, and the brackets a
+    // block of codes sits between.
+    auto mods_mark = [this](const Rect& rect, Color color) {
+        const float cx = rect.x + rect.w / 2.0f;
+        const float cy = rect.y + rect.h / 2.0f;
+        painter_.stroke_round(RectF(cx - 10, cy - 9, cx + 10, cy + 9), 4, color, 1.6f);
+        for (int line = 0; line < 3; ++line) {
+            const float y = cy - 4.5f + static_cast<float>(line) * 4.5f;
+            painter_.line(cx - 5.5f, y, cx + 5.5f, y, color, 1.6f);
+        }
+    };
+    auto codes_mark = [this](const Rect& rect, Color color) {
+        const float cx = rect.x + rect.w / 2.0f;
+        const float cy = rect.y + rect.h / 2.0f;
+        painter_.line(cx - 3.0f, cy - 8.0f, cx - 10.0f, cy, color, 1.8f);
+        painter_.line(cx - 10.0f, cy, cx - 3.0f, cy + 8.0f, color, 1.8f);
+        painter_.line(cx + 3.0f, cy - 8.0f, cx + 10.0f, cy, color, 1.8f);
+        painter_.line(cx + 10.0f, cy, cx + 3.0f, cy + 8.0f, color, 1.8f);
+    };
+
+    auto draw_game_buttons = [&](float center_x, float top, float width = 480.0f) {
+        const bool waiting = busy || running;
+        const ButtonPlan plan = plan_buttons(width);
+        // A narrow button drops to the smaller face rather than crowding its label.
+        auto face_for = [this, &plan](const std::wstring& label) {
+            return text_width(label, Face::ButtonLarge) <= plan.play_width - kButtonPad
                        ? Face::ButtonLarge
                        : Face::Button;
         };
-        button(Id::Play, Rect{left, top, button_w, 50}, play_label, true, !waiting, false,
-               face_for(play_label));
-        button(Id::Mods, Rect{left + button_w + gap, top, button_w, 50}, L"Mods", false,
-               !waiting && project_ != std::nullopt, false, face_for(L"Mods"));
+        const float total = plan.other_width <= 0
+                                ? plan.play_width
+                                : plan.play_width + 2.0f * (plan.other_width + kButtonGap);
+        const float left = center_x - total / 2.0f;
+        button(Id::Play, Rect{left, top, plan.play_width, kButtonHeight}, play_label, true,
+               !waiting, false, face_for(play_label));
+        if (plan.other_width <= 0) return;
+        const bool ready = !waiting;
+        const float x = left + plan.play_width + kButtonGap;
+        if (plan.icons) {
+            button(Id::Mods, Rect{x, top, plan.other_width, kButtonHeight}, L"", false, ready,
+                   false, Face::Button, mods_mark);
+            button(Id::Geckos,
+                   Rect{x + plan.other_width + kButtonGap, top, plan.other_width,
+                        kButtonHeight},
+                   L"", false, ready, false, Face::Button, codes_mark);
+        } else {
+            button(Id::Mods, Rect{x, top, plan.other_width, kButtonHeight}, L"Mods", false,
+                   ready, false, Face::Button);
+            button(Id::Geckos,
+                   Rect{x + plan.other_width + kButtonGap, top, plan.other_width,
+                        kButtonHeight},
+                   L"Geckos", false, ready, false, Face::Button);
+        }
     };
 
     auto draw_controls = [&](float center_x, float top, float width) {
         float bottom = top;
-        if (busy_) {
+        if (busy) {
             progress_bar(Rect{center_x - width / 2, top + 4, width, 6});
             if (job_.running()) {
                 float cancel_w = text_width(L"Cancel", Face::Tiny);
@@ -482,7 +719,7 @@ void App::paint_games() {
                      L"Cancel");
             }
             bottom = top + 44;
-        } else if (game_.running()) {
+        } else if (running) {
             button(Id::Stop, Rect{center_x - 110, top, 220, 40}, L"Stop the game", true, true,
                    true);
             bottom = top + 46;
@@ -494,7 +731,7 @@ void App::paint_games() {
                  toggle);
             bottom += 24;
         }
-        if (!play_status_.empty() && !busy_) {
+        if (!play_status_.empty() && !busy) {
             // The note stays inside the column it belongs to: a narrow column would
             // otherwise print it across the covers.
             float note_w = std::min(660.0f, width);
@@ -517,7 +754,7 @@ void App::paint_games() {
         painter_.text(detail, RectF(center_x - 340, top + 82, center_x + 340, top + 136),
                       Face::Body, rgb(theme::Muted), TextAlign::Center);
         button(Id::Launch, Rect{center_x - 130, top + 152, 260, 50}, L"Choose a folder",
-               true, !busy_, false, Face::ButtonLarge);
+               true, !busy, false, Face::ButtonLarge);
         if (!play_status_.empty()) {
             painter_.text(play_status_,
                           RectF(center_x - 330, top + 210, center_x + 330, top + 228),
@@ -561,7 +798,7 @@ void App::paint_games() {
               std::max(16.0f, (height_ - kHeaderBottom - 24.0f - block_height) * 0.5f);
     }
 
-    bool can_launch = !busy_ && !game_.running();
+    bool can_launch = !busy && !running;
     float x = left;
     for (int index = 0; index < count; ++index) {
         const auto& game = games[static_cast<size_t>(index)];
@@ -584,11 +821,11 @@ void App::paint_games() {
         const float pill_h = 22.0f;
         const float title_line = painter_.line_height(Face::CardTitle);
         const float body_line = painter_.line_height(Face::Body);
-        const float buttons_h = 50.0f;
+        const float buttons_h = kButtonHeight;
         // The step's controls sit under the buttons: a progress bar with Cancel, or the
         // note the last launch left behind.
-        const float controls_h = busy_ ? 44.0f
-                                : game_.running() ? 46.0f
+        const float controls_h = busy ? 44.0f
+                                : running ? 46.0f
                                 : play_status_.empty() ? 0.0f
                                                        : 20.0f;
 
@@ -634,7 +871,7 @@ void App::paint_games() {
                   RectF(center_x - 350, status_top + 78, center_x + 350, status_top + 124),
                   Face::Body, rgb(theme::Muted), TextAlign::Center);
     draw_game_buttons(center_x, status_top + 130);
-    draw_controls(center_x, status_top + 192, 420.0f);
+    draw_controls(center_x, status_top + 130 + kButtonHeight + 12.0f, 420.0f);
 }
 
 void App::paint_cover(Id id, const Rect& rect, const GameInfo& game, bool selected,
@@ -866,11 +1103,36 @@ void App::paint_settings() {
 
 void App::paint_overlay() {
     painter_.fill_rect(RectF(0, 0, width_, height_), rgb(0x000000, 0.62f));
-    float panel_w = overlay_players_ ? 660.0f : overlay_mods_ ? 720.0f : 620.0f;
+    float panel_w = overlay_players_ ? 660.0f
+                    : overlay_mods_ ? 720.0f
+                    : overlay_geckos_ ? 760.0f
+                                      : kMessagePanelWidth;
+    // How many code rows fit: the fixed part of the Geckos panel is the two lines above the
+    // table, the line under it, the paste box and the buttons, and the rest is rows. A
+    // window too short for all of them shows fewer rather than a panel that does not fit,
+    // because a panel taller than the window loses its title and its last rows.
+    if (overlay_geckos_) {
+        constexpr float kChrome = 150.0f + 26.0f + 66.0f + 96.0f;
+        constexpr float kRow = 22.0f;
+        int fit = static_cast<int>((height_ - kChrome) / kRow);
+        fit = std::clamp(fit, 3, kCodeRows);
+        code_rows_fit_ = static_cast<std::size_t>(fit);
+    }
     // A row for each of the console's four pads, and the note above them.
+    //
+    // A message is as tall as what it says: the fixed 620×336 panel left half of itself
+    // empty for a short prompt, and would have cut a long one off at the bottom.
+    const bool overlay_message = !overlay_players_ && !overlay_mods_ && !overlay_geckos_;
+    const float message_lines =
+        static_cast<float>(wrapped_lines(painter_, overlay_text_, Face::Body,
+                                         panel_w - 52.0f));
     float panel_h = overlay_players_ ? 168.0f + 34.0f * kPads
-                    : overlay_mods_  ? 250.0f + 34.0f * static_cast<float>(mod_rows())
-                                     : 336.0f;
+                    : overlay_mods_ ? 250.0f + 34.0f * static_cast<float>(mod_rows())
+                    : overlay_geckos_
+                        ? 308.0f + 22.0f * static_cast<float>(code_rows())
+                        : std::clamp(60.0f + message_lines * painter_.line_height(Face::Body) +
+                                         16.0f + 56.0f + 24.0f,
+                                     220.0f, height_ - 80.0f);
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
     pad_menu_panel_ = panel;
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
@@ -986,19 +1248,157 @@ void App::paint_overlay() {
         button(Id::ModApply,
                Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
                L"Apply", true, !busy_ && staged);
+    } else if (overlay_geckos_) {
+        // One row per code this disc can be played with, its own and the guide's. The checks
+        // are the choice Apply writes; a code the recompiler cannot run is listed so it can
+        // be read, and cannot be switched on.
+        const float left = panel.x + 26;
+        const float right = panel.x + panel.w - 26;
+        const float source_right = right;
+        const float source_left = right - 96;
+        float y = panel.y + 58;
+        const std::wstring lead =
+            project_ ? L"Only codes written for this disc are listed. Each is switched on by "
+                       L"itself."
+                     : L"Set up the game folder first: the codes are kept beside it.";
+        painter_.text(elide(lead, Face::Tiny, right - left),
+                      RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
+        y += 20;
+        std::wstring second;
+        if (codes_fetching_) {
+            second = L"Fetching what the guide for this disc holds\u2026";
+        } else if (!online_label_.empty()) {
+            second = L"The guide's list is here (" + online_label_ + L").";
+        } else if (project_) {
+            second = L"Fetch to see the codes the community's guide holds for this disc.";
+        }
+        if (!second.empty()) {
+            painter_.text(elide(second, Face::Tiny, right - left),
+                          RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
+        }
+        y += 22;
+        painter_.text(L"On", RectF(left, y, left + 24, y + 16), Face::Tiny, rgb(theme::Muted));
+        painter_.text(L"Code", RectF(left + 30, y, source_left - 6, y + 16), Face::Tiny,
+                      rgb(theme::Muted));
+        painter_.text(L"From", RectF(source_left, y, source_right, y + 16), Face::Tiny,
+                      rgb(theme::Muted), TextAlign::Trailing);
+        y += 20;
+
+        const std::size_t rows = code_rows();
+        if (rows > 0 && code_offset_ + rows > code_entries_.size())
+            code_offset_ = code_entries_.size() - rows;
+        if (rows == 0) code_offset_ = 0;
+        for (std::size_t i = 0; i < rows; ++i) {
+            const CodeEntry& entry = code_entries_[code_offset_ + i];
+            Id id = static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i));
+            const bool usable = entry.runnable && !busy_;
+            // A code this recompiler cannot run is listed so it can be read, and says so in
+            // the row: a grey check with no reason beside it reads as a bug.
+            std::wstring label = entry.name;
+            if (!entry.runnable) label += L" · can't run here";
+            checkbox(id, left, y + 3, elide(label, Face::Small, source_left - left - 30),
+                     code_checked(entry.name), usable);
+            painter_.text(entry.online ? L"guide" : L"yours",
+                          RectF(source_left, y + 3, source_right, y + 19), Face::Tiny,
+                          entry.runnable ? rgb(theme::Muted) : rgb(0x69707d),
+                          TextAlign::Trailing);
+            if (usable) register_hit(id, Rect{left - 4, y - 3, right - left + 8, 24});
+            y += 22;
+        }
+
+        // The line under the table: what Apply did, or what the row under the cursor is.
+        std::wstring note = codes_note_;
+        if (note.empty()) {
+            for (std::size_t i = 0; i < rows; ++i) {
+                if (hover_ !=
+                    static_cast<Id>(static_cast<int>(Id::CodeRow) + static_cast<int>(i)))
+                    continue;
+                const CodeEntry& entry = code_entries_[code_offset_ + i];
+                if (!entry.runnable) {
+                    note = entry.warning.empty()
+                               ? std::wstring(L"This code does nothing this game can run.")
+                               : entry.warning;
+                } else {
+                    note = format(L"%zu operation(s) run once a frame.", entry.ops);
+                }
+                break;
+            }
+        }
+        if (note.empty()) {
+            const bool staged = pending_codes_ != enabled_codes_;
+            note = staged ? L"Apply to write these changes to the game."
+                          : format(L"%zu code(s) on for this game.", enabled_codes_.size());
+        }
+        if (code_entries_.size() > rows && codes_note_.empty() && hover_ == Id::None) {
+            // A list longer than the panel says so, because the wheel is the only sign of it.
+            note = format(L"%zu codes; scroll for the rest. %zu on for this game.",
+                          code_entries_.size(), enabled_codes_.size());
+        }
+
+        // The box a block pasted from an editor goes into, and what that block becomes.
+        const float box_h = 66.0f;
+        Rect editor{left, panel.y + panel.h - 162, right - left, box_h};
+        painter_.fill_round(editor.box(), 6, rgb(gecko_editing_ ? 0x1d222b : 0x171b21));
+        painter_.stroke_round(editor.box(), 6,
+                              rgb(gecko_editing_ ? theme::Accent : theme::BorderStrong), 1);
+        const float line_h = painter_.line_height(Face::Tiny);
+        const int fits = std::max(1, static_cast<int>((box_h - 10.0f) / line_h));
+        if (gecko_edit_.empty()) {
+            painter_.text(L"Paste a block of codes here, then Apply.",
+                          RectF(editor.x + 8, editor.y + 6, editor.x + editor.w - 8,
+                                editor.y + 6 + line_h),
+                          Face::Tiny, rgb(0x69707d));
+        } else {
+            auto lines = split(gecko_edit_, L'\n');
+            const int first = std::max(0, static_cast<int>(lines.size()) - fits);
+            float line_y = editor.y + 6;
+            for (int i = first; i < static_cast<int>(lines.size()); ++i) {
+                painter_.text_clipped(lines[static_cast<size_t>(i)],
+                                      RectF(editor.x + 8, line_y, editor.x + editor.w - 8,
+                                            line_y + line_h),
+                                      Face::Tiny, rgb(theme::Text));
+                line_y += line_h;
+            }
+        }
+        // The box takes the click whether or not it has focus: that is how it gets focus.
+        if (!busy_) register_hit(Id::CodeBox, editor);
+
+        // The guide's list is fetched on its own, so the only thing wanted here is a way to
+        // ask again -- after a fetch that failed, or for a guide that has been updated.
+        const std::wstring refresh = codes_fetching_ ? L"Fetching…" : L"Refresh list";
+        const float refresh_w = text_width(refresh, Face::Tiny) + 10.0f;
+        link(Id::CodeRefresh, Rect{right - refresh_w, panel.y + panel.h - 86, refresh_w, 18},
+             refresh, project_ != std::nullopt && !codes_fetching_);
+        painter_.text(elide(note, Face::Small, right - left - refresh_w - 16.0f),
+                      RectF(left, panel.y + panel.h - 84, right - refresh_w - 12.0f,
+                            panel.y + panel.h - 66),
+                      Face::Small, rgb(theme::Muted));
+        const bool staged = pending_codes_ != enabled_codes_ || !gecko_edit_.empty();
+        button(Id::CodeApply,
+               Rect{panel.x + panel.w - 26 - 130 - 8 - 110, panel.y + panel.h - 56, 110, 36},
+               L"Apply", true, !busy_ && project_ != std::nullopt && staged);
     } else {
         painter_.text(overlay_text_, RectF(panel.x + 26, panel.y + 60, panel.x + panel.w - 26,
                                                  panel.y + panel.h - 66),
                       Face::Body, rgb(theme::Muted));
     }
 
-    button(Id::OverlayAction, Rect{panel.x + panel.w - 26 - 130, panel.y + panel.h - 56, 130,
-                                   36},
-           overlay_action_, true, true);
+    float button_right = panel.x + panel.w - 26;
+    const float button_y = panel.y + panel.h - 56;
+    button_right -= 130;
+    button(Id::OverlayAction, Rect{button_right, button_y, 130, 36}, overlay_action_, true,
+           true);
     if (overlay_confirm_) {
-        button(Id::OverlayCancel, Rect{panel.x + panel.w - 26 - 130 - 8 - 100,
-                                       panel.y + panel.h - 56, 100, 36},
-               L"Cancel", false, true);
+        button_right -= 8 + 100;
+        button(Id::OverlayCancel, Rect{button_right, button_y, 100, 36}, L"Cancel", false,
+               true);
+    }
+    if (!overlay_second_.empty()) {
+        const float second_w =
+            std::max(110.0f, text_width(overlay_second_, Face::Button) + 26.0f);
+        button_right -= 8 + second_w;
+        button(Id::OverlaySecondary, Rect{button_right, button_y, second_w, 36},
+               overlay_second_, false, true);
     }
 }
 
@@ -1070,7 +1470,8 @@ void App::paint_scale_menu() {    Rect menu{scale_anchor_.x, scale_anchor_.y + s
 // -- pieces ----------------------------------------------------------------
 
 void App::button(Id id, const Rect& rect, const std::wstring& label, bool primary,
-                 bool enabled, bool danger, Face face) {
+                 bool enabled, bool danger, Face face,
+                 const std::function<void(const Rect&, Color)>& mark) {
     bool hovered = enabled && hover_ == id;
     bool down = enabled && pressed_ == id;
     Color background;
@@ -1091,9 +1492,13 @@ void App::button(Id id, const Rect& rect, const std::wstring& label, bool primar
     }
     painter_.fill_round(rect.box(), 8, background);
     painter_.stroke_round(rect.box(), 8, border, 1);
-    painter_.text_clipped(label, RectF(rect.x + 6, rect.y, rect.x + rect.w - 6,
-                                             rect.y + rect.h),
-                          face, text, TextAlign::Center);
+    if (mark) {
+        mark(rect, text);
+    } else {
+        painter_.text_clipped(elide(label, face, rect.w - 12.0f),
+                              RectF(rect.x + 6, rect.y, rect.x + rect.w - 6, rect.y + rect.h),
+                              face, text, TextAlign::Center);
+    }
     if (enabled) register_hit(id, rect);
 }
 
@@ -1102,7 +1507,8 @@ void App::link(Id id, const Rect& rect, const std::wstring& label, bool enabled)
     bool down = enabled && pressed_ == id;
     Color text = enabled ? rgb(hovered ? (down ? 0x8fb4ff : 0xb6cdff) : theme::Link)
                          : rgb(0x69707d);
-    painter_.text_clipped(label, RectF(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h),
+    painter_.text_clipped(elide(label, Face::Tiny, rect.w),
+                          RectF(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h),
                           Face::Tiny, text, TextAlign::Center);
     if (enabled) register_hit(id, rect);
 }
@@ -1180,6 +1586,24 @@ std::wstring App::elide(const std::wstring& text, Face face, float width) {
         }
     }
     return text.substr(0, low) + suffix;
+}
+
+// A path keeps both ends: the folder it is in and the name that is being replaced. Cut
+// short from the end alone it would read "~/Documents/Projects/Fun st…", which says
+// nothing about what is being replaced.
+std::wstring App::elide_middle(const std::wstring& text, Face face, float width) {
+    if (width <= 0) return L"";
+    if (text_width(text, face) <= width) return text;
+    const std::wstring mark = L"…";
+    size_t keep = text.size() / 2;
+    while (keep > 0) {
+        const size_t tail = std::max<size_t>(1, keep / 2);
+        const std::wstring candidate =
+            text.substr(0, keep) + mark + text.substr(text.size() - tail);
+        if (text_width(candidate, face) <= width) return candidate;
+        --keep;
+    }
+    return mark + text.substr(text.size() - std::min<size_t>(text.size(), 3));
 }
 
 void App::register_hit(Id id, const Rect& rect) { hits_.push_back({rect, id}); }

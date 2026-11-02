@@ -68,7 +68,12 @@ nothing else has to be installed for it to start.
   game's `CMakeLists.txt`.
 - **Build.** CMake and Ninja, with their output streamed into Activity, a progress bar and
   Cancel. Cancel ends the whole build tree — a job object on Windows, the process group
-  elsewhere — so compilers the build started go too.
+  elsewhere — so compilers the build started go too. A project folder that is missing what a
+  build reads — `gcn-recomp/` beside the game folders, or `tools/` — is written again
+  before CMake is started, so a folder an interrupted setup left behind, or a launcher built
+  without the release job's copy of the sources, repairs itself instead of failing on
+  `add_subdirectory(../gcn-recomp)`. A step that fails offers **Try again**, and **Use a
+  different image** for a disc that is not the one meant or cannot be read.
 - **Play.** The same `--scale`, `--no-music`, `--no-input-log`, `--players` and `--controls`
   arguments as the command line. Stop sends `SIGINT` on macOS and Linux, which the runtime
   answers by dumping its GX FIFO, then escalates if the game ignores it.
@@ -97,6 +102,21 @@ nothing else has to be installed for it to start.
   runs before the game starts — only the patched functions, in about 20 seconds. A build's
   addresses are its own, so a mod is only ever offered for the discs it names.
   [Mods](MODS.md) has the format, the catalog and the limits.
+- **Geckos.** The Gecko codes for the game on the page, switched on one at a time rather
+  than a mod at a time. **Geckos** beside **Mods** lists the codes kept for that disc in
+  `geckos/<DISCID>.txt` and the ones the community's write-up for it holds — which the
+  launcher fetches on its own. Ralf's gc-forever threads cover the two Clash of Ninja
+  releases and the GNT modding repo's guides cover GNT4 and Clash of Ninja 2; GNT3 has
+  neither yet. Checking a row stages it and
+  **Apply** writes the choice. A block pasted from an editor goes into the box at the
+  bottom of the panel: **Apply** splits it into its `$Named` codes, checks each against
+  this recompiler, keeps the ones that can run, and says why any that cannot were left
+  out. The chosen codes reach the game by the same road a mod's codes do — the
+  `mods.gecko` and `mods.code` lists — so they need no rebuild of their own, and the
+  rebuild a `C2`-style code would cost is the one the Mods panel already describes. A
+  code's addresses are a build's own, so a disc's list is only ever offered for that disc,
+  and a disc with no guide says so instead of borrowing another's codes.
+  [Mods](MODS.md#geckos-codes-chosen-on-their-own) has the format and where the guides are.
 - **Disc patches.** A patch row takes an xdelta of the whole disc — SCON4, a translation,
   a rebalancing hack. The catalog's patches are downloaded when they are checked and
   applied, or **Choose a patch file…** adds one already on the machine. Either way the

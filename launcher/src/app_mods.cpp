@@ -254,6 +254,7 @@ void App::open_mods() {
     overlay_open_ = true;
     overlay_mods_ = true;
     overlay_players_ = false;
+    overlay_geckos_ = false;
     overlay_confirm_ = false;
     overlay_update_ = false;
     overlay_callback_ = nullptr;
@@ -615,7 +616,7 @@ void App::write_mod_overlay() {
         chosen.push_back(entry->mod);
     }
     auto sync = sync_overlay_manifest(project_->disc(), project_->manifest(), chosen);
-    auto programs = sync_mod_programs(project_->disc(), chosen);
+    auto programs = sync_mod_programs(project_->disc(), chosen, enabled_code_entries());
     // Refresh runs often, so Activity only hears about a change: a mod switched on or off,
     // or one that cannot be served and why.
     std::wstring summary;

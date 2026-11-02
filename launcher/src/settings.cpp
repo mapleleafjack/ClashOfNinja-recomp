@@ -7,6 +7,11 @@
 namespace nla {
 namespace {
 
+// The separator between the code names saved for one game. A code's name is whatever its
+// author called it and may hold a comma, so a comma would split a name in two; the unit
+// separator is not one an editor writes into a name.
+constexpr wchar_t kCodeSeparator = L'\x1F';
+
 // The settings file is a flat INI: one [launcher] section of key=value lines.
 std::map<wstring, wstring> read(const fs::path& path) {
     std::map<wstring, wstring> values;
@@ -81,6 +86,18 @@ Settings Settings::load() {
         if (key.rfind(L"patch.", 0) != 0 || key.size() <= 6) continue;
         if (!trim(value).empty()) settings.patches[key.substr(6)] = trim(value);
     }
+    // `codes.<game> = <code>` per name, separated by the unit separator: a code's name is
+    // whatever its author called it, and commas are common enough in them that a comma
+    // would split a name in two.
+    for (const auto& [key, value] : values) {
+        if (key.rfind(L"codes.", 0) != 0 || key.size() <= 6) continue;
+        std::vector<wstring> names;
+        for (const auto& part : split(value, kCodeSeparator)) {
+            auto name = trim(part);
+            if (!name.empty()) names.push_back(name);
+        }
+        settings.codes[key.substr(6)] = std::move(names);
+    }
     return settings;
 }
 
@@ -107,6 +124,9 @@ void Settings::save() const {
     }
     for (const auto& [game, delta] : patches) {
         put((L"patch." + game).c_str(), delta);
+    }
+    for (const auto& [game, names] : codes) {
+        put((L"codes." + game).c_str(), join(names, wstring(1, kCodeSeparator)));
     }
     write_text_file(fs::path(file_path()), narrow(text));
 }

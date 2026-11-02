@@ -44,6 +44,9 @@ void choosing(const fs::path& root) {
     nla::Project first(root, L"naruto");
     check(first.game() == L"naruto", "a game that is set up is the game chosen");
     check(first.valid(), "the project with its game is valid");
+    // The state a setup that gave up on the recompiler leaves behind: the game folders
+    // answer, but a build would stop at `add_subdirectory(../gcn-recomp)`.
+    check(!first.complete(), "a project with no recompiler beside the games is not complete");
 
     // The bug this covers: naruto2 has no folder yet, and the project answered with the
     // first game it found instead, so the cover grid could not leave Clash of Ninja.
@@ -121,6 +124,9 @@ void setup(const fs::path& root) {
     nla::Project::create(root, &error);
     check(nla::read_text_file(root / L"naruto" / L"controls.txt") == L"mine\n",
           "writing the folders leaves a file the player has alone");
+    // The recompiler the games add is what a build reads first, so a written project has it.
+    check(nla::Project(root, L"naruto").complete(),
+          "the written project has the recompiler beside its game folders");
     fs::remove_all(root, ec);
 }
 

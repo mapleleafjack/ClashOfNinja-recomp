@@ -67,6 +67,7 @@ set(NLA_SOURCES
   # input, the drawing, the file picker, the jobs it runs, the games it lists, the mods it
   # applies, and its own updates.
   src/app.cpp
+  src/app_geckos.cpp
   src/app_games.cpp
   src/app_jobs.cpp
   src/app_mods.cpp
@@ -74,6 +75,7 @@ set(NLA_SOURCES
   src/app_picker.cpp
   src/app_update.cpp
   src/catalog.cpp
+  src/codes.cpp
   src/dialog.cpp
   src/disc.cpp
   src/font.cpp
@@ -288,6 +290,20 @@ add_test(NAME click-mods
 add_test(NAME mods-from-game
          COMMAND $<TARGET_FILE:NarutoLauncher> --render
                  "${CMAKE_CURRENT_BINARY_DIR}/mods-from-game.bmp" mods-from-game)
+# The Geckos panel: one code switched on by itself, a block pasted into the box, and the
+# panel the game page opens. The rows are stand-ins in a render, so these are the same on
+# every machine.
+add_test(NAME render-geckos
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-geckos.bmp" geckos)
+add_test(NAME click-geckos
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/click-geckos.bmp"
+                 "geckos-click:300,340;691,577")
+# The box takes the click and the text the window hands it, which is the path a paste takes.
+add_test(NAME geckos-paste
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/geckos-paste.bmp" geckos-paste)
+add_test(NAME geckos-from-game
+         COMMAND $<TARGET_FILE:NarutoLauncher> --render
+                 "${CMAKE_CURRENT_BINARY_DIR}/geckos-from-game.bmp" geckos-from-game)
 add_test(NAME render-update
          COMMAND $<TARGET_FILE:NarutoLauncher> --render "${CMAKE_CURRENT_BINARY_DIR}/render-update.bmp" update)
 add_test(NAME render-update-banner
@@ -331,6 +347,7 @@ add_test(NAME update-logic COMMAND $<TARGET_FILE:update_test>)
 add_executable(mods_test
   tests/mods_test.cpp
   src/catalog.cpp
+  src/codes.cpp
   src/gecko.cpp
   src/mods.cpp
   src/util.cpp

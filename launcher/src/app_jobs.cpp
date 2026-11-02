@@ -204,6 +204,24 @@ std::vector<Task> App::apple_tools_tasks() {
     return tasks;
 }
 
+bool App::repair_project() {
+    if (!project_) return false;
+    if (project_->complete()) return true;
+    std::wstring error;
+    if (!Project::create(project_->root(), &error)) {
+        show_message(L"Could not set the folder up", error);
+        return false;
+    }
+    auto root = project_->root();
+    auto game = project_->game();
+    project_.emplace(root, game);
+    save_settings();
+    append_log(format(L"[launcher] wrote the game folders in %ls\n",
+                      project_->root().wstring().c_str()));
+    refresh();
+    return true;
+}
+
 void App::start_setup(const fs::path& image) {
     if (!project_ || busy_) return;
     bool then_launch = launch_wanted_;
@@ -214,20 +232,11 @@ void App::start_setup(const fs::path& image) {
         return;
     }
     // The game folders are the launcher's to write: a release carries none, so the first
-    // disc chosen for a game sets it up where the launcher lives.
-    if (!fs::is_regular_file(project_->cmake_lists(), ec)) {
-        std::wstring error;
-        if (!Project::create(project_->root(), &error)) {
-            show_message(L"Could not set the folder up", error);
-            return;
-        }
-        auto root = project_->root();
-        auto game = project_->game();
-        project_.emplace(root, game);
-        save_settings();
-        append_log(format(L"[launcher] wrote the game folders in %ls\n",
-                          project_->root().wstring().c_str()));
-        refresh();
+    // disc chosen for a game sets it up where the launcher lives. A folder that is missing
+    // the recompiler or the tool script -- one an earlier setup left half-written -- is
+    // topped up here too, rather than skipped because its game folders happen to be there.
+    if (!project_->complete()) {
+        if (!repair_project()) return;
     }
     if (fs::exists(project_->dol(), ec)) {
         show_confirm(L"Replace the extracted disc?",
@@ -306,7 +315,19 @@ void App::begin_setup(const fs::path& image, bool then_launch) {
             return 0;
         }});
 
-    start_job(std::move(tasks), then_launch);
+    // A step that failed offers its retry, and the other way out: another disc image, which
+    // is what a player with the wrong disc, or a damaged one, needs next.
+    job_quiet_ = true;
+    start_job(std::move(tasks), then_launch, false, [this, image, then_launch](int code) {
+        if (code == 0 || code == 130) return;
+        show_confirm(L"The disc was not set up",
+                     L"Activity holds the command and the output it printed. A retry reads "
+                     L"the same image again; another image is the way out of a disc that is "
+                     L"not the one you meant, or one that cannot be read.",
+                     L"Try again",
+                     [this, image, then_launch] { begin_setup(image, then_launch); },
+                     L"Use a different image", [this] { choose_image(); });
+    });
 }
 
 std::vector<Task> App::build_tasks() {
@@ -413,6 +434,10 @@ std::vector<Task> App::build_tasks() {
 void App::start_build(bool then_launch) {
     if (!project_ || busy_) return;
     if (!check_required_tools()) return;
+    // A folder set up by an older launcher can be missing the recompiler, and CMake then
+    // fails on `add_subdirectory(../gcn-recomp)` before it reads a line of the game. That is
+    // a setup the launcher can finish, so it is finished here rather than reported.
+    if (!repair_project()) return;
     auto tasks = build_tasks();
     if (tasks.empty()) {
         show_message(L"Cannot build", L"cmake and ninja were not found.");
@@ -425,7 +450,19 @@ void App::start_build(bool then_launch) {
         return;
     }
     job_build_ = true;
-    start_job(std::move(tasks), then_launch);
+    // The failure gets a prompt of its own below, which says what can be done about it;
+    // the generic "the step did not finish" one would only replace it.
+    job_quiet_ = true;
+    start_job(std::move(tasks), then_launch, false, [this, then_launch](int code) {
+        if (code == 0 || code == 130) return;
+        show_confirm(L"The build did not finish",
+                     L"Activity holds the command and the output it printed, which usually "
+                     L"names the file or the tool that is missing. A retry builds again from "
+                     L"where the folders are; another image is the way out of a disc that is "
+                     L"not the one you meant.",
+                     L"Try again", [this, then_launch] { start_build(then_launch); },
+                     L"Use a different image", [this] { choose_image(); });
+    });
 }
 
 void App::launch() {
@@ -533,6 +570,7 @@ void App::open_players() {
     overlay_open_ = true;
     overlay_players_ = true;
     overlay_mods_ = false;
+    overlay_geckos_ = false;
     overlay_confirm_ = false;
     overlay_update_ = false;
     overlay_callback_ = nullptr;

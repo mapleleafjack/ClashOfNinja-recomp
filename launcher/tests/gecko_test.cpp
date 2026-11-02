@@ -199,11 +199,50 @@ void refusals() {
     check_ops(controls, "end\nstop\n", "the terminator and the exit are kept apart");
 }
 
+// A list an editor exported: each code named with `$`, separated by a line of `$`s. The
+// Geckos panel switches these on one at a time, so the split has to be exact.
+void named_codes() {
+    auto codes = nla::parse_named_codes(
+        L"$Infinite Time\n"
+        L"040374B8 60000000\n"
+        L"$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n"
+        L"$Skip Intros\n"
+        L"# the three videos\n"
+        L"0400CB14 60000000\n"
+        L"0400CB28 60000000\n"
+        L"$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$\n",
+        L"Code");
+    check(codes.size() == 2, "each named code is its own entry");
+    check(codes[0].name == L"Infinite Time", "the first keeps its name");
+    check(codes[1].name == L"Skip Intros", "so does the second");
+    check(codes[0].text.find(L"040374B8") != std::wstring::npos &&
+              codes[0].text.find(L"0400CB14") == std::wstring::npos,
+          "a code's words stay with it");
+    check(codes[1].text.find(L"# the three videos") != std::wstring::npos,
+          "a note under a code stays with it");
+
+    // A block pasted without names still becomes something to switch on, and a repeat of
+    // one name is numbered so two codes cannot share a check.
+    auto bare = nla::parse_named_codes(L"040374B8 60000000\n", L"Pasted code");
+    check(bare.size() == 1 && bare[0].name == L"Pasted code",
+          "a block with no name takes the fallback");
+
+    auto repeated = nla::parse_named_codes(
+        L"$Skip Intros\n0400CB14 60000000\n$$$$$$$$\n$Skip Intros\n0400CB28 60000000\n",
+        L"Code");
+    check(repeated.size() == 2 && repeated[1].name == L"Skip Intros (2)",
+          "a second code of the same name is numbered");
+
+    auto empty = nla::parse_named_codes(L"$Nothing Here\n$$$$$$$$\n", L"Code");
+    check(empty.empty(), "a name with no words under it is not a code");
+}
+
 int run() {
     writes();
     strings_and_conditions();
     base_and_pointer_addresses();
     refusals();
+    named_codes();
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;
 }

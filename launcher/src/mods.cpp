@@ -409,11 +409,14 @@ OverlaySync sync_overlay_manifest(const fs::path& disc_dir, const fs::path& disc
     return result;
 }
 
-ModProgram sync_mod_programs(const fs::path& disc_dir, const std::vector<ModInfo>& mods) {
+ModProgram sync_mod_programs(const fs::path& disc_dir, const std::vector<ModInfo>& mods,
+                             const std::vector<CodeEntry>& codes) {
     ModProgram result;
     // The same disc check the overlays get: a code written for one build's addresses must
     // never run on another's.
-    const auto disc_id = mods.empty() ? std::wstring() : read_disc_id(disc_dir / L"disc.manifest");
+    const auto disc_id = (mods.empty() && codes.empty())
+                             ? std::wstring()
+                             : read_disc_id(disc_dir / L"disc.manifest");
     std::string ops;
     std::vector<std::pair<uint32_t, uint32_t>> words;
     for (const auto& mod : mods) {
@@ -431,6 +434,24 @@ ModProgram sync_mod_programs(const fs::path& disc_dir, const std::vector<ModInfo
         ++result.codes;
         ops += narrow(format(L"# %ls\n", mod.name.c_str()));
         ops += mod_ops;
+    }
+    // Codes chosen on their own, after the mods: the player picked these last, so the words
+    // they carry win at an address a mod also writes.
+    for (const auto& code : codes) {
+        // A code the panel kept but this parser cannot run contributes nothing rather than
+        // half a program.
+        auto program = parse_gecko(code.text, code.name);
+        if (program.ops.empty() && program.words.empty()) {
+            result.warnings.insert(result.warnings.end(), program.warnings.begin(),
+                                   program.warnings.end());
+            continue;
+        }
+        ++result.codes;
+        ops += narrow(format(L"# %ls\n", code.name.c_str()));
+        ops += program.ops;
+        words.insert(words.end(), program.words.begin(), program.words.end());
+        result.warnings.insert(result.warnings.end(), program.warnings.begin(),
+                               program.warnings.end());
     }
     // A later mod's word wins, as its files do where two replace the same one.
     std::map<uint32_t, uint32_t> last;

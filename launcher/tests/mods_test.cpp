@@ -4,6 +4,7 @@
 
 #include "mods.h"
 #include "catalog.h"
+#include "codes.h"
 #include "util.h"
 
 #include <cstdio>
@@ -230,6 +231,154 @@ void programs(const fs::path& root) {
     check(cleared.wrote && cleared.codes == 0, "switching the mods off removes the files");
     check(!fs::exists(disc_dir / L"mods.gecko") && !fs::exists(disc_dir / L"mods.code"),
           "both are gone");
+}
+
+// The codes chosen on their own, apart from any mod: the same program carries them, after
+// the mods, and a code the player pasted is kept in geckos/<DISCID>.txt.
+void chosen_codes(const fs::path& root) {
+    auto disc_dir = root / L"gnt4" / L"rom" / L"disc";
+    write(disc_dir / L"disc.manifest", L"disc_id G4NJDA\nimage_size 1000\n");
+    write(root / L"mods" / L"always" / L"mod.txt", L"name = Always\ndisc_id = G4NJDA\n");
+    write(root / L"mods" / L"always" / L"gecko.txt", L"0400CB14 60000000\n");
+
+    // A block pasted into the launcher: two codes, one of which this recompiler cannot run.
+    std::vector<std::wstring> warnings;
+    auto pasted = nla::parse_pasted_codes(
+        L"$Infinite Time [Ralf]\n040374B8 60000000\n$$$$$$$$\n"
+        L"$Inserted Assembly\nC2042C40 00000001\n60000000 00000000\n",
+        &warnings);
+    check(pasted.size() == 1 && pasted[0].name == L"Infinite Time [Ralf]",
+          "a pasted code that can run is taken");
+    check(!warnings.empty() && warnings.back().find(L"Inserted Assembly") != std::wstring::npos,
+          "one with nothing this game can run is refused, and named");
+
+    const fs::path file = nla::code_file(root, L"G4NJDA");
+    check(file == root / L"geckos" / L"G4NJDA.txt", "a disc's codes are kept under its ID");
+    check(nla::write_code_file(file, pasted), "the codes are written");
+    auto back = nla::read_code_file(file, false);
+    check(back.size() == 1 && back[0].name == L"Infinite Time [Ralf]" && !back[0].online,
+          "and read back as the player's own");
+    check(back[0].runnable && back[0].ops == 1, "the code is one operation a frame");
+
+    // The guide's answer is cached beside it, in the same `$Named` shape as the player's own
+    // file: whatever a guide is fetched as, it is written out this way. The player's code has
+    // the guide's name, which is what pasting a code back in to edit it looks like.
+    nla::write_code_file(
+        nla::online_code_file(root, L"G4NJDA"),
+        {{L"Infinite Time [Ralf]", L"040374B8 00000000\n", true, true},
+         {L"Unlock Everything [Nick]", L"02223258 0017FFFF\n", true, true}});
+    auto all = nla::read_codes(root, L"G4NJDA");
+    check(all.size() == 2, "the player's code shadows the guide's of the same name");
+    check(!all[0].online && all[1].online, "the guide's own is marked as such");
+    check(all[1].name == L"Unlock Everything [Nick]", "and is the one the player has not got");
+
+    auto mods = nla::discover_mods(root / L"mods");
+    auto sync = nla::sync_mod_programs(disc_dir, mods, all);
+    check(sync.codes == 3, "the mod and both codes contribute");
+    auto ops = nla::read_text_file(disc_dir / L"mods.gecko");
+    check(ops.find(L"# Always\n") != std::wstring::npos, "the mod's part is there");
+    check(ops.find(L"# Infinite Time [Ralf]\n") != std::wstring::npos,
+          "and the code's, after it");
+    check(ops.find(L"write32 800374B8 60000000 1 -\n") != std::wstring::npos,
+          "the player's words are what run, because their code took the guide's name");
+    check(ops.find(L"# Unlock Everything [Nick]\n") != std::wstring::npos,
+          "the guide's other code is there too");
+
+    auto cleared = nla::sync_mod_programs(disc_dir, {}, {});
+    check(cleared.wrote && cleared.codes == 0, "switching everything off removes the program");
+    check(!fs::exists(disc_dir / L"mods.gecko"), "the program file is gone");
+}
+
+// A guide's markdown: `### Name` and the fenced block under it. A fence that is not a code,
+// or a heading with no block, is not one.
+void guide_markdown(const fs::path& root) {
+    auto codes = nla::parse_online_codes(
+        L"# GNT4 Gecko Codes\n"
+        L"## General\n"
+        L"### Skip Three Intro Videos [Nick]\n"
+        L"\n"
+        L"```gecko\n"
+        L"0400CB14 60000000\n"
+        L"0400CB28 60000000\n"
+        L"```\n"
+        L"\n"
+        L"### Enable DPad During Fights [Ralf]\n"
+        L"\n"
+        L"```gecko\n"
+        L"C200E51C 00000002\n"
+        L"80030000 540007BD\n"
+        L"```\n"
+        L"\n"
+        L"## Installing\n"
+        L"\n"
+        L"```sh\n"
+        L"dolphin-tool import codes\n"
+        L"```\n");
+    check(codes.size() == 2, "each `### Name` with a code block under it is one entry");
+    check(codes[0].name == L"Skip Three Intro Videos [Nick]", "the heading is the name");
+    check(codes[0].ops == 2, "its two writes are two operations");
+    check(codes[1].runnable == false,
+          "inserted assembly is listed but marked as one this game cannot run");
+
+    // A guide whose codes sit straight under `##` rather than under a `###` subsection: the
+    // European guide is written that way, and reading only `###` made its list empty.
+    auto flat = nla::parse_online_codes(
+        L"# Clash of Ninja 2 Gecko Codes\n"
+        L"## General\n"
+        L"## Skip Intro Cutscenes [Nick]\n"
+        L"\n"
+        L"```gecko\n"
+        L"0406a9e4 60000000\n"
+        L"```\n"
+        L"\n"
+        L"## Force 3 Round Matches [Nick]\n"
+        L"\n"
+        L"```gecko\n"
+        L"0401f0c8 38000003\n"
+        L"```\n");
+    check(flat.size() == 2, "a flat guide's `## Name` headings are codes too");
+    check(flat[0].name == L"Skip Intro Cutscenes [Nick]", "the first keeps its name");
+    check(flat[1].name == L"Force 3 Round Matches [Nick]", "so does the second");
+
+    // A forum post: the code box holds a name on its own line and its words under it, which
+    // is the shape Ralf's gc-forever threads use for the two Clash of Ninja releases.
+    auto post = nla::parse_guide(
+        L"<div class=\"codebox\"><p>Code: <a href=\"#\">Select all</a></p><pre><code>\n"
+        L"Infinite Money [Ralf]\n"
+        L"041B4F08 000927C0\n"
+        L"\n"
+        L"Infinite Time [Ralf]\n"
+        L"202B8B2C 00000000\n"
+        L"022B8B32 00000DDD\n"
+        L"E2000001 80008000\n"
+        L"\n"
+        L"Go into the pause menu during fight:\n"
+        L"R/L     = Zoom I\n"
+        L"</code></pre></div>\n",
+        nla::CodeFormat::ForumPost);
+    check(post.size() == 2, "a forum code box gives one entry per named code");
+    check(post[0].name == L"Infinite Money [Ralf]", "the name line becomes the name");
+    check(post[0].ops == 1 && post[1].ops == 3, "the words under it become its operations");
+    check(post[1].name == L"Infinite Time [Ralf]", "and the note under them starts nothing");
+    check(post[0].online && post[1].online, "guide codes are marked as such");
+
+    // The same words with no name above them are not something a player could switch on.
+    auto nameless = nla::parse_plain_codes(L"041B4F08 000927C0\n");
+    check(nameless.empty(), "words with no name above them are not a code");
+
+    nla::CodeSource source;
+    check(nla::online_code_source(L"G4NJDA", &source) &&
+              source.url.find(L"gnt4/docs/guides/gecko_codes.md") != std::wstring::npos,
+          "the disc's guide is named");
+    check(nla::online_code_source(L"GNUPDA", &source) &&
+              source.url.find(L"gc-forever") != std::wstring::npos,
+          "the European release's gc-forever thread is its guide");
+    check(nla::online_code_source(L"GNREDA", &source),
+          "so is the first game's");
+    check(source.format == nla::CodeFormat::ForumPost,
+          "and those two are read as forum posts, not markdown");
+    check(!nla::online_code_source(L"G3NJDA", &source),
+          "and no guide is claimed for a build none was found for");
 }
 
 // -- disc patches -----------------------------------------------------------
@@ -480,6 +629,8 @@ int run() {
     table(root / L"table");
     overlays(root / L"overlays");
     programs(root / L"programs");
+    chosen_codes(root / L"codes");
+    guide_markdown(root / L"guides");
     patches(root / L"patches");
     fs::remove_all(root, ec);
 
