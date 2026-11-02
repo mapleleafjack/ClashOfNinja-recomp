@@ -348,6 +348,10 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         scratch.replace_extension(L".state.project");
         std::error_code ec;
         fs::create_directories(scratch, ec);
+        // The scratch folder stands in for a project, and borrows this checkout's box art
+        // when there is any, so a frame of the map does not show placeholder tiles.
+        const std::optional<fs::path> covers =
+            project_ ? std::optional<fs::path>(project_->covers_dir()) : std::nullopt;
         const std::size_t colon = view.find(':', 6);
         const std::string state =
             view.substr(6, colon == std::string::npos ? std::string::npos : colon - 6);
@@ -366,6 +370,10 @@ int App::render_to(const std::string& path, float scale, const std::string& view
             return 1;
         }
         project_.emplace(scratch, settings_.game);
+        if (covers) {
+            std::error_code link_ec;
+            fs::create_directory_symlink(*covers, scratch / L"covers", link_ec);
+        }
         status_ = ProjectStatus{};
         // A game with its disc extracted stands behind everything but `setup` and
         // `needs-disc`; the two live states are that page with a step in flight.
@@ -499,7 +507,7 @@ void App::paint() {
     }
     if (picker_ != PickerKind::None) paint_picker();
     if (scale_open_) paint_scale_menu();
-    if (pad_menu_row_ >= 0) paint_pad_menu();
+    if (device_map_.menu_row() >= 0) paint_pad_menu();
 
     painter_.end();
 }
@@ -1131,7 +1139,7 @@ void App::paint_overlay() {
                                          16.0f + 56.0f + 24.0f,
                                      220.0f, height_ - 80.0f);
     Rect panel{(width_ - panel_w) / 2, (height_ - panel_h) / 2, panel_w, panel_h};
-    pad_menu_panel_ = panel;
+    device_map_.set_menu_panel(panel);
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
 
@@ -1157,12 +1165,12 @@ void App::paint_overlay() {
             y += 34;
         };
         for (int player = 1; player <= kPads; ++player) {
-            const std::wstring value = player_device_label(player);
+            const std::wstring value = device_map_.player_device_label(player);
             pad_row(static_cast<Id>(static_cast<int>(Id::PadRow) + player - 1),
                     L"Player " + std::to_wstring(player), value, value == L"Not set");
         }
-        if (!devices_note_.empty()) {
-            painter_.text(ui_.elide(devices_note_, Face::Tiny, right - left),
+        if (!device_map_.note().empty()) {
+            painter_.text(ui_.elide(device_map_.note(), Face::Tiny, right - left),
                           RectF(left, y, right, y + 18), Face::Tiny, rgb(theme::Muted));
         }
     } else if (overlay_.is(OverlayPage::Mods)) {
@@ -1402,19 +1410,19 @@ void App::paint_overlay() {
 // What a player row offers: nothing, the keyboard, then each controller the game sees. A
 // row near the bottom of the panel opens its menu upwards, so the panel hides nothing.
 void App::paint_pad_menu() {
-    const std::vector<std::wstring> options = pad_options();
+    const std::vector<std::wstring> options = device_map_.pad_options();
     const int count = static_cast<int>(options.size());
-    Rect menu{pad_menu_anchor_.x, pad_menu_anchor_.y + pad_menu_anchor_.h + 6, pad_menu_anchor_.w,
+    Rect menu{device_map_.menu_anchor().x, device_map_.menu_anchor().y + device_map_.menu_anchor().h + 6, device_map_.menu_anchor().w,
               count * 30.0f + 8};
-    if (menu.y + menu.h > pad_menu_panel_.y + pad_menu_panel_.h - 10)
-        menu.y = pad_menu_anchor_.y - 6 - menu.h;
+    if (menu.y + menu.h > device_map_.menu_panel().y + device_map_.menu_panel().h - 10)
+        menu.y = device_map_.menu_anchor().y - 6 - menu.h;
     painter_.fill_round(menu.box(), 10, rgb(0x1b1e25));
     painter_.stroke_round(menu.box(), 10, rgb(theme::BorderStrong), 1);
-    const int player = pad_menu_row_ + 1;
+    const int player = device_map_.menu_row() + 1;
     int current = 0;
-    if (player_is_keyboard(player)) {
+    if (device_map_.player_is_keyboard(player)) {
         current = 1;
-    } else if (const int device = player_device(player); device >= 0) {
+    } else if (const int device = device_map_.player_device(player); device >= 0) {
         current = 2 + device;
     }
     for (int i = 0; i < count; ++i) {

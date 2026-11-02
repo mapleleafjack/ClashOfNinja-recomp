@@ -78,6 +78,7 @@ set(NLA_SOURCES
   src/catalog.cpp
   src/codes.cpp
   src/dialog.cpp
+  src/devices.cpp
   src/disc.cpp
   src/font.cpp
   src/gecko.cpp

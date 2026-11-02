@@ -132,7 +132,7 @@ void App::open_geckos() {
                         project_ ? L"Geckos — " + project_->title() : L"Geckos");
     settings_open_ = false;
     scale_open_ = false;
-    pad_menu_row_ = -1;
+    device_map_.set_menu_row(-1);
 
     invalidate();
 }

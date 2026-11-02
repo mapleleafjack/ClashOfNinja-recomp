@@ -512,7 +512,8 @@ void App::play() {
     if (!settings_.input_log) args.push_back(L"--no-input-log");
     // One pad per controller, and never fewer than the pads the picker names.
     int players = settings_.players;
-    for (const auto& device : devices_) players = std::max(players, device.pad);
+    for (const auto& device : device_map_.devices())
+        players = std::max(players, device.pad);
     args.push_back(L"--players=" + std::to_wstring(std::clamp(players, 1, 4)));
     args.push_back(L"--controls=" + project_->controls().wstring());
 
@@ -570,133 +571,34 @@ void App::open_players() {
     overlay_.show_panel(OverlayPage::Players, L"Players");
     settings_open_ = false;
     scale_open_ = false;
-    pad_menu_row_ = -1;
+    device_map_.set_menu_row(-1);
     invalidate();
 }
 
 void App::refresh_devices() {
-    devices_.clear();
-    keyboard_pad_ = 1;
-    devices_note_.clear();
+    device_map_.clear();
     // A stand-in list for the renders: the same devices whatever this machine has
     // plugged in, so the drawing is the same everywhere it is checked.
     if (rendering_) {
-        devices_ = {{L"Xbox Wireless Controller", 1, 0}, {L"PS4 Controller", 1, 2}};
+        device_map_.set_devices(
+            {{L"Xbox Wireless Controller", 1, 0}, {L"PS4 Controller", 1, 2}});
         return;
     }
     std::error_code ec;
     // The game answers for itself: its own SDL sees the devices, and it names them exactly
     // as the pad pins in controls.txt do.
     if (!project_ || !fs::exists(project_->binary(), ec)) {
-        devices_note_ = L"Build the game first: the launcher asks it which controllers it sees.";
+        device_map_.set_note(
+            L"Build the game first: the launcher asks it which controllers it sees.");
         return;
     }
     std::string out;
     if (!capture_output(project_->binary().wstring(),
                         {L"--list-devices", L"--controls=" + project_->controls().wstring()}, &out))
         return;
-    for (const auto& line : split(widen(out), L'\n')) {
-        auto fields = split(line, L'\t');
-        if (fields.size() >= 2 && fields[0] == L"keyboard") {
-            keyboard_pad_ = std::clamp(std::atoi(narrow(fields[1]).c_str()), 1, 4);
-        } else if (fields.size() >= 4 && fields[0] == L"device") {
-            DeviceRow device;
-            device.nth = std::atoi(narrow(fields[1]).c_str());
-            device.pad = std::atoi(narrow(fields[2]).c_str());
-            device.name = fields[3];
-            devices_.push_back(device);
-        }
-    }
-    if (devices_.empty()) devices_note_ = L"No controller found. Plug one in and press Refresh.";
-}
-
-// The pad each controller plays as: the pins first, in the order the game lists the
-// devices, then the pads still free. A pin to a pad another device has is passed over, and
-// the keyboard's pad is not offered, so one pad is one device.
-std::vector<int> App::resolved_pads() const {
-    std::vector<int> pads(devices_.size(), 0);
-    bool taken[kPads + 1] = {};
-    if (keyboard_pad_ >= 1 && keyboard_pad_ <= kPads) taken[keyboard_pad_] = true;
-    for (size_t i = 0; i < devices_.size(); ++i) {
-        const int pin = devices_[i].pad;
-        if (pin < 1 || pin > kPads || taken[pin]) continue;
-        taken[pin] = true;
-        pads[i] = pin;
-    }
-    for (size_t i = 0; i < devices_.size(); ++i) {
-        for (int free = 1; free <= kPads && pads[i] == 0; ++free) {
-            if (taken[free]) continue;
-            taken[free] = true;
-            pads[i] = free;
-        }
-    }
-    return pads;
-}
-
-int App::player_device(int player) const {
-    const std::vector<int> pads = resolved_pads();
-    for (size_t i = 0; i < pads.size(); ++i)
-        if (pads[i] == player) return static_cast<int>(i);
-    return -1;
-}
-
-bool App::player_is_keyboard(int player) const {
-    return keyboard_pad_ == player && player >= 1 && player <= kPads;
-}
-
-// What a player's row shows: the device playing as that pad, or the muted "Not set".
-std::wstring App::player_device_label(int player) const {
-    if (player_is_keyboard(player)) return L"Keyboard";
-    const int device = player_device(player);
-    if (device < 0) return L"Not set";
-    std::wstring label = devices_[static_cast<size_t>(device)].name;
-    if (devices_[static_cast<size_t>(device)].nth > 1)
-        label += L" #" + std::to_wstring(devices_[static_cast<size_t>(device)].nth);
-    return label;
-}
-
-std::vector<std::wstring> App::pad_options() const {
-    constexpr std::size_t kMost =
-        static_cast<std::size_t>(static_cast<int>(Id::PadOptionEnd) - static_cast<int>(Id::PadOption));
-    std::vector<std::wstring> options{L"Not set", L"Keyboard"};
-    for (size_t i = 0; i < devices_.size() && options.size() < kMost; ++i) {
-        std::wstring label = devices_[i].name;
-        if (devices_[i].nth > 1) label += L" #" + std::to_wstring(devices_[i].nth);
-        options.push_back(label);
-    }
-    return options;
-}
-
-// A pick takes the pad from whatever was on it, and the keyboard, which always plays as one
-// pad, moves to the first pad no controller is pinned to when a controller takes its own.
-void App::assign_player(int player, int choice) {
-    if (player < 1 || player > kPads) return;
-    const int pad = player;
-    auto displace_keyboard = [&] {
-        if (keyboard_pad_ != pad) return;
-        for (int candidate = 1; candidate <= kPads; ++candidate) {
-            if (candidate == pad) continue;
-            bool taken = false;
-            for (const auto& device : devices_)
-                if (device.pad == candidate) taken = true;
-            if (!taken) {
-                keyboard_pad_ = candidate;
-                return;
-            }
-        }
-    };
-    if (choice == 1) {  // the keyboard
-        for (auto& device : devices_)
-            if (device.pad == pad) device.pad = 0;
-        keyboard_pad_ = pad;
-        return;
-    }
-    const size_t index = choice >= 2 ? static_cast<size_t>(choice - 2) : devices_.size();
-    if (index < devices_.size() && devices_[index].pad == pad) return;  // already here
-    for (auto& device : devices_)
-        if (device.pad == pad) device.pad = 0;
-    displace_keyboard();
-    if (index < devices_.size()) devices_[index].pad = pad;
+    device_map_.load(widen(out));
+    if (device_map_.devices().empty())
+        device_map_.set_note(L"No controller found. Plug one in and press Refresh.");
 }
 
 // The pads this picker owns are the `pad = "<device>" <n>` and `keyboard_pad = <n>` lines.
@@ -730,15 +632,16 @@ void App::write_pad_pins() {
     }
     // What the panel shows is what the game gets: every controller the panel finds a pad
     // for is pinned to it, so the first-free rule has nothing left to decide.
-    const std::vector<int> pads = resolved_pads();
-    for (size_t i = 0; i < devices_.size(); ++i) {
-        std::wstring label = devices_[i].name;
-        if (devices_[i].nth > 1) label += L" #" + std::to_wstring(devices_[i].nth);
+    const std::vector<int> pads = device_map_.resolved_pads();
+    for (size_t i = 0; i < device_map_.devices().size(); ++i) {
+        std::wstring label = device_map_.devices()[i].name;
+        if (device_map_.devices()[i].nth > 1)
+            label += L" #" + std::to_wstring(device_map_.devices()[i].nth);
         if (pads[i] == 0) pins.erase(label);
         else pins[label] = pads[i];
     }
-    if (keyboard_pad_ != 1)
-        kept += L"keyboard_pad = " + std::to_wstring(keyboard_pad_) + L"\n";
+    if (device_map_.keyboard_pad() != 1)
+        kept += L"keyboard_pad = " + std::to_wstring(device_map_.keyboard_pad()) + L"\n";
     int highest = 1;
     for (const auto& [label, pad] : pins) {
         kept += L"pad = \"" + label + L"\" " + std::to_wstring(pad) + L"\n";
@@ -751,7 +654,8 @@ void App::write_pad_pins() {
     // A pad past the cap would be ignored by the game, so the cap follows the picks.
     settings_.players = std::max(settings_.players, highest);
     save_settings();
-    append_log(L"[launcher] players: keyboard is player " + std::to_wstring(keyboard_pad_) + L"\n");
+    append_log(L"[launcher] players: keyboard is player " +
+               std::to_wstring(device_map_.keyboard_pad()) + L"\n");
     for (const auto& [label, pad] : pins)
         append_log(L"[launcher] players: \"" + label + L"\" is player " +
                    std::to_wstring(pad) + L"\n");

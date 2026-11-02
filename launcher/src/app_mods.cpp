@@ -255,7 +255,7 @@ void App::open_mods() {
                         project_ ? L"Mods — " + project_->title() : L"Mods");
     settings_open_ = false;
     scale_open_ = false;
-    pad_menu_row_ = -1;
+    device_map_.set_menu_row(-1);
     invalidate();
 }
 

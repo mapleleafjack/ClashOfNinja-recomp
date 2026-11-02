@@ -516,23 +516,23 @@ void App::activate(Id id) {
     }
 
     if (overlay_.is(OverlayPage::Players)) {
-        if (pad_menu_row_ >= 0) {
-            const int player = pad_menu_row_ + 1;
+        if (device_map_.menu_row() >= 0) {
+            const int player = device_map_.menu_row() + 1;
             const int picked = static_cast<int>(id) - static_cast<int>(Id::PadOption);
             if (id >= Id::PadOption && id < Id::PadOptionEnd &&
-                picked < static_cast<int>(pad_options().size())) {
-                pad_menu_row_ = -1;
-                assign_player(player, picked);
+                picked < static_cast<int>(device_map_.pad_options().size())) {
+                device_map_.set_menu_row(-1);
+                device_map_.assign(player, picked);
                 write_pad_pins();
                 return;
             }
-            pad_menu_row_ = -1;  // anything else closes the menu, then does its own work
+            device_map_.set_menu_row(-1);  // anything else closes the menu, then does its own work
         }
         if (id >= Id::PadRow && id < Id::PadRowEnd) {
             const int row = static_cast<int>(id) - static_cast<int>(Id::PadRow);
             if (row >= 0 && row < kPads) {
-                pad_menu_row_ = row;
-                if (const auto rect = ui_.rect_of(id)) pad_menu_anchor_ = *rect;
+                device_map_.set_menu_row(row);
+                if (const auto rect = ui_.rect_of(id)) device_map_.set_menu_anchor(*rect);
                 invalidate();
                 return;
             }
@@ -696,14 +696,14 @@ void App::close_overlay() {
     // picker's own field, which is the only other place that types.
     gecko_editing_ = false;
     window_.set_text_input(false);
-    pad_menu_row_ = -1;
+    device_map_.set_menu_row(-1);
     invalidate();
 }
 
 void App::open_settings() {
     settings_open_ = true;
     scale_open_ = false;
-    pad_menu_row_ = -1;
+    device_map_.set_menu_row(-1);
     settings_note_.clear();
     invalidate();
 }

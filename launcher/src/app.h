@@ -15,6 +15,7 @@
 #include "painter.h"
 #include "ui.h"
 #include "catalog.h"
+#include "devices.h"
 #include "codes.h"
 #include "jobs.h"
 #include "mods.h"
@@ -159,19 +160,10 @@ class App {
     // switched on. Read from disk so a run that never opened the panel still gets them.
     std::vector<CodeEntry> enabled_code_entries() const;
 
+    // Asks the game which controllers it sees. Deciding who plays as whom is DeviceMap's.
     void refresh_devices();
+    // The pads this picker owns, written to controls.txt beside the player's own mapping.
     void write_pad_pins();
-    // The pad each controller plays as: the pins first, then the pads still free.
-    std::vector<int> resolved_pads() const;
-    // The device that plays as a player, as the game works it out. -1 is the keyboard, or
-    // nothing when the player has no device.
-    int player_device(int player) const;
-    bool player_is_keyboard(int player) const;
-    std::wstring player_device_label(int player) const;
-    // What a player row offers: Not set, the keyboard, then each controller.
-    std::vector<std::wstring> pad_options() const;
-    // Picks a row's device: it takes the pad from whatever was on it.
-    void assign_player(int player, int choice);
     void activate(Id id);
     bool modal_active() const {
         return settings_open_ || overlay_.open() || picker_ != PickerKind::None;
@@ -233,6 +225,7 @@ class App {
     Painter painter_;
     UiContext ui_{painter_};
     Overlay overlay_;
+    DeviceMap device_map_;
 
     Settings settings_;
     std::optional<Project> project_;
@@ -274,19 +267,6 @@ class App {
     std::wstring settings_note_;
     std::vector<ToolInfo> tools_;
 
-    // A controller SDL reports, as the game names it, and the pad it plays as: 1 to 4, or
-    // 0 for the first one free.
-    struct DeviceRow {
-        std::wstring name;
-        int nth = 1;
-        int pad = 0;
-    };
-    std::vector<DeviceRow> devices_;
-    std::wstring devices_note_;  // why the list is empty, when it is
-    int keyboard_pad_ = 1;
-    int pad_menu_row_ = -1;  // the player whose menu is open, 0 for Player 1; -1 for none
-    Rect pad_menu_anchor_{};
-    Rect pad_menu_panel_{};  // the panel the menu sits in, so a low row can open upwards
     bool rendering_ = false;  // --render: no game to ask, so the rows are stand-ins
     // A render has no window to click in, so the page's two live states -- a step running,
     // and the game itself up -- are asked for by name rather than found on the machine.
