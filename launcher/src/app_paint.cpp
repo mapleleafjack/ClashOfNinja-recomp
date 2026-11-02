@@ -174,11 +174,12 @@ int App::render_to(const std::string& path, float scale, const std::string& view
     // A stand-in release, so the update prompt and the header button can be rendered
     // without a network.
     auto fake_update = [this] {
-        update_state_ = UpdateState::Available;
-        update_release_.version = L"1.1.0";
-        update_release_.page_url = L"https://example.invalid/releases/tag/v1.1.0";
-        update_release_.asset_name = L"NarutoLauncher-macOS-arm64-v1.1.0.zip";
-        update_release_.asset_url = L"https://example.invalid/" + update_release_.asset_name;
+        ReleaseInfo stand_in;
+        stand_in.version = L"1.1.0";
+        stand_in.page_url = L"https://example.invalid/releases/tag/v1.1.0";
+        stand_in.asset_name = L"NarutoLauncher-macOS-arm64-v1.1.0.zip";
+        stand_in.asset_url = L"https://example.invalid/" + stand_in.asset_name;
+        update_.set_stand_in(std::move(stand_in));
     };
 
     if (view == "settings") {
@@ -398,7 +399,7 @@ int App::render_to(const std::string& path, float scale, const std::string& view
         open_picker(PickerKind::Image, L"Choose your own disc image",
                     project_ ? project_->root() : home_dir(), [](const fs::path&) {});    } else if (view == "update") {
         fake_update();
-        show_update_prompt();
+        update_.show_prompt();
     } else if (view == "update-banner") {
         fake_update();
     } else if (view.rfind("update-click:", 0) == 0) {
@@ -526,8 +527,8 @@ void App::paint_header() {
     // The games are the big covers below, so the header only carries the title of the
     // one they would launch, and what the launcher found about it.
     float title_right = settings_button.x - 16;
-    if (update_state_ == UpdateState::Available && !update_release_.version.empty()) {
-        std::wstring label = L"Update " + update_release_.version;
+    if (update_.state() == UpdateScreen::State::Available && !update_.version().empty()) {
+        std::wstring label = L"Update " + update_.version();
         float badge_w = ui_.text_width(label, Face::Button) + 30;
         Rect badge{settings_button.x - 8 - badge_w, 24, badge_w, 34};
         ui_.button(Id::UpdateBanner, badge, label, true, !busy_);
@@ -1062,33 +1063,29 @@ void App::paint_settings() {
     separator();
 
     section(L"UPDATES");
-    std::wstring update_line = L"Version " + launcher_version() + L".";
+    // The words are the screen's; only the colour they are read in is the page's.
+    const std::wstring update_line = update_.line();
     Color update_color = rgb(theme::Muted);
-    switch (update_state_) {
-        case UpdateState::Checking:
-            update_line = L"Asking GitHub for the newest release…";
-            break;
-        case UpdateState::UpToDate:
-            update_line = L"Version " + launcher_version() + L" is the newest release.";
+    switch (update_.state()) {
+        case UpdateScreen::State::UpToDate:
             update_color = rgb(theme::Ok);
             break;
-        case UpdateState::Available:
-            update_line = L"Version " + update_release_.version + L" is available.";
+        case UpdateScreen::State::Available:
             update_color = rgb(theme::Accent);
             break;
-        case UpdateState::Failed:
-            update_line = L"Version " + launcher_version() + L". " + update_error_;
+        case UpdateScreen::State::Failed:
             update_color = rgb(theme::Warn);
             break;
-        case UpdateState::Never:
+        case UpdateScreen::State::Checking:
+        case UpdateScreen::State::Never:
             break;
     }
     painter_.text(ui_.elide(update_line, Face::Small, content_w - 250),
                   RectF(left, y + 7, left + content_w - 250, y + 29), Face::Small,
                   update_color);
     ui_.button(Id::SettingsCheckNow, Rect{right - 100, y, 100, 32}, L"Check now", false,
-           !busy_ && update_state_ != UpdateState::Checking);
-    if (update_state_ == UpdateState::Available) {
+           !busy_ && update_.state() != UpdateScreen::State::Checking);
+    if (update_.state() == UpdateScreen::State::Available) {
         ui_.button(Id::SettingsInstallUpdate, Rect{right - 100 - 8 - 128, y, 128, 32},
                L"Install update", true, !busy_);
     }

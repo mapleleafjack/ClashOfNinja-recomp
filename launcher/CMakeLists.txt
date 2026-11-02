@@ -74,7 +74,6 @@ set(NLA_SOURCES
   src/app_mods.cpp
   src/app_paint.cpp
   src/app_picker.cpp
-  src/app_update.cpp
   src/activity_panel.cpp
   src/catalog.cpp
   src/codes.cpp
@@ -101,6 +100,7 @@ set(NLA_SOURCES
   src/tools_package.cpp
   src/ui.cpp
   src/update.cpp
+  src/update_screen.cpp
   src/util.cpp
   src/window.cpp
 )
@@ -347,6 +347,35 @@ else()
   target_link_libraries(update_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME update-logic COMMAND $<TARGET_FILE:update_test>)
+
+# What the update screen does with what a check finds, and what the Settings page says about
+# it. The screen holds a host of callbacks instead of the window, so a test fills them in and
+# drives the page with no window, no network and no thread.
+add_executable(update_screen_test
+  tests/update_screen_test.cpp
+  src/update_screen.cpp
+  src/settings.cpp
+  src/update.cpp
+  src/git.cpp
+  src/tools.cpp
+  src/jobs.cpp
+  src/util.cpp
+)
+target_include_directories(update_screen_test PRIVATE src)
+# A development version, so the check is a build that cannot ask GitHub: the test needs no
+# network, and what a build with no release tag does is worth checking anyway.
+target_compile_definitions(update_screen_test PRIVATE NLA_VERSION="0.0.0")
+if(WIN32)
+  target_compile_definitions(update_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(update_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(update_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(update_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME update-screen-logic COMMAND $<TARGET_FILE:update_screen_test>)
 
 # The mod loader's offline half: reading a mod.txt and laying its files over an extracted
 # disc's manifest. Needs no game and no network.

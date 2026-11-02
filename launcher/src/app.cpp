@@ -18,13 +18,42 @@ std::wstring picker_join(const std::wstring& folder, const std::wstring& name) {
 
 }  // namespace
 
+// The window fills the host before anything can ask for it: a screen is handed the same
+// struct, so a callback it takes is the window's own method, not a copy of what one did when
+// it was built.
+App::App() {
+    host_.invalidate = [this] { invalidate(); };
+    host_.post = [this](std::function<void()> task) { post(std::move(task)); };
+    host_.log = [this](const std::wstring& text) { append_log(text); };
+    host_.message = [this](const std::wstring& title, const std::wstring& text) {
+        show_message(title, text);
+    };
+    host_.update_prompt = [this](const std::wstring& title, const std::wstring& text,
+                                 const std::wstring& action,
+                                 std::function<void()> on_action) {
+        show_confirm(title, text, action, std::move(on_action));
+        // Closing the prompt means "not this version", which is what the overlay remembers.
+        overlay_.mark_update();
+    };
+    host_.busy = [this] { return busy_; };
+    host_.game_running = [this] { return game_.running(); };
+    host_.settings = [this]() -> Settings& { return settings_; };
+    host_.settings_note = [this](const std::wstring& text) { settings_note_ = text; };
+    host_.start_job = [this](std::vector<Task> tasks, JobOptions options) {
+        start_job(std::move(tasks), std::move(options));
+    };
+    host_.elide_path = [this](const std::wstring& text) {
+        return ui_.elide_middle(text, Face::Body, kMessagePanelWidth - 52.0f);
+    };
+}
+
 App::~App() {
     // Work in flight posts its answer to the dispatcher, so it must be finished before
     // anything it touches goes away. Both requests have a short timeout of their own, and
     // the box art worker stops between downloads.
     covers_stop_ = true;
     codes_stop_ = true;
-    if (update_thread_.joinable()) update_thread_.join();
+    update_.shutdown();
     if (covers_thread_.joinable()) covers_thread_.join();
     if (codes_thread_.joinable()) codes_thread_.join();
     job_.shutdown();
@@ -67,7 +96,7 @@ bool App::create() {
     window_.show();
     invalidate();
 
-    if (settings_.check_updates) start_update_check(false);
+    if (settings_.check_updates) update_.start(false);
     // Art for a game that has none, so the page is not bare on a fresh install.
     fetch_covers();
 
@@ -566,8 +595,8 @@ void App::activate(Id id) {
         } else if (id == Id::OverlayCancel) {
             // "Not now" on the update prompt is remembered for that version only, so a
             // later release asks again.
-            if (overlay_.update() && !update_release_.version.empty()) {
-                settings_.skipped_update = update_release_.version;
+            if (overlay_.update() && !update_.version().empty()) {
+                settings_.skipped_update = update_.version();
                 save_settings();
             }
             close_overlay();
@@ -586,11 +615,11 @@ void App::activate(Id id) {
                 save_settings();
                 break;
             case Id::SettingsCheckNow:
-                start_update_check(true);
+                update_.start(true);
                 return;
             case Id::SettingsInstallUpdate:
                 overlay_.close();
-                begin_update();
+                update_.begin();
                 return;
             case Id::Scale:
                 overlay_.set_scale_menu(!overlay_.scale_menu());
@@ -625,6 +654,12 @@ void App::activate(Id id) {
         overlay_.set_scale_menu(false);
     }
 
+    // A screen answers for the ids it owns, so this switch only has the page's own.
+    if (update_.handles(id)) {
+        update_.activate(id);
+        return;
+    }
+
     switch (id) {
         case Id::Launch: launch(); break;
         case Id::Stop:
@@ -642,7 +677,6 @@ void App::activate(Id id) {
             activity_.clear();
             break;
         case Id::OpenSettings: open_settings(); break;
-        case Id::UpdateBanner: show_update_prompt(); break;
         case Id::Scale:
             overlay_.set_scale_menu(!overlay_.scale_menu());
             if (overlay_.scale_menu()) anchor_scale();

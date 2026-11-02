@@ -15,6 +15,7 @@
 #include "painter.h"
 #include "ui.h"
 #include "activity_panel.h"
+#include "screen.h"
 #include "catalog.h"
 #include "covers.h"
 #include "devices.h"
@@ -25,6 +26,7 @@
 #include "project.h"
 #include "settings.h"
 #include "tools.h"
+#include "update_screen.h"
 #include "update.h"
 #include "window.h"
 
@@ -32,7 +34,7 @@ namespace nla {
 
 class App {
   public:
-    App() = default;
+    App();
     ~App();
     App(const App&) = delete;
     App& operator=(const App&) = delete;
@@ -50,9 +52,6 @@ class App {
     static constexpr float kMessagePanelWidth = 620.0f;
 
   private:
-
-    // What came of looking for a newer release.
-    enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
 
     void handle_event(const SDL_Event& event);
     void handle_key(const SDL_KeyboardEvent& key);
@@ -181,12 +180,6 @@ class App {
     void open_settings();
     void save_settings();
 
-    void start_update_check(bool manual);
-    void on_update_checked(UpdateCheck check, bool manual);
-    void show_update_prompt();
-    void begin_update();
-    void open_update_page();
-
     // Asks for a folder or a disc image: the platform's own chooser where there is one,
     // and the launcher's picker where there is not.
     void choose_path(PickerKind kind, const std::wstring& title, const fs::path& start,
@@ -282,11 +275,10 @@ class App {
     std::atomic_bool codes_stop_{false};
 
 
-    // The newest release, and what came of looking for it.
-    UpdateState update_state_ = UpdateState::Never;
-    ReleaseInfo update_release_;
-    std::wstring update_error_;
-    std::thread update_thread_;
+    // What a screen may ask the window for, filled in before anything can ask. The screen
+    // is declared after it, so it is handed a host that is already there.
+    ScreenHost host_;
+    UpdateScreen update_{host_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;
