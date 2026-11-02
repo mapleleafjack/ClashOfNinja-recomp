@@ -61,7 +61,7 @@ void App::refresh() {
 
 void App::locate_project() {
     fs::path start = project_ ? project_->root() : home_dir();
-    choose_path(PickerKind::Folder, L"Choose the folder to put the game folders in", start,
+    picker_.choose_path(PickerKind::Folder, L"Choose the folder to put the game folders in", start,
                 [this](const fs::path& chosen) {
                     Project candidate(chosen, settings_.game);
                     auto text = chosen.wstring();

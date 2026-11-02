@@ -73,7 +73,6 @@ set(NLA_SOURCES
   src/app_jobs.cpp
   src/app_mods.cpp
   src/app_paint.cpp
-  src/app_picker.cpp
   src/activity_panel.cpp
   src/catalog.cpp
   src/codes.cpp
@@ -87,6 +86,7 @@ set(NLA_SOURCES
   src/image.cpp
   src/painter.cpp
   src/picker.cpp
+  src/picker_screen.cpp
   src/jobs.cpp
   src/mods.cpp
   src/patches.cpp
@@ -489,6 +489,31 @@ else()
   target_link_libraries(picker_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME picker-logic COMMAND $<TARGET_FILE:picker_test>)
+
+# What asking for a folder or a file does: the keys the list takes, what a typed path
+# appends to, which row descends, and what is handed back when the answer is accepted or
+# given up. The page holds a host of callbacks instead of the window, so this drives it with
+# no window and no system chooser.
+add_executable(picker_screen_test
+  tests/picker_screen_test.cpp
+  src/picker_screen.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/util.cpp
+)
+target_include_directories(picker_screen_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(picker_screen_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(picker_screen_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(picker_screen_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(picker_screen_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME picker-screen-logic COMMAND $<TARGET_FILE:picker_screen_test>)
 
 add_executable(project_test
   tests/project_test.cpp

@@ -235,7 +235,7 @@ void App::refresh_patch() {
 void App::choose_patch() {
     if (!project_) return;
     fs::path start = patch_delta_.empty() ? project_->disc() : patch_delta_;
-    choose_path(PickerKind::Patch, L"Choose the patch to play with", start,
+    picker_.choose_path(PickerKind::Patch, L"Choose the patch to play with", start,
                 [this](const fs::path& chosen) { stage_patch(chosen); });
 }
 

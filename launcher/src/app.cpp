@@ -3,6 +3,8 @@
 #include "app.h"
 #include "app_shared.h"
 
+#include "dialog.h"
+
 #include "util.h"
 
 #include <algorithm>
@@ -12,8 +14,22 @@ namespace nla {
 
 namespace {
 
-std::wstring picker_join(const std::wstring& folder, const std::wstring& name) {
-    return (fs::path(folder) / name).wstring();
+// The keys the window maps to a page's own vocabulary. Only a modified v is a paste, so a
+// plain v is not offered to a page at all.
+std::optional<ScreenKey> screen_key_for(SDL_Keycode sym, bool command) {
+    switch (sym) {
+        case SDLK_ESCAPE: return ScreenKey::Escape;
+        case SDLK_RETURN:
+        case SDLK_KP_ENTER: return ScreenKey::Enter;
+        case SDLK_TAB: return ScreenKey::Tab;
+        case SDLK_BACKSPACE: return ScreenKey::Backspace;
+        case SDLK_UP: return ScreenKey::Up;
+        case SDLK_DOWN: return ScreenKey::Down;
+        case SDLK_v:
+            if (command) return ScreenKey::Paste;
+            return std::nullopt;
+        default: return std::nullopt;
+    }
 }
 
 }  // namespace
@@ -45,6 +61,28 @@ App::App() {
     host_.elide_path = [this](const std::wstring& text) {
         return ui_.elide_middle(text, Face::Body, kMessagePanelWidth - 52.0f);
     };
+    host_.clipboard = [this] { return window_.clipboard(); };
+    host_.text_input = [this](bool on) { window_.set_text_input(on); };
+    host_.native_chooser = [this](PickerKind kind, const std::wstring& title,
+                                  const fs::path& start) {
+        NativeAnswer answer;
+        // A render has no window and nothing to show a chooser over: the launcher's own
+        // list is what it draws, and that is not a failure to report.
+        if (headless_) return answer;
+        const DialogKind dialog = kind == PickerKind::Folder ? DialogKind::Folder
+                                  : kind == PickerKind::Patch ? DialogKind::Patch
+                                                              : DialogKind::Image;
+        auto shown = show_native_dialog(dialog, window_.handle(), title, start);
+        answer.shown = shown.shown;
+        answer.refused = !shown.shown;
+        answer.path = shown.path;
+        return answer;
+    };
+    host_.take_over = [this] {
+        overlay_.close();
+        close_popups();
+    };
+    host_.launch_cancelled = [this] { launch_wanted_ = false; };
 }
 
 App::~App() {
@@ -238,9 +276,8 @@ void App::handle_event(const SDL_Event& event) {
             SDL_GetMouseState(&mouse_x, &mouse_y);
             float x = static_cast<float>(mouse_x) / factor;
             float y = static_cast<float>(mouse_y) / factor;
-            if (chooser_.is_open()) {
-                chooser_.set_offset(std::max(0, chooser_.offset() - event.wheel.y));
-                invalidate();
+            if (picker_.capturing()) {
+                picker_.wheel(event.wheel.y);
             } else if (overlay_.is(OverlayPage::Geckos)) {
                 // The guide's list is longer than the panel: the wheel is how the rest of
                 // it is reached.
@@ -318,7 +355,7 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
     // The codes box takes held keys like a text field does: Backspace that repeats is how a
     // line is cleared.
     const bool typing = overlay_.is(OverlayPage::Geckos) && gecko_editing_;
-    if (key.repeat && !chooser_.is_open() && !typing) return;
+    if (key.repeat && !picker_.capturing() && !typing) return;
     const bool command = (key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
 
     // While the box has focus the keys it uses are its own: Return is a line in the block,
@@ -357,12 +394,18 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
         }
     }
 
+    // A page with a field takes the keys it owns while it is showing, and the window's own
+    // shortcuts only see what it leaves.
+    if (picker_.capturing()) {
+        if (auto pressed = screen_key_for(key.keysym.sym, command)) {
+            picker_.key(*pressed);
+            return;
+        }
+    }
+
     switch (key.keysym.sym) {
         case SDLK_ESCAPE:
-            if (chooser_.is_open()) {
-                launch_wanted_ = false;
-                close_picker();
-            } else if (overlay_.scale_menu()) {
+            if (overlay_.scale_menu()) {
                 overlay_.set_scale_menu(false);
                 invalidate();
             } else if (overlay_.is_overlay()) {
@@ -373,51 +416,6 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
                 if (back_to_settings) open_settings();
             } else if (overlay_.is(OverlayPage::Settings)) {
                 overlay_.close();
-                invalidate();
-            }
-            return;
-        case SDLK_RETURN:
-        case SDLK_KP_ENTER:
-            if (chooser_.is_open()) accept_picker();
-            return;
-        case SDLK_TAB:
-            if (chooser_.is_open()) {
-                chooser_.set_editing(!chooser_.editing());
-                invalidate();
-            }
-            return;
-        case SDLK_BACKSPACE:
-            if (chooser_.is_open() && chooser_.editing() && !chooser_.path().empty()) {
-                chooser_.path().pop_back();
-                // A UTF-16 surrogate pair must not be split.
-                if (sizeof(wchar_t) == 2 && !chooser_.path().empty() &&
-                    chooser_.path().back() >= 0xD800 && chooser_.path().back() <= 0xDBFF) {
-                    chooser_.path().pop_back();
-                }
-                invalidate();
-            }
-            return;
-        case SDLK_v:
-            if (command && chooser_.is_open()) {
-                auto text = window_.clipboard();
-                if (!text.empty()) {
-                    chooser_.set_editing(true);
-                    chooser_.path() += text;
-                    invalidate();
-                }
-            }
-            return;
-        case SDLK_UP:
-            if (chooser_.is_open() && !chooser_.entries().empty()) {
-                chooser_.set_selected(std::max(0, chooser_.selected() - 1));
-                invalidate();
-            }
-            return;
-        case SDLK_DOWN:
-            if (chooser_.is_open() && !chooser_.entries().empty()) {
-                chooser_.set_selected(
-                        std::min(static_cast<int>(chooser_.entries().size()) - 1,
-                                 chooser_.selected() + 1));
                 invalidate();
             }
             return;
@@ -432,10 +430,7 @@ void App::handle_text(const SDL_TextInputEvent& text) {
         invalidate();
         return;
     }
-    if (!chooser_.is_open()) return;
-    chooser_.set_editing(true);
-    chooser_.path() += widen(text.text);
-    invalidate();
+    if (picker_.capturing()) picker_.text(widen(text.text));
 }
 
 // -- actions ---------------------------------------------------------------
@@ -447,46 +442,10 @@ void App::activate(Id id) {
         if (const auto rect = ui_.rect_of(Id::Scale)) scale_anchor_ = *rect;
     };
 
-    if (chooser_.is_open()) {
-        int index = static_cast<int>(id) - static_cast<int>(Id::PickerEntry);
-        if (id == Id::PickerCancel) {
-            launch_wanted_ = false;
-            close_picker();
-        } else if (id == Id::PickerAccept) {
-            accept_picker();
-        } else if (id == Id::PickerUp) {
-            fs::path folder(chooser_.folder());
-            std::error_code ec;
-            if (folder.has_parent_path() && folder.parent_path() != folder) {
-                chooser_.folder() = folder.parent_path().wstring();
-                chooser_.path() = chooser_.folder();
-                chooser_.set_editing(false);
-                list_picker();
-                invalidate();
-            }
-        } else if (id == Id::PickerPath) {
-            chooser_.set_editing(true);
-            invalidate();
-        } else if (index >= 0 && index < static_cast<int>(chooser_.entries().size())) {
-            const auto& entry = chooser_.entries()[static_cast<size_t>(index)];
-            if (entry.directory) {
-                fs::path folder(chooser_.folder());
-                fs::path next =
-                    entry.name == L".." ? folder.parent_path() : (folder / entry.name);
-                std::error_code ec;
-                if (fs::is_directory(next, ec)) {
-                    chooser_.folder() = next.wstring();
-                    chooser_.path() = chooser_.folder();
-                    chooser_.set_editing(false);
-                    list_picker();
-                }
-            } else {
-                chooser_.set_selected(index);
-                chooser_.path() = picker_join(chooser_.folder(), entry.name);
-                chooser_.set_editing(true);
-            }
-            invalidate();
-        }
+    // The picker is the topmost page: while it is open it takes every id, the way the block
+    // this replaces took them before the launcher had more than one page.
+    if (picker_.capturing()) {
+        if (picker_.handles(id)) picker_.activate(id);
         return;
     }
 

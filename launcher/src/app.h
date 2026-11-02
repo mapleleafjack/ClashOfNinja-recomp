@@ -20,6 +20,7 @@
 #include "covers.h"
 #include "devices.h"
 #include "picker.h"
+#include "picker_screen.h"
 #include "codes.h"
 #include "jobs.h"
 #include "mods.h"
@@ -83,6 +84,8 @@ class App {
     void select_game(const std::wstring& folder);
     void launch_game(const std::wstring& folder);
     std::wstring current_title() const;
+    // Asks for a disc image for the project in use. The chooser itself is PickerScreen's;
+    // where to start looking and what an answer starts are this page's.
     void choose_image();
     void start_setup(const std::filesystem::path& image);
     void begin_setup(const std::filesystem::path& image, bool then_launch);
@@ -180,18 +183,6 @@ class App {
     void open_settings();
     void save_settings();
 
-    // Asks for a folder or a disc image: the platform's own chooser where there is one,
-    // and the launcher's picker where there is not.
-    void choose_path(PickerKind kind, const std::wstring& title, const fs::path& start,
-                     std::function<void(const fs::path&)> accept);
-    // The launcher's own picker, the fallback on systems with no native chooser.
-    void open_picker(PickerKind kind, const std::wstring& title, const fs::path& start,
-                     std::function<void(const fs::path&)> accept);
-    void close_picker();
-    void list_picker();
-    void accept_picker();
-    void fill_picker_path();
-
     void invalidate() { window_.invalidate(); }    void post(std::function<void()> task) { dispatcher_.post(std::move(task)); }
     void animate();
 
@@ -279,12 +270,11 @@ class App {
     // is declared after it, so it is handed a host that is already there.
     ScreenHost host_;
     UpdateScreen update_{host_};
+    PickerScreen picker_{host_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;
 
-    // The launcher's own chooser, for a system that has none or a render, which has no window.
-    Picker chooser_;
 
     float width_ = 1060;
     float height_ = 820;

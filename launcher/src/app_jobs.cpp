@@ -196,6 +196,15 @@ bool App::repair_project() {
     return true;
 }
 
+// Asking for a disc image starts where the last one was, or at the project it is for.
+void App::choose_image() {
+    if (!project_) return;
+    fs::path start =
+        settings_.last_image.empty() ? project_->root() : fs::path(settings_.last_image);
+    picker_.choose_path(PickerKind::Image, L"Choose your own disc image", start,
+                        [this](const fs::path& chosen) { start_setup(chosen); });
+}
+
 void App::start_setup(const fs::path& image) {
     if (!project_ || busy_) return;
     bool then_launch = launch_wanted_;
