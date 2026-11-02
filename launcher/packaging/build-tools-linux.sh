@@ -110,9 +110,12 @@ cmake -S "$work/SDL2-${sdl2_version}" -B "$work/sdl2-build" -G Ninja \
 cmake --build "$work/sdl2-build" --target install >/dev/null
 
 # SDL2 loads each backend by name at run time rather than linking it, so the soname it
-# would load is what proves the backend is in the library.
+# would load is what proves the backend is in the library. Written to a file first: piping
+# into `grep -q` would stop `strings` early, and with pipefail that failure would look like
+# a missing backend.
+strings "$out/sdl2/lib/libSDL2.a" > "$work/sdl2-strings.txt"
 for soname in libX11.so.6 libasound.so.2 libudev.so.1; do
-    if ! strings "$out/sdl2/lib/libSDL2.a" | grep -qx "$soname"; then
+    if ! grep -qx "$soname" "$work/sdl2-strings.txt"; then
         echo "error: the SDL2 in the archive would not load $soname, so that backend is not" >&2
         echo "       in it. Install the matching development package and build again." >&2
         exit 1
