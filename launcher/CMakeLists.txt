@@ -140,12 +140,12 @@ else()
 endif()
 
 # The mark next to the title, so a single executable still shows it.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/logo.png" _logo_hex HEX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/assets/logo.png" _logo_hex HEX)
 string(LENGTH "${_logo_hex}" _logo_hex_length)
 math(EXPR _logo_bytes "${_logo_hex_length} / 2")
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _logo_array "${_logo_hex}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/logo_data.h"
-  "// Generated from src/logo.png by CMake. Do not edit.\n"
+  "// Generated from assets/logo.png by CMake. Do not edit.\n"
   "static const unsigned char kLogoPng[] = {${_logo_array}};\n"
   "static const unsigned long kLogoPngSize = ${_logo_bytes};\n")
 
@@ -208,7 +208,7 @@ target_compile_definitions(NarutoLauncher PRIVATE
   NLA_SOURCE_TIME=${NLA_SOURCE_TIME})
 
 if(WIN32)
-  configure_file(src/launcher.rc.in ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc @ONLY)
+  configure_file(assets/launcher.rc.in ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc @ONLY)
   target_sources(NarutoLauncher PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc)
 
   target_compile_definitions(NarutoLauncher PRIVATE
@@ -258,7 +258,7 @@ endif()
 if(APPLE)
   # Finder, the Dock and Launchpad take the icon from the bundle, so the .icns is copied
   # into Resources and named in Info.plist. It is the same mark the window draws; remake
-  # it with iconutil from src/logo.png at 16, 32, 64, 128, 256, 512 and 1024 pixels.
+  # it with iconutil from assets/logo.png at 16, 32, 64, 128, 256, 512 and 1024 pixels.
   set(NLA_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/AppIcon.icns")
   set_source_files_properties("${NLA_ICON}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
   target_sources(NarutoLauncher PRIVATE "${NLA_ICON}")
