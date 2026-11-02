@@ -180,6 +180,15 @@ void panel() {
         check(panel.empty() && panel.offset() == 0, "clearing the log returns to the newest end");
     }
     {
+        // The travelling bar's position: it steps, and wraps rather than running off.
+        nla::ActivityPanel panel;
+        check(panel.phase() == 0.0f, "the bar starts at the beginning of its travel");
+        panel.advance();
+        check(panel.phase() > 0.0f, "a frame moves it");
+        for (int i = 0; i < 200; ++i) panel.advance();
+        check(panel.phase() >= 0.0f && panel.phase() < 1.0f, "and it wraps instead of escaping");
+    }
+    {
         nla::ActivityPanel panel;
         check(panel.rect().contains(10, 10) == false, "nothing is over an undrawn panel");
         panel.set_rect({100, 100, 200, 50});

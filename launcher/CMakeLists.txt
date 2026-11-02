@@ -70,6 +70,7 @@ set(NLA_SOURCES
   src/app.cpp
   src/app_jobs.cpp
   src/app_paint.cpp
+  src/app_render.cpp
   src/app_state.cpp
   src/activity_panel.cpp
   src/catalog.cpp
@@ -418,6 +419,7 @@ add_executable(mods_screen_test
   src/picker_screen.cpp
   src/picker.cpp
   src/painter.cpp
+  src/ui.cpp
   src/font.cpp
   src/project.cpp
   src/project_state.cpp
@@ -502,6 +504,9 @@ add_executable(activity_test
   tests/activity_test.cpp
   src/activity_panel.cpp
   src/jobs.cpp
+  src/ui.cpp
+  src/painter.cpp
+  src/font.cpp
   src/util.cpp
 )
 target_include_directories(activity_test PRIVATE src)
@@ -572,6 +577,7 @@ add_executable(picker_screen_test
   src/picker.cpp
   src/painter.cpp
   src/font.cpp
+  src/ui.cpp
   src/util.cpp
 )
 target_include_directories(picker_screen_test PRIVATE src)
@@ -619,6 +625,7 @@ add_executable(games_screen_test
   src/picker_screen.cpp
   src/picker.cpp
   src/painter.cpp
+  src/ui.cpp
   src/font.cpp
   src/project.cpp
   src/project_state.cpp

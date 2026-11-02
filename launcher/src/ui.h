@@ -142,6 +142,16 @@ class UiContext {
 };
 
 
+// What a page needs to draw itself: the primitives, the hit list it leaves behind, and the
+// size of the window it is drawn in. Nothing here is state - a page draws from its own and
+// from the model it was given.
+struct PaintContext {
+    Painter& painter;
+    UiContext& ui;
+    float width = 0;
+    float height = 0;
+};
+
 // What a page over the main one says, and what its buttons do. It holds no window and no
 // painter, so a prompt can be shown and answered without either.
 class Overlay {

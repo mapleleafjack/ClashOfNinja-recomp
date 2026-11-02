@@ -51,6 +51,18 @@ class ActivityPanel {
     // line, so scrolling to the end of a short log cannot hide it.
     void clamp_offset(int visible_rows);
 
+    // The travelling bar a job with no percentage shows: one step per frame the window asks
+    // for, wrapping. The panel owns it because the bar is the only thing that moves.
+    bool advance();
+    // Where the travelling bar is in its travel, for the tests that check it wraps.
+    float phase() const { return phase_; }
+    // Draws the card and records where the lines went, so the wheel finds them. `busy` is a
+    // step running, and `cancellable` whether it is one this window can stop.
+    void paint(const PaintContext& ctx, float top, bool busy, bool cancellable);
+    // The bar on its own, for the page that shows one under the covers: the same bar the
+    // card draws, from the same phase.
+    void paint_bar(const PaintContext& ctx, const Rect& bar) const;
+
     // Where the lines were drawn last frame, so the wheel knows it is over them.
     const Rect& rect() const { return rect_; }
     void set_rect(const Rect& rect) { rect_ = rect; }
@@ -63,6 +75,7 @@ class ActivityPanel {
     Activity activity_;
     bool visible_ = false;
     int offset_ = 0;
+    float phase_ = 0;
     Rect rect_{};
     bool hovered_ = false;
 };

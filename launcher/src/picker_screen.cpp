@@ -202,4 +202,84 @@ void PickerScreen::activate(Id id) {
     }
 }
 
+void PickerScreen::paint(const PaintContext& ctx) {
+    ctx.painter.fill_rect(RectF(0, 0, ctx.width, ctx.height), rgb(0x000000, 0.62f));
+    float panel_w = std::min(760.0f, ctx.width - 60);
+    float panel_h = std::min(560.0f, ctx.height - 60);
+    Rect panel{(ctx.width - panel_w) / 2, (ctx.height - panel_h) / 2, panel_w, panel_h};
+    ctx.painter.fill_round(panel.box(), 16, rgb(0x171a21));
+    ctx.painter.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
+
+    ctx.painter.text(chooser_.title(),
+                  RectF(panel.x + 24, panel.y + 18, panel.x + panel.w - 24, panel.y + 46),
+                  Face::CardTitle, rgb(theme::Text));
+
+    float left = panel.x + 24;
+    float content_w = panel.w - 48;
+
+    Rect field{left, panel.y + 56, content_w - 76, 34};
+    ctx.painter.fill_round(field.box(), 8, rgb(chooser_.editing() ? 0x20252d : 0x1b1e25));
+    ctx.painter.stroke_round(field.box(), 8,
+                          rgb(chooser_.editing() ? theme::Accent : theme::BorderStrong), 1);
+    ctx.painter.text(ctx.ui.elide(chooser_.path(), Face::Small, field.w - 24),
+                  RectF(field.x + 10, field.y, field.x + field.w - 10, field.y + field.h),
+                  Face::Small, rgb(theme::Text), TextAlign::Leading, TextVAlign::Center,
+                  false);
+    ctx.ui.register_hit(Id::PickerPath, field);
+    ctx.ui.button(Id::PickerUp, Rect{field.x + field.w + 10, field.y, 66, 34}, L"Up", false, true);
+
+    Rect list{left, panel.y + 100, content_w, panel.h - 100 - 76};
+    ctx.painter.fill_round(list.box(), 10, rgb(theme::Log));
+    ctx.painter.stroke_round(list.box(), 10, rgb(0x242932), 1);
+
+    const float row_height = 26.0f;
+    int visible = std::max(1, static_cast<int>((list.h - 12) / row_height));
+    int maximum_offset = std::max(0, static_cast<int>(chooser_.entries().size()) - visible);
+    chooser_.set_offset(std::min(chooser_.offset(), maximum_offset));
+    for (int row = 0; row < visible; ++row) {
+        int index = chooser_.offset() + row;
+        if (index >= static_cast<int>(chooser_.entries().size())) break;
+        const auto& entry = chooser_.entries()[static_cast<size_t>(index)];
+        Rect item{list.x + 6, list.y + 6 + row * row_height, list.w - 12, row_height};
+        Id id = static_cast<Id>(static_cast<int>(Id::PickerEntry) + index);
+        if (chooser_.selected() == index) {
+            ctx.painter.fill_round(item.box(), 6, rgb(0x2b3340));
+        } else if (ctx.ui.hover() == id) {
+            ctx.painter.fill_round(item.box(), 6, rgb(0x222732));
+        }
+        std::wstring label = entry.name;
+        if (entry.directory) label = entry.name == L".." ? L"Parent folder" : label + L"/";
+        ctx.painter.text(label, RectF(item.x + 10, item.y, item.x + item.w - 10,
+                                  item.y + item.h),
+                      Face::Small, entry.directory ? rgb(0xc8cede) : rgb(theme::Text),
+                      TextAlign::Leading, TextVAlign::Center, false);
+        ctx.ui.register_hit(id, item);
+    }
+    if (chooser_.entries().empty()) {
+        ctx.painter.text(chooser_.kind() == PickerKind::Image
+                          ? L"No disc images here. Type the path, or drop the image on the "
+                            L"window."
+                          : L"No sub-folders here. Type the path, or use this folder.",
+                      RectF(list.x + 14, list.y + 10, list.x + list.w - 14, list.y + 34),
+                      Face::Small, rgb(theme::Muted));
+    }
+
+    std::wstring note = chooser_.note();
+    if (note.empty()) {
+        note = chooser_.kind() == PickerKind::Folder ? L"Choose this folder, or open a sub-folder."
+                                             : L"Choose a disc image, or type its path.";
+    }
+    ctx.painter.text(note,
+                  RectF(left, panel.y + panel.h - 66, left + content_w - 300,
+                       panel.y + panel.h - 44),
+                  Face::Tiny, chooser_.note().empty() ? rgb(theme::Muted) : rgb(theme::Warn));
+
+    ctx.ui.button(Id::PickerCancel,
+           Rect{panel.x + panel.w - 24 - 100, panel.y + panel.h - 52, 100, 34}, L"Cancel",
+           false, true);
+    ctx.ui.button(Id::PickerAccept,
+           Rect{panel.x + panel.w - 24 - 100 - 8 - 176, panel.y + panel.h - 52, 176, 34},
+           chooser_.kind() == PickerKind::Folder ? L"Use This Folder" : L"Choose Image", true, true);
+}
+
 }  // namespace nla

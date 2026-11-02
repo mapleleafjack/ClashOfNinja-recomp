@@ -215,8 +215,7 @@ void App::animate() {
     std::uint32_t now = SDL_GetTicks();
     if (now < next_frame_) return;
     next_frame_ = now + 33;
-    progress_phase_ += 0.025f;
-    if (progress_phase_ > 1.0f) progress_phase_ -= 1.0f;
+    activity_.advance();
     invalidate();
 }
 

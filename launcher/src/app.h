@@ -64,15 +64,16 @@ class App {
     void resize_surface();
 
     void paint();
+    // The primitives and the window size a painter draws with, for the panels that draw
+    // themselves.
+    PaintContext canvas() { return {painter_, ui_, width_, height_}; }
     void paint_header();
     void paint_games();
     void paint_cover(Id id, const Rect& rect, const GameInfo& game, bool selected,
                      bool enabled);
-    void paint_activity(float top);
     void paint_settings();
     void paint_overlay();
     void paint_pad_menu();
-    void paint_picker();
     void paint_scale_menu();
 
     void refresh();
@@ -159,7 +160,6 @@ class App {
     int progress_ = -1;
     std::wstring stage_;
     std::wstring play_status_;
-    float progress_phase_ = 0;
     std::uint32_t next_frame_ = 0;
 
     Rect scale_anchor_{};

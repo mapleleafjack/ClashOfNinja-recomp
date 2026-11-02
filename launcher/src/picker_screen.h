@@ -35,6 +35,10 @@ class PickerScreen : public Screen {
     bool text(const std::wstring& typed) override;
     bool wheel(int notches) override;
 
+    // The panel as it is drawn over the page: the scrim, the field, the list and the two
+    // buttons, with the hit list the window clicks against.
+    void paint(const PaintContext& ctx);
+
     bool handles(Id id) const override;
     void activate(Id id) override;
 
