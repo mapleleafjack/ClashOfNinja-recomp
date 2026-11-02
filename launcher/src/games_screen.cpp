@@ -74,7 +74,7 @@ void GamesScreen::locate_project() {
                         fetch_covers();
                         model_.settings().game = model_.project()->game();
                         host_.set_play_status({});
-                        host_.settings().save();
+                        model_.settings().save();
                         host_.log(format(L"[launcher] project: %ls\n", text.c_str()));
                         host_.set_title(current_title() + L" — Launcher");
                         host_.refresh();
@@ -186,7 +186,7 @@ void GamesScreen::select_game(const std::wstring& folder) {
     model_.settings().game = model_.project()->game();
     host_.set_play_status({});
     // A render only paints the result: it must not remember the game a check clicked.
-    if (!host_.rendering()) host_.settings().save();
+    if (!host_.rendering()) model_.settings().save();
     host_.set_title(current_title() + L" — Launcher");
     host_.log(format(L"[launcher] game: %ls\n", model_.project()->title().c_str()));
     host_.refresh();

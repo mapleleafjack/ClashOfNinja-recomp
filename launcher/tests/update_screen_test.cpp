@@ -20,7 +20,7 @@ void check(bool condition, const char* what) {
 
 // Everything the screen can ask the window for, with what it asked recorded.
 struct RecordingHost {
-    nla::Settings settings;
+    nla::ProjectState state;
     bool busy = false;
     bool game_running = false;
     int redraws = 0;
@@ -48,7 +48,6 @@ struct RecordingHost {
         };
         host.busy = [this] { return busy; };
         host.game_running = [this] { return game_running; };
-        host.settings = [this]() -> nla::Settings& { return settings; };
         host.settings_note = [this](const std::wstring& text) { notes.push_back(text); };
         host.start_job = [this](std::vector<nla::Task> tasks, nla::JobOptions) {
             jobs_started.push_back(tasks.empty() ? L"empty" : tasks.front().label);
@@ -77,8 +76,8 @@ nla::UpdateCheck found(nla::ReleaseInfo info) {
 // thread, no log line, no redraw.
 void automatic_check_is_off_by_default() {
     RecordingHost h;
-    h.settings.check_updates = false;
-    nla::UpdateScreen screen(h.host);
+    h.state.settings().check_updates = false;
+    nla::UpdateScreen screen(h.host, h.state);
     screen.start(false);
     check(screen.state() == nla::UpdateScreen::State::Never,
           "a start-up check with the setting off stays at never");
@@ -93,8 +92,8 @@ void automatic_check_is_off_by_default() {
 void a_build_with_no_release_version() {
     {
         RecordingHost h;
-        h.settings.check_updates = true;
-        nla::UpdateScreen screen(h.host);
+        h.state.settings().check_updates = true;
+        nla::UpdateScreen screen(h.host, h.state);
         screen.start(false);
         check(screen.state() == nla::UpdateScreen::State::Failed,
               "a start-up check on a development build ends as failed");
@@ -103,8 +102,8 @@ void a_build_with_no_release_version() {
     }
     {
         RecordingHost h;
-        h.settings.check_updates = false;
-        nla::UpdateScreen screen(h.host);
+        h.state.settings().check_updates = false;
+        nla::UpdateScreen screen(h.host, h.state);
         screen.start(true);
         check(screen.state() == nla::UpdateScreen::State::Failed,
               "a manual check on a development build fails rather than asking");
@@ -120,7 +119,7 @@ void a_build_with_no_release_version() {
 void a_found_release_is_offered() {
     {
         RecordingHost h;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         screen.on_checked(found(release()), false);
         check(screen.state() == nla::UpdateScreen::State::Available, "the check is available");
         check(screen.version() == L"1.1.0", "the version is the one found");
@@ -128,8 +127,8 @@ void a_found_release_is_offered() {
     }
     {
         RecordingHost h;
-        h.settings.skipped_update = L"1.1.0";
-        nla::UpdateScreen screen(h.host);
+        h.state.settings().skipped_update = L"1.1.0";
+        nla::UpdateScreen screen(h.host, h.state);
         screen.on_checked(found(release()), false);
         check(h.prompts.empty(), "a version the player said no to waits behind the button");
         check(screen.state() == nla::UpdateScreen::State::Available,
@@ -137,15 +136,15 @@ void a_found_release_is_offered() {
     }
     {
         RecordingHost h;
-        h.settings.skipped_update = L"1.1.0";
-        nla::UpdateScreen screen(h.host);
+        h.state.settings().skipped_update = L"1.1.0";
+        nla::UpdateScreen screen(h.host, h.state);
         screen.on_checked(found(release()), true);
         check(h.prompts.size() == 1, "asking by hand offers it even after a skip");
     }
     {
         RecordingHost h;
         h.busy = true;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         screen.on_checked(found(release()), true);
         check(h.prompts.empty(), "a step that is running is never talked over");
     }
@@ -155,7 +154,7 @@ void a_found_release_is_offered() {
 void the_quiet_outcomes() {
     {
         RecordingHost h;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         nla::UpdateCheck up_to_date;
         up_to_date.state = nla::UpdateCheck::State::UpToDate;
         screen.on_checked(up_to_date, false);
@@ -166,7 +165,7 @@ void the_quiet_outcomes() {
     }
     {
         RecordingHost h;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         nla::UpdateCheck failed;
         failed.state = nla::UpdateCheck::State::Failed;
         failed.error = L"no network";
@@ -182,7 +181,7 @@ void the_quiet_outcomes() {
 // The line under UPDATES is the screen's, and its words match the state.
 void the_settings_line() {
     RecordingHost h;
-    nla::UpdateScreen screen(h.host);
+    nla::UpdateScreen screen(h.host, h.state);
     check(!screen.line().empty(), "there is always a line, even before any check");
     screen.set_stand_in(release());
     check(screen.state() == nla::UpdateScreen::State::Available, "a stand-in is available");
@@ -201,7 +200,7 @@ void the_settings_line() {
 // The header button is the one id this page owns, and pressing it offers the release.
 void the_header_button() {
     RecordingHost h;
-    nla::UpdateScreen screen(h.host);
+    nla::UpdateScreen screen(h.host, h.state);
     check(screen.handles(nla::Id::UpdateBanner), "the screen owns the update button");
     check(!screen.handles(nla::Id::OpenSettings), "and not the Settings button");
     check(!screen.handles(nla::Id::Mods), "nor a game page button");
@@ -221,7 +220,7 @@ void the_header_button() {
 void installing() {
     {
         RecordingHost h;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         screen.begin();
         check(h.jobs_started.empty() && h.messages.empty(),
               "installing without a release known does nothing at all");
@@ -229,7 +228,7 @@ void installing() {
     {
         RecordingHost h;
         h.game_running = true;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         screen.set_stand_in(release());
         screen.begin();
         check(h.jobs_started.empty(), "the game is never ended by an update under it");
@@ -239,7 +238,7 @@ void installing() {
     {
         RecordingHost h;
         h.busy = true;
-        nla::UpdateScreen screen(h.host);
+        nla::UpdateScreen screen(h.host, h.state);
         screen.set_stand_in(release());
         screen.begin();
         check(h.jobs_started.empty(), "a step already running is not replaced");

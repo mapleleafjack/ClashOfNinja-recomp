@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "mods.h"
+#include "project_state.h"
 #include "screen.h"
 
 namespace nla {
@@ -20,7 +21,8 @@ class PickerScreen;
 // so what this depends on is a type rather than another callback.
 class ModsScreen : public Screen {
   public:
-    ModsScreen(ScreenHost& host, PickerScreen& picker, GeckosScreen& geckos);
+    ModsScreen(ScreenHost& host, ProjectState& model, PickerScreen& picker,
+               GeckosScreen& geckos);
 
     // Re-reads what this disc offers and what settings remembers about it.
     void refresh();
@@ -52,6 +54,7 @@ class ModsScreen : public Screen {
     void commit(const fs::path& delta, const PatchFit& fit);
 
     ScreenHost& host_;
+    ProjectState& model_;
     PickerScreen& picker_;
     GeckosScreen& geckos_;
 

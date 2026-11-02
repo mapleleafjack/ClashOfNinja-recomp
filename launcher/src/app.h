@@ -175,10 +175,10 @@ class App {
     // What a screen may ask the window for, filled in before anything can ask. The screen
     // is declared after it, so it is handed a host that is already there.
     ScreenHost host_;
-    UpdateScreen update_{host_};
+    UpdateScreen update_{host_, state_};
     PickerScreen picker_{host_};
-    GeckosScreen geckos_{host_};
-    ModsScreen mods_{host_, picker_, geckos_};
+    GeckosScreen geckos_{host_, state_};
+    ModsScreen mods_{host_, state_, picker_, geckos_};
     GamesScreen games_{host_, state_, picker_};
 
     // Set by render_to(), where there is no window: nothing may open a native dialog.

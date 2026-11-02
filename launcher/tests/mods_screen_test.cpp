@@ -26,7 +26,6 @@ void check(bool condition, const char* what) {
 }
 
 struct RecordingHost {
-    nla::Settings settings;
     nla::ProjectState state;
     bool rendering = false;
     bool busy = false;
@@ -48,11 +47,8 @@ struct RecordingHost {
                                 std::function<void()>) {};
         host.busy = [this] { return busy; };
         host.game_running = [] { return false; };
-        host.project = [this]() -> const std::optional<nla::Project>& { return state.project(); };
-        host.status = [this]() -> const nla::ProjectStatus& { return state.status(); };
         host.rendering = [this] { return rendering; };
         host.refresh = [this] { ++refreshes; };
-        host.settings = [this]() -> nla::Settings& { return settings; };
         host.settings_note = [](const std::wstring&) {};
         host.launch_cancelled = [] {};
         host.start_job = [](std::vector<nla::Task>, nla::JobOptions) {};
@@ -74,8 +70,8 @@ struct RecordingHost {
 struct Panel {
     RecordingHost host;
     nla::PickerScreen picker{host.host};
-    nla::GeckosScreen geckos{host.host};
-    nla::ModsScreen mods{host.host, picker, geckos};
+    nla::GeckosScreen geckos{host.host, host.state};
+    nla::ModsScreen mods{host.host, host.state, picker, geckos};
 };
 
 fs::path make_project() {

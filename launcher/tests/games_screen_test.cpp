@@ -45,11 +45,8 @@ struct RecordingHost {
                                 std::function<void()>) {};
         host.busy = [this] { return busy; };
         host.game_running = [] { return false; };
-        host.project = [this]() -> const std::optional<nla::Project>& { return state.project(); };
-        host.status = [this]() -> const nla::ProjectStatus& { return state.status(); };
         host.rendering = [this] { return rendering; };
         host.refresh = [this] { ++refreshes; };
-        host.settings = [this]() -> nla::Settings& { return state.settings(); };
         host.settings_note = [](const std::wstring&) {};
         host.launch_cancelled = [] {};
         host.start_job = [](std::vector<nla::Task>, nla::JobOptions) {};

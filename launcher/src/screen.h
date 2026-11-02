@@ -8,8 +8,6 @@
 
 #include "jobs.h"
 #include "picker.h"
-#include "project.h"
-#include "settings.h"
 #include "ui.h"
 
 namespace nla {
@@ -26,8 +24,14 @@ struct NativeAnswer {
 };
 
 // What a screen may ask the window for: a redraw, the prompts, the job runner, and the
-// settings. A screen holds one of these rather than the App, so what it depends on is
-// written down here instead of being whatever the window class happened to expose.
+// three things about the running session a page has to know. A screen holds one of these
+// rather than the App, so what it depends on is written down here instead of being whatever
+// the window class happened to expose.
+//
+// What it does not hold is the project: a page reads that from the ProjectState it is given,
+// because that is state rather than something the window does. The line between the two is
+// why this stayed readable while five pages were moved out of App - everything here is a
+// thing the launcher can *do*, and nothing here is a thing it can *be*.
 //
 // The callbacks are filled in by App once, in its constructor, and are only ever called
 // later, so a screen cannot see a half-built window.
@@ -59,14 +63,10 @@ struct ScreenHost {
 
     std::function<bool()> busy;
     std::function<bool()> game_running;
-    // The project in use and what its files say, for a page that reads the disc it is about.
-    std::function<const std::optional<Project>&()> project;
-    std::function<const ProjectStatus&()> status;
     // A render, which has no disk to write and no network to ask.
     std::function<bool()> rendering;
     // The whole re-sync, for a page whose Apply changes what the runtime reads.
     std::function<void()> refresh;
-    std::function<Settings&()> settings;
     std::function<void(const std::wstring&)> settings_note;
     // A launch that was waiting on a chooser's answer is given up when it is cancelled.
     std::function<void()> launch_cancelled;

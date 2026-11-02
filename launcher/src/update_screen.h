@@ -3,6 +3,7 @@
 #include <string>
 #include <thread>
 
+#include "project_state.h"
 #include "screen.h"
 #include "update.h"
 
@@ -18,7 +19,7 @@ class UpdateScreen : public Screen {
     // "asking".
     enum class State { Never, Checking, UpToDate, Available, Failed };
 
-    explicit UpdateScreen(ScreenHost& host) : host_(host) {}
+    UpdateScreen(ScreenHost& host, ProjectState& model) : host_(host), model_(model) {}
 
     // Joins the check's thread. The window calls this before it goes away, because the
     // answer it posts would otherwise arrive at an object that is no longer there.
@@ -51,6 +52,7 @@ class UpdateScreen : public Screen {
 
   private:
     ScreenHost& host_;
+    ProjectState& model_;
     State state_ = State::Never;
     ReleaseInfo release_;
     std::wstring error_;

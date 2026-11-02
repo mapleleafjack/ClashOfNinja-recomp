@@ -25,7 +25,6 @@ void check(bool condition, const char* what) {
 }
 
 struct RecordingHost {
-    nla::Settings settings;
     nla::ProjectState state;
     bool rendering = false;
     bool busy = false;
@@ -48,10 +47,8 @@ struct RecordingHost {
                                 std::function<void()>) {};
         host.busy = [this] { return busy; };
         host.game_running = [] { return false; };
-        host.project = [this]() -> const std::optional<nla::Project>& { return state.project(); };
         host.rendering = [this] { return rendering; };
         host.refresh = [this] { ++refresh_calls; };
-        host.settings = [this]() -> nla::Settings& { return settings; };
         host.settings_note = [](const std::wstring&) {};
         host.launch_cancelled = [] {};
         host.start_job = [](std::vector<nla::Task>, nla::JobOptions) {};
@@ -86,7 +83,7 @@ fs::path make_project() {
 // the page.
 void the_ids_it_owns() {
     RecordingHost h;
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     check(screen.handles(nla::Id::CodeRow), "the first code row");
     check(screen.handles(static_cast<nla::Id>(static_cast<int>(nla::Id::CodeRow) + 5)),
           "a code row further down");
@@ -102,7 +99,7 @@ void the_ids_it_owns() {
 void the_stand_in_list() {
     RecordingHost h;
     h.rendering = true;
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     screen.refresh();
     check(screen.codes().entries().size() == 5, "a render lists five stand-in codes");
     check(screen.codes().enabled().size() == 1, "one of them is on to begin with");
@@ -121,7 +118,7 @@ void toggling() {
     RecordingHost h;
     h.rendering = true;
     h.state.set_project(make_project(), L"naruto");
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     screen.refresh();
     screen.activate(nla::Id::CodeApply);  // a render: says so and writes nothing
     check(screen.note() == L"Applied in a render check only.",
@@ -147,7 +144,7 @@ void toggling() {
 void the_paste_box() {
     RecordingHost h;
     h.rendering = true;
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     screen.refresh();
     check(!screen.capturing(), "the box does not have the keyboard until it is clicked");
 
@@ -183,7 +180,7 @@ void the_paste_box() {
 // Opening the panel shows it with the game's name, and says why the table is empty.
 void opening() {
     RecordingHost h;
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     screen.open();
     check(h.panel_calls == 1 && h.panel == nla::OverlayPage::Geckos,
           "the panel is the Geckos page");
@@ -194,7 +191,7 @@ void opening() {
     RecordingHost h2;
     const fs::path root = make_project();
     h2.state.set_project(root, L"naruto");
-    nla::GeckosScreen screen2(h2.host);
+    nla::GeckosScreen screen2(h2.host, h2.state);
     screen2.open();
     check(h2.panel_title == L"Geckos — Naruto", "a project names the game in the title");
     check(screen2.note().find(L"No code guide is known") != std::wstring::npos,
@@ -206,7 +203,7 @@ void opening() {
 void scrolling() {
     RecordingHost h;
     h.rendering = true;
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     screen.refresh();
     screen.set_rows_fit(2);
     screen.scroll(-1);
@@ -228,7 +225,7 @@ void what_the_mods_are_given() {
     RecordingHost h;
     h.rendering = true;
     h.state.set_project(make_project(), L"naruto");
-    nla::GeckosScreen screen(h.host);
+    nla::GeckosScreen screen(h.host, h.state);
     screen.refresh();
     check(screen.enabled_entries().empty(),
           "a render writes no codes into the mods' overlay");

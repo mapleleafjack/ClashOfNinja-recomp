@@ -13,7 +13,7 @@ void UpdateScreen::shutdown() {
 
 void UpdateScreen::start(bool manual) {
     if (state_ == State::Checking) return;
-    if (!manual && !host_.settings().check_updates) return;
+    if (!manual && !model_.settings().check_updates) return;
     if (development_build()) {
         state_ = State::Failed;
         error_ = L"This build was not made from a release tag.";
@@ -45,7 +45,7 @@ void UpdateScreen::on_checked(UpdateCheck result, bool manual) {
             // answered "not now" to waits behind the header button instead, and a step that
             // is running is never talked over.
             if (!host_.busy() &&
-                (manual || host_.settings().skipped_update != result.release.version)) {
+                (manual || model_.settings().skipped_update != result.release.version)) {
                 show_prompt();
             }
             break;

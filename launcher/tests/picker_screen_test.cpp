@@ -43,8 +43,6 @@ struct RecordingHost {
                                 std::function<void()>) {};
         host.busy = [] { return false; };
         host.game_running = [] { return false; };
-        static nla::Settings settings;
-        host.settings = [] () -> nla::Settings& { return settings; };
         host.settings_note = [](const std::wstring&) {};
         host.launch_cancelled = [this] { ++cancelled; };
         host.start_job = [](std::vector<nla::Task>, nla::JobOptions) {};

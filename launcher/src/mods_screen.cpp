@@ -17,8 +17,9 @@
 
 namespace nla {
 
-ModsScreen::ModsScreen(ScreenHost& host, PickerScreen& picker, GeckosScreen& geckos)
-    : host_(host), picker_(picker), geckos_(geckos) {}
+ModsScreen::ModsScreen(ScreenHost& host, ProjectState& model, PickerScreen& picker,
+                       GeckosScreen& geckos)
+    : host_(host), model_(model), picker_(picker), geckos_(geckos) {}
 
 namespace {
 
@@ -135,9 +136,9 @@ void ModsScreen::refresh() {
         return;
     }
 
-    if (!host_.project()) return;
-    const std::wstring disc_id = host_.project()->disc_id();
-    const fs::path patches_dir = patch_directory(host_.project()->root());
+    if (!model_.project()) return;
+    const std::wstring disc_id = model_.project()->disc_id();
+    const fs::path patches_dir = patch_directory(model_.project()->root());
 
     // What the tree carries is the applied patch; a manifest naming a file that is gone,
     // as a download into a temp folder is, falls back to what settings remembers.
@@ -152,12 +153,12 @@ void ModsScreen::refresh() {
 
     // The table: the catalog's entries for this disc, the folders beside the games, and the
     // deltas in patches/, merged by id.
-    selection_.entries() = collect_mods(selection_.catalog(), host_.project()->mods_dir(), patches_dir, disc_id);
+    selection_.entries() = collect_mods(selection_.catalog(), model_.project()->mods_dir(), patches_dir, disc_id);
 
     // What is written now, in the order it was switched on so a later mod wins where two
     // replace the same file.
-    auto saved = host_.settings().mods.find(host_.project()->game());
-    if (saved != host_.settings().mods.end()) {
+    auto saved = model_.settings().mods.find(model_.project()->game());
+    if (saved != model_.settings().mods.end()) {
         for (const auto& id : saved->second) {
             for (const auto& entry : selection_.entries()) {
                 if (entry.patch || entry.id != id) continue;
@@ -187,11 +188,11 @@ void ModsScreen::refresh() {
 
 std::wstring ModsScreen::summary() const {
     if (host_.rendering()) return L"2 of 3 on.";
-    if (!host_.project()) return L"Set up the game folder first.";
+    if (!model_.project()) return L"Set up the game folder first.";
     if (selection_.entries().empty()) return L"No mods for this disc.";
     const std::size_t on = selection_.enabled().size() + (selection_.applied_patch().empty() ? 0 : 1);
     auto text = format(L"%zu of %zu on.", on, selection_.entries().size());
-    if (host_.status().stale_code) text += L" A code patch needs a build.";
+    if (model_.status().stale_code) text += L" A code patch needs a build.";
     return text;
 }
 
@@ -208,12 +209,12 @@ void ModsScreen::open() {
     note_.clear();
     if (selection_.entries().empty() && !host_.rendering()) {
         note_ =
-            host_.project() ? L"No mods for this disc. A mod is a folder in mods/ with a mod.txt "
+            model_.project() ? L"No mods for this disc. A mod is a folder in mods/ with a mod.txt "
                        L"naming this disc's ID and a disc/ tree of the files it replaces."
                      : L"Set up the game folder first: the mods are kept beside it.";
     }
     host_.show_panel(OverlayPage::Mods,
-                     host_.project() ? L"Mods — " + host_.project()->title() : L"Mods");
+                     model_.project() ? L"Mods — " + model_.project()->title() : L"Mods");
     host_.invalidate();
 }
 
@@ -223,17 +224,17 @@ void ModsScreen::open() {
 void ModsScreen::refresh_patch() {
     patch_delta_.clear();
     patch_fit_ = {};
-    if (!host_.project() || host_.rendering()) return;
+    if (!model_.project() || host_.rendering()) return;
     std::error_code ec;
-    patch_delta_ = read_patch_delta(host_.project()->disc());
+    patch_delta_ = read_patch_delta(model_.project()->disc());
     // A manifest can name a delta a download made in a temp folder, which is not a patch
     // the player still has. Only a file that is here counts as the applied patch.
     if (!patch_delta_.empty() && !fs::is_regular_file(patch_delta_, ec)) patch_delta_.clear();
     if (patch_delta_.empty()) {
         // Settings remembers what was chosen, so a tree that was extracted again gets its
         // patch back without asking for the file a second time.
-        auto saved = host_.settings().patches.find(host_.project()->game());
-        if (saved != host_.settings().patches.end() && !saved->second.empty() &&
+        auto saved = model_.settings().patches.find(model_.project()->game());
+        if (saved != model_.settings().patches.end() && !saved->second.empty() &&
             fs::is_regular_file(fs::path(saved->second), ec)) {
             patch_delta_ = saved->second;
         }
@@ -241,8 +242,8 @@ void ModsScreen::refresh_patch() {
 }
 
 void ModsScreen::choose_patch() {
-    if (!host_.project()) return;
-    fs::path start = patch_delta_.empty() ? host_.project()->disc() : patch_delta_;
+    if (!model_.project()) return;
+    fs::path start = patch_delta_.empty() ? model_.project()->disc() : patch_delta_;
     picker_.choose_path(PickerKind::Patch, L"Choose the patch to play with", start,
                 [this](const fs::path& chosen) { stage_patch(chosen); });
 }
@@ -250,7 +251,7 @@ void ModsScreen::choose_patch() {
 // A delta from this machine joins the table checked, and Apply writes it. A patch is not
 // applied on the click that chooses it: the panel has one Apply for everything it lists.
 void ModsScreen::stage_patch(const fs::path& delta) {
-    if (!host_.project() || delta.empty()) return;
+    if (!model_.project() || delta.empty()) return;
     for (auto& entry : selection_.entries()) {
         if (entry.patch && same_path(entry.delta, delta)) {
             selection_.pending_patch() = entry.id;
@@ -274,7 +275,7 @@ void ModsScreen::stage_patch(const fs::path& delta) {
 // fetched, then the overlay and the patch are written. Nothing is written before every
 // chosen download is here, so a failed download leaves the game as it was.
 void ModsScreen::apply() {
-    if (!host_.project() || host_.busy()) return;
+    if (!model_.project() || host_.busy()) return;
     if (host_.rendering()) {
         // A render has no disk to write: it checks that the click reaches the button.
         note_ = L"Applied in a render check only.";
@@ -310,9 +311,9 @@ void ModsScreen::apply() {
 // folder - or the patch's delta - where the panel looks for it. The work runs in the
 // launcher's job, so it reports progress and Cancel stops it like any other step.
 void ModsScreen::download(const std::vector<std::wstring>& ids) {
-    if (!host_.project()) return;
-    const fs::path patches_dir = patch_directory(host_.project()->root());
-    const fs::path mods_dir = host_.project()->mods_dir();
+    if (!model_.project()) return;
+    const fs::path patches_dir = patch_directory(model_.project()->root());
+    const fs::path mods_dir = model_.project()->mods_dir();
 
     std::vector<Task> tasks;
     for (const auto& id : ids) {
@@ -462,7 +463,7 @@ void ModsScreen::download(const std::vector<std::wstring>& ids) {
 // where Activity can say what is happening and Cancel stops it: a synchronous check would
 // leave the window frozen with no sign of work.
 void ModsScreen::apply_now() {
-    if (!host_.project()) return;
+    if (!model_.project()) return;
 
     const ModChoice* chosen_patch = selection_.pending_patch().empty() ? nullptr : selection_.find(selection_.pending_patch());
     if (!chosen_patch || !chosen_patch->installed) {
@@ -474,12 +475,12 @@ void ModsScreen::apply_now() {
     // A delta this disc already carries a manifest for was checked when it was first
     // applied: decoding a few hundred megabytes again on every Apply buys nothing, since
     // the runtime trusts the same manifest without re-verifying it.
-    if (const auto known = read_patch_fit(host_.project()->disc(), delta)) {
+    if (const auto known = read_patch_fit(model_.project()->disc(), delta)) {
         patch_note_ = L"The patch was checked against this disc when it was applied.";
         commit(delta, *known);
         return;
     }
-    const fs::path disc = host_.project()->disc();
+    const fs::path disc = model_.project()->disc();
     auto fit = std::make_shared<PatchFit>();
     std::vector<Task> tasks;
     tasks.push_back({L"Checking " + delta.filename().wstring() + L" against the disc…",
@@ -522,26 +523,26 @@ void ModsScreen::apply_now() {
 // Writes what the panel has checked: the patch manifest, the mods' overlay and the
 // settings that remember the choice. The patch has already been checked against the disc.
 void ModsScreen::commit(const fs::path& delta, const PatchFit& fit) {
-    if (!host_.project()) return;
+    if (!model_.project()) return;
 
     if (delta.empty()) {
-        if (write_patch_manifest(host_.project()->disc(), {}, {}))
+        if (write_patch_manifest(model_.project()->disc(), {}, {}))
             host_.log(L"[launcher] the disc is played as it is again\n");
-        host_.settings().patches.erase(host_.project()->game());
+        model_.settings().patches.erase(model_.project()->game());
         patch_delta_.clear();
         patch_fit_ = {};
         patch_note_ = L"None: the disc as it is.";
     } else {
-        write_patch_manifest(host_.project()->disc(), delta, fit);
-        host_.settings().patches[host_.project()->game()] = delta.wstring();
+        write_patch_manifest(model_.project()->disc(), delta, fit);
+        model_.settings().patches[model_.project()->game()] = delta.wstring();
         patch_delta_ = delta;
         patch_fit_ = fit;
         host_.log(format(L"[launcher] patch: %ls\n", delta.filename().c_str()));
     }
 
     selection_.commit();
-    host_.settings().mods[host_.project()->game()] = selection_.enabled();
-    host_.settings().save();
+    model_.settings().mods[model_.project()->game()] = selection_.enabled();
+    model_.settings().save();
 
     // Activity says what the overlay became, once; refresh() reads the disk back so the
     // table shows the same state the runtime will.
@@ -556,15 +557,15 @@ void ModsScreen::commit(const fs::path& delta, const PatchFit& fit) {
 // extents its files cover, written beside disc.manifest and read at boot. The disc itself
 // is never changed: switching a mod off deletes the list, it does not extract again.
 void ModsScreen::write_overlay() {
-    if (!host_.project() || host_.rendering()) return;
+    if (!model_.project() || host_.rendering()) return;
     std::vector<ModInfo> chosen;
     for (const auto& id : selection_.enabled()) {
         const ModChoice* entry = selection_.find(id);
         if (!entry || entry->patch || !entry->installed) continue;
         chosen.push_back(entry->mod);
     }
-    auto sync = sync_overlay_manifest(host_.project()->disc(), host_.project()->manifest(), chosen);
-    auto programs = sync_mod_programs(host_.project()->disc(), chosen, geckos_.enabled_entries());
+    auto sync = sync_overlay_manifest(model_.project()->disc(), model_.project()->manifest(), chosen);
+    auto programs = sync_mod_programs(model_.project()->disc(), chosen, geckos_.enabled_entries());
     // Refresh runs often, so Activity only hears about a change: a mod switched on or off,
     // or one that cannot be served and why.
     std::wstring summary;
@@ -625,7 +626,7 @@ void ModsScreen::activate(Id id) {
     }
     switch (id) {
         case Id::ModsFolder:
-            if (host_.project()) open_folder(host_.project()->mods_dir());
+            if (model_.project()) open_folder(model_.project()->mods_dir());
             host_.invalidate();
             return;
         case Id::ModChoose:

@@ -52,9 +52,7 @@ App::App() {
         overlay_.mark_update();
     };
     host_.busy = [this] { return busy_; };
-    host_.status = [this]() -> const ProjectStatus& { return state_.status(); };
     host_.game_running = [this] { return game_.running(); };
-    host_.settings = [this]() -> Settings& { return state_.settings(); };
     host_.settings_note = [this](const std::wstring& text) { settings_note_ = text; };
     host_.start_job = [this](std::vector<Task> tasks, JobOptions options) {
         start_job(std::move(tasks), std::move(options));
@@ -91,7 +89,6 @@ App::App() {
         launch_wanted_ = false;
         launch();
     };
-    host_.project = [this]() -> const std::optional<Project>& { return state_.project(); };
     host_.rendering = [this] { return rendering_; };
     host_.refresh = [this] { refresh(); };
     host_.show_panel = [this](OverlayPage page, const std::wstring& title) {

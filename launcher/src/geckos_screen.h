@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "codes.h"
+#include "project_state.h"
 #include "screen.h"
 
 namespace nla {
@@ -19,7 +20,7 @@ namespace nla {
 // mods write, so the runtime and the recompiler need to know nothing about them.
 class GeckosScreen : public Screen {
   public:
-    explicit GeckosScreen(ScreenHost& host) : host_(host) {}
+    GeckosScreen(ScreenHost& host, ProjectState& model) : host_(host), model_(model) {}
 
     // Joins the fetch's thread. The window calls this before it goes away, because the
     // answer it posts would otherwise arrive at an object that is no longer there.
@@ -68,6 +69,7 @@ class GeckosScreen : public Screen {
     void describe_empty();
 
     ScreenHost& host_;
+    ProjectState& model_;
     CodeSelection codes_;
     std::size_t rows_fit_ = 0;
     std::size_t offset_ = 0;

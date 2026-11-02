@@ -44,9 +44,9 @@ void GeckosScreen::refresh() {
         return;
     }
 
-    if (!host_.project()) return;
-    const std::wstring disc_id = host_.project()->disc_id();
-    codes_.entries() = read_codes(host_.project()->root(), disc_id);
+    if (!model_.project()) return;
+    const std::wstring disc_id = model_.project()->disc_id();
+    codes_.entries() = read_codes(model_.project()->root(), disc_id);
 
     CodeSource source;
     const bool has_guide = online_code_source(disc_id, &source);
@@ -63,7 +63,7 @@ void GeckosScreen::refresh() {
     // asks for nothing.
     if (has_guide && !fetch_tried_) {
         std::error_code ec;
-        const fs::path cache = online_code_file(host_.project()->root(), disc_id);
+        const fs::path cache = online_code_file(model_.project()->root(), disc_id);
         if (!fs::is_regular_file(cache, ec)) {
             fetch_tried_ = true;
             fetch_online();
@@ -72,8 +72,8 @@ void GeckosScreen::refresh() {
 
     // What settings remembers, in the order it was switched on so a later code wins where
     // two write the same address.
-    auto saved = host_.settings().codes.find(host_.project()->game());
-    if (saved == host_.settings().codes.end()) return;
+    auto saved = model_.settings().codes.find(model_.project()->game());
+    if (saved == model_.settings().codes.end()) return;
     for (const auto& name : saved->second) {
         for (const auto& entry : codes_.entries()) {
             if (entry.name != name) continue;
@@ -86,13 +86,13 @@ void GeckosScreen::refresh() {
 void GeckosScreen::describe_empty() {
     if (!codes_.entries().empty() || host_.rendering()) return;
     CodeSource source;
-    if (!host_.project()) {
+    if (!model_.project()) {
         note_ = L"Set up the game folder first: the codes are kept beside it.";
-    } else if (!online_code_source(host_.project()->disc_id(), &source)) {
+    } else if (!online_code_source(model_.project()->disc_id(), &source)) {
         // Saying so outright matters: without a guide there is nothing for Refresh list to
         // fetch, and a bare "no codes yet" would send a player looking for one.
         note_ = format(L"No code guide is known for %ls. Paste a code below to add one.",
-                       host_.project()->disc_id().c_str());
+                       model_.project()->disc_id().c_str());
     } else {
         note_ = L"No codes for this disc yet. Paste one below, or press Refresh list.";
     }
@@ -114,7 +114,7 @@ void GeckosScreen::open() {
     host_.text_input(false);
     describe_empty();
     host_.show_panel(OverlayPage::Geckos,
-                     host_.project() ? L"Geckos — " + host_.project()->title() : L"Geckos");
+                     model_.project() ? L"Geckos — " + model_.project()->title() : L"Geckos");
     host_.invalidate();
 }
 
@@ -134,8 +134,8 @@ void GeckosScreen::toggle(const std::wstring& name) {
 
 std::vector<CodeEntry> GeckosScreen::enabled_entries() const {
     std::vector<CodeEntry> chosen;
-    if (!host_.project() || host_.rendering() || codes_.enabled().empty()) return chosen;
-    const auto mine = read_codes(host_.project()->root(), host_.project()->disc_id());
+    if (!model_.project() || host_.rendering() || codes_.enabled().empty()) return chosen;
+    const auto mine = read_codes(model_.project()->root(), model_.project()->disc_id());
     for (const auto& name : codes_.enabled()) {
         for (const auto& entry : mine) {
             if (entry.name != name) continue;
@@ -147,7 +147,7 @@ std::vector<CodeEntry> GeckosScreen::enabled_entries() const {
 }
 
 void GeckosScreen::apply() {
-    if (!host_.project() || host_.busy()) return;
+    if (!model_.project() || host_.busy()) return;
     if (host_.rendering()) {
         // A render has no disk to write: it checks that the click reaches the button.
         note_ = L"Applied in a render check only.";
@@ -160,7 +160,7 @@ void GeckosScreen::apply() {
     std::vector<std::wstring> warnings;
     auto pasted = parse_pasted_codes(edit_, &warnings);
     if (!pasted.empty()) {
-        const fs::path path = code_file(host_.project()->root(), host_.project()->disc_id());
+        const fs::path path = code_file(model_.project()->root(), model_.project()->disc_id());
         auto mine = read_code_file(path, false);
         for (const auto& code : pasted) {
             bool replaced = false;
@@ -185,11 +185,11 @@ void GeckosScreen::apply() {
 
     codes_.commit();
     if (codes_.enabled().empty()) {
-        host_.settings().codes.erase(host_.project()->game());
+        model_.settings().codes.erase(model_.project()->game());
     } else {
-        host_.settings().codes[host_.project()->game()] = codes_.enabled();
+        model_.settings().codes[model_.project()->game()] = codes_.enabled();
     }
-    host_.settings().save();
+    model_.settings().save();
 
     for (const auto& warning : warnings) host_.log(L"[launcher] gecko: " + warning + L"\n");
 
@@ -212,9 +212,9 @@ void GeckosScreen::apply() {
 
 void GeckosScreen::fetch_online() {
     // A render has no network to ask and nothing to keep an answer in.
-    if (!host_.project() || host_.rendering() || fetching_) return;
+    if (!model_.project() || host_.rendering() || fetching_) return;
 
-    const std::wstring disc_id = host_.project()->disc_id();
+    const std::wstring disc_id = model_.project()->disc_id();
     CodeSource source;
     if (!online_code_source(disc_id, &source)) {
         note_ = disc_id.empty()
@@ -231,7 +231,7 @@ void GeckosScreen::fetch_online() {
         return;
     }
 
-    const fs::path cache = online_code_file(host_.project()->root(), disc_id);
+    const fs::path cache = online_code_file(model_.project()->root(), disc_id);
     std::error_code ec;
     fs::create_directories(cache.parent_path(), ec);
     if (ec) {
