@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -31,6 +33,31 @@ struct ProjectStatus {
     // recompiler made no longer matches the mods that are on, so the game has to be built
     // again before it is played.
     bool stale_code = false;
+};
+
+// A file's SHA-1, kept against the file it was taken from.
+//
+// A project's status is asked for on every refresh - a build finishing, a game switch, a
+// window regaining focus - and the DOL is a couple of megabytes, so hashing it each time is
+// the most expensive thing the launcher does on a path that usually finds nothing new. The
+// file's size and modification time are the check, so a rebuilt DOL is hashed again and one
+// nothing has touched is not read at all.
+class DigestCache {
+  public:
+    // The file's digest, taken again only when the file is not the one it was taken from.
+    // Empty when the file cannot be read.
+    std::wstring of(const fs::path& file);
+    // How many times a file has actually been hashed. A test asks, so it can see that the
+    // second ask did not read the file again.
+    std::size_t taken() const { return taken_; }
+
+  private:
+    fs::path file_;
+    std::wstring sha1_;
+    std::uintmax_t size_ = 0;
+    fs::file_time_type mtime_{};
+    bool valid_ = false;
+    std::size_t taken_ = 0;
 };
 
 class Project {
@@ -92,6 +119,9 @@ class Project {
   private:
     fs::path root_;
     std::wstring game_;
+    // The DOL's digest, kept across asks: status() is const and called on every refresh, and
+    // re-hashing the executable is the expensive part of it.
+    mutable DigestCache disc_digest_;
 };
 
 }  // namespace nla

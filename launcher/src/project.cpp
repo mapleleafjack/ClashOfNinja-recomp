@@ -277,13 +277,31 @@ std::wstring Project::expected_sha1() const {
     return kFallbackSha1;
 }
 
+std::wstring DigestCache::of(const fs::path& file) {
+    std::error_code ec;
+    const auto size = fs::file_size(file, ec);
+    if (ec) return {};
+    const auto mtime = fs::last_write_time(file, ec);
+    if (ec) return {};
+    if (valid_ && file_ == file && size_ == size && mtime_ == mtime) return sha1_;
+    std::wstring sha1 = sha1_file(file);
+    ++taken_;
+    if (sha1.empty()) return {};
+    file_ = file;
+    size_ = size;
+    mtime_ = mtime;
+    sha1_ = sha1;
+    valid_ = true;
+    return sha1;
+}
+
 DiscStatus Project::disc_status() const {
     DiscStatus status;
     status.expected = expected_sha1();
     std::error_code ec;
     status.extracted = fs::is_regular_file(dol(), ec);
     if (!status.extracted) return status;
-    status.sha1 = sha1_file(dol());
+    status.sha1 = disc_digest_.of(dol());
     status.verified = !status.sha1.empty() && status.sha1 == status.expected;
     return status;
 }

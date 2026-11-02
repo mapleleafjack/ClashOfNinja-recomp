@@ -131,6 +131,38 @@ void setup(const fs::path& root) {
     fs::remove_all(root, ec);
 }
 
+// The digest kept against the file it was taken from. A status is asked for on every
+// refresh, and the DOL is a couple of megabytes, so the second ask must not read it again -
+// while a rebuilt file must be read.
+void digest(const fs::path& root) {
+    const fs::path file = root / L"digest.bin";
+    nla::write_text_file(file, "first");
+    nla::DigestCache cache;
+
+    const std::wstring first = cache.of(file);
+    check(!first.empty(), "a file has a digest");
+    check(cache.taken() == 1, "and taking it reads the file");
+
+    check(cache.of(file) == first, "asking again answers the same");
+    check(cache.taken() == 1, "without reading the file a second time");
+
+    // Rewritten with different content of a different length, which is what a rebuilt DOL
+    // looks like: the size alone is enough to know it is not the file that was hashed.
+    nla::write_text_file(file, "second-and-longer");
+    const std::wstring second = cache.of(file);
+    check(second != first, "a changed file has a different digest");
+    check(cache.taken() == 2, "and is read again");
+
+    check(cache.of(root / L"not-there.bin").empty(), "a file that is not there has none");
+    check(cache.taken() == 2, "and asking does not hash anything");
+
+    // A different file is not the one that was hashed, even when it is the same length.
+    const fs::path other = root / L"digest-other.bin";
+    nla::write_text_file(other, "second-and-longer");
+    check(cache.of(other) == second, "the same bytes in another file hash the same");
+    check(cache.taken() == 3, "and are read, because it is not that file");
+}
+
 // The three things that have to agree: the project in use, the settings, and what the
 // project's files say. The status used to be re-read wherever a caller happened to remember,
 // which is what this replaces.
@@ -173,6 +205,7 @@ int run() {
         return 1;
     }
     older_project(root);
+    digest(root);
     state(root);
     choosing(root);
     games();
