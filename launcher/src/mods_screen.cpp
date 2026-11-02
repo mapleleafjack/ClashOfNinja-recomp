@@ -417,15 +417,9 @@ void ModsScreen::download(const std::vector<std::wstring>& ids) {
                              std::error_code ec;
                              fs::remove_all(unpack, ec);
                              fs::create_directories(unpack, ec);
-                             // bsdtar reads a zip on every system the launcher runs on.
-                             const std::wstring tar = tar_tool();
-                             if (tar.empty() ||
-                                 job.run_process(tar,
-                                                 {L"-xf", zip.wstring(), L"-C",
-                                                  unpack.wstring()},
-                                                 temp_dir()) != 0) {
-                                 job.log(L"[launcher] the downloaded archive could not be "
-                                         L"unpacked\n");
+                             std::wstring error;
+                             if (!unpack_archive(zip, unpack, job, &error)) {
+                                 job.log(L"[launcher] " + error + L"\n");
                                  return 1;
                              }
                              if (fetch->patch) {

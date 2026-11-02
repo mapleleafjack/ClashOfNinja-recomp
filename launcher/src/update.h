@@ -33,9 +33,12 @@ struct UpdateCheck {
 // thread. A build without a released version never asks.
 UpdateCheck check_for_update();
 
-// The tar the launcher unpacks archives with: bsdtar, which reads a zip on all three
-// systems. Empty when this machine has none.
-std::wstring tar_tool();
+// Unpacks `archive` into `into`, which the caller has created and left empty, using
+// whichever tool here can read that kind of file: a zip is not something a Linux tar can
+// open, so the format decides the tool. False with `error` set when the archive stays
+// unopened.
+bool unpack_archive(const fs::path& archive, const fs::path& into, Job& job,
+                    std::wstring* error);
 
 // Dotted versions, compared field by field; a leading v and a -suffix are ignored, so
 // "v1.2.0" is newer than "1.1.9" and "1.2.0-beta1" is not newer than "1.2.0".
