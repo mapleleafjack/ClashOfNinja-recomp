@@ -241,7 +241,7 @@ class App {
     Job job_;
     GameProcess game_;
 
-    std::deque<std::wstring> log_;
+    Activity activity_;
     bool log_visible_ = false;
     int log_offset_ = 0;
     bool busy_ = false;

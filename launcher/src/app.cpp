@@ -92,7 +92,7 @@ int App::run() {
         if (window_.take_invalidated()) paint();
 
         SDL_Event event;
-        int timeout = (busy_ && progress_ < 0) ? 16 : 250;
+        int timeout = (busy_ && activity_.percent() < 0) ? 16 : 250;
         if (!window_.wait(event, timeout)) {
             dispatcher_.drain();
             continue;
@@ -133,7 +133,7 @@ void App::resize_surface() {
 }
 
 void App::animate() {
-    if (!busy_ || progress_ >= 0) return;
+    if (!busy_ || activity_.percent() >= 0) return;
     std::uint32_t now = SDL_GetTicks();
     if (now < next_frame_) return;
     next_frame_ = now + 33;
@@ -223,7 +223,7 @@ void App::handle_event(const SDL_Event& event) {
                 code_offset_ = static_cast<std::size_t>(
                     std::max(0L, std::min(static_cast<long>(most), wanted)));
                 invalidate();
-            } else if (log_visible_ && log_rect_.contains(x, y) && !log_.empty()) {
+            } else if (log_visible_ && log_rect_.contains(x, y) && !activity_.empty()) {
                 log_offset_ = std::max(0, log_offset_ + (event.wheel.y > 0 ? 3 : -3));
                 invalidate();
             }
@@ -637,7 +637,7 @@ void App::activate(Id id) {
             break;
         case Id::CopyLog: copy_log(); break;
         case Id::ClearLog:
-            log_.clear();
+            activity_.clear();
             log_offset_ = 0;
             break;
         case Id::OpenSettings: open_settings(); break;

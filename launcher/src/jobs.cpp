@@ -439,6 +439,35 @@ void GameProcess::shutdown() {
     running_.store(false);
 }
 
+void Activity::reset() {
+    stage_.clear();
+    percent_ = -1;
+}
+
+void Activity::write(const std::wstring& text) {
+    std::wstring current;
+    for (wchar_t character : text) {
+        if (character == L'\r') continue;
+        if (character == L'\n') {
+            lines_.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(character);
+        }
+    }
+    if (!current.empty()) lines_.push_back(current);
+    while (lines_.size() > kLines) lines_.pop_front();
+}
+
+std::wstring Activity::text() const {
+    std::wstring text;
+    for (const auto& line : lines_) {
+        text += line;
+        text += L"\r\n";
+    }
+    return text;
+}
+
 int run_tasks_to_log(std::vector<Task> tasks, const fs::path& log) {
     std::string text;
     std::atomic<int> code{-1};

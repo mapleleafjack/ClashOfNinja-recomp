@@ -20,8 +20,7 @@ void App::start_job(std::vector<Task> tasks, bool then_launch, bool exits,
     job_then_launch_ = then_launch;
     job_exits_ = exits;
     job_done_ = std::move(done);
-    progress_ = -1;
-    stage_.clear();
+    activity_.reset();
     log_visible_ = true;
     log_offset_ = 0;
     next_frame_ = 0;
@@ -37,19 +36,18 @@ void App::start_job(std::vector<Task> tasks, bool then_launch, bool exits,
 void App::on_log(const std::wstring& text) { append_log(text); }
 
 void App::on_stage(const std::wstring& text) {
-    stage_ = text;
+    activity_.set_stage(text);
     invalidate();
 }
 
 void App::on_progress(int percent) {
-    progress_ = percent > 0 ? percent : -1;
+    activity_.set_percent(percent);
     invalidate();
 }
 
 void App::on_job_done(int code) {
     busy_ = false;
-    progress_ = -1;
-    stage_.clear();
+    activity_.reset();
     bool then_launch = job_then_launch_;
     bool exits = job_exits_;
     bool built = job_build_;
@@ -94,29 +92,11 @@ void App::on_job_done(int code) {
 }
 
 void App::append_log(const std::wstring& text) {
-    std::wstring current;
-    for (wchar_t character : text) {
-        if (character == L'\r') continue;
-        if (character == L'\n') {
-            log_.push_back(current);
-            current.clear();
-        } else {
-            current.push_back(character);
-        }
-    }
-    if (!current.empty()) log_.push_back(current);
-    while (log_.size() > 4000) log_.pop_front();
+    activity_.write(text);
     invalidate();
 }
 
-void App::copy_log() {
-    std::wstring text;
-    for (const auto& line : log_) {
-        text += line;
-        text += L"\r\n";
-    }
-    window_.set_clipboard(text);
-}
+void App::copy_log() { window_.set_clipboard(activity_.text()); }
 
 bool App::check_required_tools() {
     std::wstring lines;

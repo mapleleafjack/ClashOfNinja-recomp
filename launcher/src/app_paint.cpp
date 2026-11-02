@@ -559,7 +559,7 @@ void App::paint_games() {
     Pill pill_state = Pill::Warn;
 
     if (busy) {
-        title = stage_.empty() ? L"Working…" : stage_;
+        title = activity_.stage().empty() ? L"Working…" : activity_.stage();
         detail = L"The launcher is running this step. Details holds its output.";
         pill_text = L"working";
         pill_state = Pill::Muted;
@@ -608,8 +608,8 @@ void App::paint_games() {
     // The step in flight, or the game that is up, and the way back to the log.
     auto progress_bar = [this](const Rect& bar) {
         painter_.fill_round(bar.box(), 3, rgb(0x242932));
-        if (progress_ >= 0) {
-            float fraction = std::min(1.0f, static_cast<float>(progress_) / 100.0f);
+        if (activity_.percent() >= 0) {
+            float fraction = std::min(1.0f, static_cast<float>(activity_.percent()) / 100.0f);
             painter_.fill_round(
                 RectF(bar.x, bar.y, bar.x + bar.w * fraction, bar.y + bar.h), 3,
                 rgb(theme::Accent));
@@ -953,7 +953,7 @@ void App::paint_activity(float top) {
         log_rect_ = log_area;
         painter_.fill_round(log_area.box(), 10, rgb(theme::Log));
         painter_.stroke_round(log_area.box(), 10, rgb(0x242932), 1);
-        if (log_.empty()) {
+        if (activity_.empty()) {
             painter_.text(L"Setup and build output appears here.",
                           RectF(log_area.x + 12, log_area.y + 8, log_area.x + log_area.w - 12,
                                       log_area.y + 28),
@@ -962,7 +962,7 @@ void App::paint_activity(float top) {
             const float line_height = painter_.line_height(Face::Mono);
             int visible = static_cast<int>((log_area.h - 16) / line_height);
             visible = std::max(1, visible);
-            int total = static_cast<int>(log_.size());
+            int total = static_cast<int>(activity_.lines().size());
             int max_offset = std::max(0, total - visible);
             log_offset_ = std::min(log_offset_, max_offset);
             int end = total - log_offset_;
@@ -970,7 +970,7 @@ void App::paint_activity(float top) {
             for (int index = start; index < end; ++index) {
                 float y = log_area.y + 8 + (index - start) * line_height;
                 Color color = rgb(0xc8cede);
-                const auto& line = log_[static_cast<size_t>(index)];
+                const auto& line = activity_.lines()[static_cast<size_t>(index)];
                 if (line.rfind(L"$ ", 0) == 0) color = rgb(0xe0a084);
                 if (line.rfind(L"[launcher]", 0) == 0) color = rgb(theme::Muted);
                 painter_.text_clipped(line,
@@ -984,7 +984,7 @@ void App::paint_activity(float top) {
     if (busy_) {
         float bottom = card.y + card.h - 14;
         float bar_y = bottom - 8;
-        std::wstring label = stage_.empty() ? L"Working…" : stage_;
+        std::wstring label = activity_.stage().empty() ? L"Working…" : activity_.stage();
         painter_.text(label, RectF(card.x + 20, bottom - 30, card.x + card.w - 160,
                                          bottom - 10),
                       Face::Tiny, rgb(theme::Muted));
@@ -999,8 +999,8 @@ void App::paint_activity(float top) {
 
         Rect bar{card.x + 20, bar_y, card.w - 40, 6};
         painter_.fill_round(bar.box(), 3, rgb(0x242932));
-        if (progress_ >= 0) {
-            float fraction = std::min(1.0f, static_cast<float>(progress_) / 100.0f);
+        if (activity_.percent() >= 0) {
+            float fraction = std::min(1.0f, static_cast<float>(activity_.percent()) / 100.0f);
             painter_.fill_round(RectF(bar.x, bar.y, bar.x + bar.w * fraction,
                                             bar.y + bar.h),
                                 3, rgb(theme::Accent));
