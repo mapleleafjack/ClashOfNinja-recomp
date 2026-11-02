@@ -16,6 +16,7 @@
 #include "ui.h"
 #include "catalog.h"
 #include "devices.h"
+#include "picker.h"
 #include "codes.h"
 #include "jobs.h"
 #include "mods.h"
@@ -47,10 +48,6 @@ class App {
     static constexpr float kMessagePanelWidth = 620.0f;
 
   private:
-    struct PickerEntry {
-        std::wstring name;
-        bool directory = false;
-    };
 
     // A game's cover art, read from its folder once and kept for later frames.
     struct Cover {
@@ -59,7 +56,6 @@ class App {
         int height = 0;
         std::vector<std::uint32_t> pixels;
     };
-    enum class PickerKind { None, Folder, Image, Patch };
     // What came of looking for a newer release.
     enum class UpdateState { Never, Checking, UpToDate, Available, Failed };
 
@@ -159,7 +155,7 @@ class App {
     void write_pad_pins();
     void activate(Id id);
     bool modal_active() const {
-        return settings_open_ || overlay_.open() || picker_ != PickerKind::None;
+        return settings_open_ || overlay_.open() || chooser_.is_open();
     }
 
     // `exits` ends the launcher once the steps succeed: an update hands over to its
@@ -306,16 +302,8 @@ class App {
     // Set by render_to(), where there is no window: nothing may open a native dialog.
     bool headless_ = false;
 
-    PickerKind picker_ = PickerKind::None;
-    std::wstring picker_title_;
-    std::wstring picker_folder_;
-    std::wstring picker_path_;
-    std::wstring picker_note_;
-    bool picker_editing_ = false;
-    int picker_selected_ = -1;
-    int picker_offset_ = 0;
-    std::vector<PickerEntry> picker_entries_;
-    std::function<void(const fs::path&)> picker_accept_;
+    // The launcher's own chooser, for a system that has none or a render, which has no window.
+    Picker chooser_;
 
     float width_ = 1060;
     float height_ = 820;

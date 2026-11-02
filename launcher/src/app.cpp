@@ -209,8 +209,8 @@ void App::handle_event(const SDL_Event& event) {
             SDL_GetMouseState(&mouse_x, &mouse_y);
             float x = static_cast<float>(mouse_x) / factor;
             float y = static_cast<float>(mouse_y) / factor;
-            if (picker_ != PickerKind::None) {
-                picker_offset_ = std::max(0, picker_offset_ - event.wheel.y);
+            if (chooser_.is_open()) {
+                chooser_.set_offset(std::max(0, chooser_.offset() - event.wheel.y));
                 invalidate();
             } else if (overlay_.is(OverlayPage::Geckos)) {
                 // The guide's list is longer than the panel: the wheel is how the rest of
@@ -288,7 +288,7 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
     // The codes box takes held keys like a text field does: Backspace that repeats is how a
     // line is cleared.
     const bool typing = overlay_.is(OverlayPage::Geckos) && gecko_editing_;
-    if (key.repeat && picker_ == PickerKind::None && !typing) return;
+    if (key.repeat && !chooser_.is_open() && !typing) return;
     const bool command = (key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
 
     // While the box has focus the keys it uses are its own: Return is a line in the block,
@@ -329,7 +329,7 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
 
     switch (key.keysym.sym) {
         case SDLK_ESCAPE:
-            if (picker_ != PickerKind::None) {
+            if (chooser_.is_open()) {
                 launch_wanted_ = false;
                 close_picker();
             } else if (scale_open_) {
@@ -348,45 +348,46 @@ void App::handle_key(const SDL_KeyboardEvent& key) {
             return;
         case SDLK_RETURN:
         case SDLK_KP_ENTER:
-            if (picker_ != PickerKind::None) accept_picker();
+            if (chooser_.is_open()) accept_picker();
             return;
         case SDLK_TAB:
-            if (picker_ != PickerKind::None) {
-                picker_editing_ = !picker_editing_;
+            if (chooser_.is_open()) {
+                chooser_.set_editing(!chooser_.editing());
                 invalidate();
             }
             return;
         case SDLK_BACKSPACE:
-            if (picker_ != PickerKind::None && picker_editing_ && !picker_path_.empty()) {
-                picker_path_.pop_back();
+            if (chooser_.is_open() && chooser_.editing() && !chooser_.path().empty()) {
+                chooser_.path().pop_back();
                 // A UTF-16 surrogate pair must not be split.
-                if (sizeof(wchar_t) == 2 && !picker_path_.empty() &&
-                    picker_path_.back() >= 0xD800 && picker_path_.back() <= 0xDBFF) {
-                    picker_path_.pop_back();
+                if (sizeof(wchar_t) == 2 && !chooser_.path().empty() &&
+                    chooser_.path().back() >= 0xD800 && chooser_.path().back() <= 0xDBFF) {
+                    chooser_.path().pop_back();
                 }
                 invalidate();
             }
             return;
         case SDLK_v:
-            if (command && picker_ != PickerKind::None) {
+            if (command && chooser_.is_open()) {
                 auto text = window_.clipboard();
                 if (!text.empty()) {
-                    picker_editing_ = true;
-                    picker_path_ += text;
+                    chooser_.set_editing(true);
+                    chooser_.path() += text;
                     invalidate();
                 }
             }
             return;
         case SDLK_UP:
-            if (picker_ != PickerKind::None && !picker_entries_.empty()) {
-                picker_selected_ = std::max(0, picker_selected_ - 1);
+            if (chooser_.is_open() && !chooser_.entries().empty()) {
+                chooser_.set_selected(std::max(0, chooser_.selected() - 1));
                 invalidate();
             }
             return;
         case SDLK_DOWN:
-            if (picker_ != PickerKind::None && !picker_entries_.empty()) {
-                picker_selected_ = std::min(static_cast<int>(picker_entries_.size()) - 1,
-                                            picker_selected_ + 1);
+            if (chooser_.is_open() && !chooser_.entries().empty()) {
+                chooser_.set_selected(
+                        std::min(static_cast<int>(chooser_.entries().size()) - 1,
+                                 chooser_.selected() + 1));
                 invalidate();
             }
             return;
@@ -401,9 +402,9 @@ void App::handle_text(const SDL_TextInputEvent& text) {
         invalidate();
         return;
     }
-    if (picker_ == PickerKind::None) return;
-    picker_editing_ = true;
-    picker_path_ += widen(text.text);
+    if (!chooser_.is_open()) return;
+    chooser_.set_editing(true);
+    chooser_.path() += widen(text.text);
     invalidate();
 }
 
@@ -416,7 +417,7 @@ void App::activate(Id id) {
         if (const auto rect = ui_.rect_of(Id::Scale)) scale_anchor_ = *rect;
     };
 
-    if (picker_ != PickerKind::None) {
+    if (chooser_.is_open()) {
         int index = static_cast<int>(id) - static_cast<int>(Id::PickerEntry);
         if (id == Id::PickerCancel) {
             launch_wanted_ = false;
@@ -424,35 +425,35 @@ void App::activate(Id id) {
         } else if (id == Id::PickerAccept) {
             accept_picker();
         } else if (id == Id::PickerUp) {
-            fs::path folder(picker_folder_);
+            fs::path folder(chooser_.folder());
             std::error_code ec;
             if (folder.has_parent_path() && folder.parent_path() != folder) {
-                picker_folder_ = folder.parent_path().wstring();
-                picker_path_ = picker_folder_;
-                picker_editing_ = false;
+                chooser_.folder() = folder.parent_path().wstring();
+                chooser_.path() = chooser_.folder();
+                chooser_.set_editing(false);
                 list_picker();
                 invalidate();
             }
         } else if (id == Id::PickerPath) {
-            picker_editing_ = true;
+            chooser_.set_editing(true);
             invalidate();
-        } else if (index >= 0 && index < static_cast<int>(picker_entries_.size())) {
-            const auto& entry = picker_entries_[static_cast<size_t>(index)];
+        } else if (index >= 0 && index < static_cast<int>(chooser_.entries().size())) {
+            const auto& entry = chooser_.entries()[static_cast<size_t>(index)];
             if (entry.directory) {
-                fs::path folder(picker_folder_);
+                fs::path folder(chooser_.folder());
                 fs::path next =
                     entry.name == L".." ? folder.parent_path() : (folder / entry.name);
                 std::error_code ec;
                 if (fs::is_directory(next, ec)) {
-                    picker_folder_ = next.wstring();
-                    picker_path_ = picker_folder_;
-                    picker_editing_ = false;
+                    chooser_.folder() = next.wstring();
+                    chooser_.path() = chooser_.folder();
+                    chooser_.set_editing(false);
                     list_picker();
                 }
             } else {
-                picker_selected_ = index;
-                picker_path_ = picker_join(picker_folder_, entry.name);
-                picker_editing_ = true;
+                chooser_.set_selected(index);
+                chooser_.path() = picker_join(chooser_.folder(), entry.name);
+                chooser_.set_editing(true);
             }
             invalidate();
         }

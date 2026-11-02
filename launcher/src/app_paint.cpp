@@ -505,7 +505,7 @@ void App::paint() {
     } else if (overlay_.open()) {
         paint_overlay();
     }
-    if (picker_ != PickerKind::None) paint_picker();
+    if (chooser_.is_open()) paint_picker();
     if (scale_open_) paint_scale_menu();
     if (device_map_.menu_row() >= 0) paint_pad_menu();
 
@@ -1467,7 +1467,7 @@ void App::paint_picker() {
     painter_.fill_round(panel.box(), 16, rgb(0x171a21));
     painter_.stroke_round(panel.box(), 16, rgb(theme::BorderStrong), 1);
 
-    painter_.text(picker_title_,
+    painter_.text(chooser_.title(),
                   RectF(panel.x + 24, panel.y + 18, panel.x + panel.w - 24, panel.y + 46),
                   Face::CardTitle, rgb(theme::Text));
 
@@ -1475,10 +1475,10 @@ void App::paint_picker() {
     float content_w = panel.w - 48;
 
     Rect field{left, panel.y + 56, content_w - 76, 34};
-    painter_.fill_round(field.box(), 8, rgb(picker_editing_ ? 0x20252d : 0x1b1e25));
+    painter_.fill_round(field.box(), 8, rgb(chooser_.editing() ? 0x20252d : 0x1b1e25));
     painter_.stroke_round(field.box(), 8,
-                          rgb(picker_editing_ ? theme::Accent : theme::BorderStrong), 1);
-    painter_.text(ui_.elide(picker_path_, Face::Small, field.w - 24),
+                          rgb(chooser_.editing() ? theme::Accent : theme::BorderStrong), 1);
+    painter_.text(ui_.elide(chooser_.path(), Face::Small, field.w - 24),
                   RectF(field.x + 10, field.y, field.x + field.w - 10, field.y + field.h),
                   Face::Small, rgb(theme::Text), TextAlign::Leading, TextVAlign::Center,
                   false);
@@ -1491,15 +1491,15 @@ void App::paint_picker() {
 
     const float row_height = 26.0f;
     int visible = std::max(1, static_cast<int>((list.h - 12) / row_height));
-    int maximum_offset = std::max(0, static_cast<int>(picker_entries_.size()) - visible);
-    picker_offset_ = std::min(picker_offset_, maximum_offset);
+    int maximum_offset = std::max(0, static_cast<int>(chooser_.entries().size()) - visible);
+    chooser_.set_offset(std::min(chooser_.offset(), maximum_offset));
     for (int row = 0; row < visible; ++row) {
-        int index = picker_offset_ + row;
-        if (index >= static_cast<int>(picker_entries_.size())) break;
-        const auto& entry = picker_entries_[static_cast<size_t>(index)];
+        int index = chooser_.offset() + row;
+        if (index >= static_cast<int>(chooser_.entries().size())) break;
+        const auto& entry = chooser_.entries()[static_cast<size_t>(index)];
         Rect item{list.x + 6, list.y + 6 + row * row_height, list.w - 12, row_height};
         Id id = static_cast<Id>(static_cast<int>(Id::PickerEntry) + index);
-        if (picker_selected_ == index) {
+        if (chooser_.selected() == index) {
             painter_.fill_round(item.box(), 6, rgb(0x2b3340));
         } else if (ui_.hover() == id) {
             painter_.fill_round(item.box(), 6, rgb(0x222732));
@@ -1512,8 +1512,8 @@ void App::paint_picker() {
                       TextAlign::Leading, TextVAlign::Center, false);
         ui_.register_hit(id, item);
     }
-    if (picker_entries_.empty()) {
-        painter_.text(picker_ == PickerKind::Image
+    if (chooser_.entries().empty()) {
+        painter_.text(chooser_.kind() == PickerKind::Image
                           ? L"No disc images here. Type the path, or drop the image on the "
                             L"window."
                           : L"No sub-folders here. Type the path, or use this folder.",
@@ -1521,22 +1521,22 @@ void App::paint_picker() {
                       Face::Small, rgb(theme::Muted));
     }
 
-    std::wstring note = picker_note_;
+    std::wstring note = chooser_.note();
     if (note.empty()) {
-        note = picker_ == PickerKind::Folder ? L"Choose this folder, or open a sub-folder."
+        note = chooser_.kind() == PickerKind::Folder ? L"Choose this folder, or open a sub-folder."
                                              : L"Choose a disc image, or type its path.";
     }
     painter_.text(note,
                   RectF(left, panel.y + panel.h - 66, left + content_w - 300,
                        panel.y + panel.h - 44),
-                  Face::Tiny, picker_note_.empty() ? rgb(theme::Muted) : rgb(theme::Warn));
+                  Face::Tiny, chooser_.note().empty() ? rgb(theme::Muted) : rgb(theme::Warn));
 
     ui_.button(Id::PickerCancel,
            Rect{panel.x + panel.w - 24 - 100, panel.y + panel.h - 52, 100, 34}, L"Cancel",
            false, true);
     ui_.button(Id::PickerAccept,
            Rect{panel.x + panel.w - 24 - 100 - 8 - 176, panel.y + panel.h - 52, 176, 34},
-           picker_ == PickerKind::Folder ? L"Use This Folder" : L"Choose Image", true, true);
+           chooser_.kind() == PickerKind::Folder ? L"Use This Folder" : L"Choose Image", true, true);
 }
 
 }  // namespace nla

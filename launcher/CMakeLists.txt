@@ -85,6 +85,7 @@ set(NLA_SOURCES
   src/git.cpp
   src/image.cpp
   src/painter.cpp
+  src/picker.cpp
   src/jobs.cpp
   src/mods.cpp
   src/patches.cpp
@@ -411,6 +412,28 @@ else()
   target_link_libraries(activity_test PRIVATE Threads::Threads)
 endif()
 add_test(NAME activity-logic COMMAND $<TARGET_FILE:activity_test>)
+
+# What the launcher's own picker lists: the order, and what it leaves out. Needs no window,
+# only a folder made for the purpose.
+add_executable(picker_test
+  tests/picker_test.cpp
+  src/picker.cpp
+  src/painter.cpp
+  src/font.cpp
+  src/util.cpp
+)
+target_include_directories(picker_test PRIVATE src)
+if(WIN32)
+  target_compile_definitions(picker_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(picker_test PRIVATE shell32 ole32 advapi32 user32)
+  if(MINGW)
+    target_link_options(picker_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(picker_test PRIVATE Threads::Threads)
+endif()
+add_test(NAME picker-logic COMMAND $<TARGET_FILE:picker_test>)
 
 add_executable(project_test
   tests/project_test.cpp
