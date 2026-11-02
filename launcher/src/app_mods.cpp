@@ -79,10 +79,7 @@ struct Fetch {
 // beside the games whose mod.txt names it. A mod written for another build is never
 // offered, so nothing lands on addresses it was not written for.
 void App::refresh_mods() {
-    mod_entries_.clear();
-    enabled_mods_.clear();
-    applied_patch_id_.clear();
-    catalog_mods_.clear();
+    mods_.clear();
 
     // Stand-ins for the renders: the same table and the same picks wherever this is
     // checked, so the drawing does not depend on a machine's disk or network.
@@ -99,7 +96,7 @@ void App::refresh_mods() {
         patch.installed = true;
         patch.known = true;
         patch.delta = L"SCON4-2.1.0.xdelta";
-        mod_entries_.push_back(std::move(patch));
+        mods_.entries().push_back(std::move(patch));
 
         ModChoice first;
         first.id = L"retuned-opening";
@@ -110,7 +107,7 @@ void App::refresh_mods() {
         first.disc_ids = {L"g4njda"};
         first.installed = true;
         first.known = true;
-        mod_entries_.push_back(std::move(first));
+        mods_.entries().push_back(std::move(first));
 
         ModChoice second;
         second.id = L"alt-colours";
@@ -121,10 +118,10 @@ void App::refresh_mods() {
         second.disc_ids = {L"g4njda"};
         second.installed = true;
         second.known = true;
-        mod_entries_.push_back(std::move(second));
+        mods_.entries().push_back(std::move(second));
 
-        enabled_mods_.push_back(L"retuned-opening");
-        applied_patch_id_ = L"scon4";
+        mods_.enabled().push_back(L"retuned-opening");
+        mods_.applied_patch() = L"scon4";
         patch_delta_ = L"SCON4-2.1.0.xdelta";
         return;
     }
@@ -138,7 +135,7 @@ void App::refresh_mods() {
     refresh_patch();
 
     std::wstring catalog_error;
-    catalog_mods_ = load_mod_catalog(mod_catalog_path(), &catalog_error);
+    mods_.catalog() = load_mod_catalog(mod_catalog_path(), &catalog_error);
     if (catalog_error != catalog_log_) {
         catalog_log_ = catalog_error;
         if (!catalog_error.empty()) append_log(L"[launcher] " + catalog_error + L"\n");
@@ -146,106 +143,61 @@ void App::refresh_mods() {
 
     // The table: the catalog's entries for this disc, the folders beside the games, and the
     // deltas in patches/, merged by id.
-    mod_entries_ = collect_mods(catalog_mods_, project_->mods_dir(), patches_dir, disc_id);
+    mods_.entries() = collect_mods(mods_.catalog(), project_->mods_dir(), patches_dir, disc_id);
 
     // What is written now, in the order it was switched on so a later mod wins where two
     // replace the same file.
     auto saved = settings_.mods.find(project_->game());
     if (saved != settings_.mods.end()) {
         for (const auto& id : saved->second) {
-            for (const auto& entry : mod_entries_) {
+            for (const auto& entry : mods_.entries()) {
                 if (entry.patch || entry.id != id) continue;
-                enabled_mods_.push_back(id);
+                mods_.enabled().push_back(id);
                 break;
             }
         }
     }
 
     if (patch_delta_.empty()) return;
-    for (const auto& entry : mod_entries_) {
+    for (const auto& entry : mods_.entries()) {
         if (!entry.patch || !same_path(entry.delta, patch_delta_)) continue;
-        applied_patch_id_ = entry.id;
+        mods_.applied_patch() = entry.id;
         return;
     }
     // A patch chosen earlier and kept elsewhere is still a row, so the table can show what
     // is applied and switch it off.
     ModChoice local;
-    local.id = unique_mod_id(mod_entries_, L"patch:" + patch_delta_.filename().wstring());
+    local.id = unique_mod_id(mods_.entries(), L"patch:" + patch_delta_.filename().wstring());
     local.name = patch_delta_.stem().wstring();
     local.patch = true;
     local.installed = true;
     local.delta = patch_delta_;
-    applied_patch_id_ = local.id;
-    mod_entries_.push_back(std::move(local));
-}
-
-const ModChoice* App::find_mod(const std::wstring& id) const {
-    for (const auto& entry : mod_entries_) {
-        if (entry.id == id) return &entry;
-    }
-    return nullptr;
-}
-
-// What the panel draws in a row's checkbox. The selection is staged: it is what Apply will
-// write, not what the game is playing until then.
-bool App::mod_checked(const std::wstring& id) const {
-    const ModChoice* entry = find_mod(id);
-    if (entry && entry->patch) return pending_patch_ == id;
-    return std::find(pending_mods_.begin(), pending_mods_.end(), id) != pending_mods_.end();
-}
-
-bool App::mod_downloadable(const std::wstring& id) const {
-    const ModChoice* entry = find_mod(id);
-    if (!entry) return false;
-    if (entry->installed) return true;
-    return entry->known && entry->catalog < catalog_mods_.size() &&
-           catalog_mods_[entry->catalog].downloadable();
+    mods_.applied_patch() = local.id;
+    mods_.entries().push_back(std::move(local));
 }
 
 std::wstring App::mods_summary() const {
     if (rendering_) return L"2 of 3 on.";
     if (!project_) return L"Set up the game folder first.";
-    if (mod_entries_.empty()) return L"No mods for this disc.";
-    const std::size_t on = enabled_mods_.size() + (applied_patch_id_.empty() ? 0 : 1);
-    auto text = format(L"%zu of %zu on.", on, mod_entries_.size());
+    if (mods_.entries().empty()) return L"No mods for this disc.";
+    const std::size_t on = mods_.enabled().size() + (mods_.applied_patch().empty() ? 0 : 1);
+    auto text = format(L"%zu of %zu on.", on, mods_.entries().size());
     if (status_.stale_code) text += L" A code patch needs a build.";
     return text;
 }
 
-std::size_t App::mod_rows() const {
-    // Enough rows to fill the panel on the smallest window the launcher opens, and no
-    // more: a folder with a dozen mods says how many are past the end instead of running
-    // off the page.
-    constexpr std::size_t kMaxRows = 10;
-    return std::min(mod_entries_.size(), kMaxRows);
-}
-
 void App::toggle_mod(const std::wstring& id) {
-    const ModChoice* entry = find_mod(id);
-    if (!entry) return;
-    // A row whose files are neither here nor downloadable cannot be applied, so it is not
-    // a choice the panel offers.
-    if (!mod_downloadable(id)) return;
-    if (entry->patch) {
-        pending_patch_ = pending_patch_ == id ? std::wstring() : id;
-    } else {
-        auto found = std::find(pending_mods_.begin(), pending_mods_.end(), id);
-        if (found == pending_mods_.end()) {
-            pending_mods_.push_back(id);
-        } else {
-            pending_mods_.erase(found);
-        }
-    }
+    if (!mods_.downloadable(id)) return;
+    mods_.toggle(id);
     mods_note_.clear();
     invalidate();
 }
 
 void App::open_mods() {
     refresh_mods();
-    pending_mods_ = enabled_mods_;
-    pending_patch_ = applied_patch_id_;
+    mods_.take_from_written();
     mods_note_.clear();
-    if (mod_entries_.empty() && !rendering_) {
+    if (mods_.entries().empty() && !rendering_) {
         mods_note_ =
             project_ ? L"No mods for this disc. A mod is a folder in mods/ with a mod.txt "
                        L"naming this disc's ID and a disc/ tree of the files it replaces."
@@ -293,21 +245,21 @@ void App::choose_patch() {
 // applied on the click that chooses it: the panel has one Apply for everything it lists.
 void App::stage_patch(const fs::path& delta) {
     if (!project_ || delta.empty()) return;
-    for (auto& entry : mod_entries_) {
+    for (auto& entry : mods_.entries()) {
         if (entry.patch && same_path(entry.delta, delta)) {
-            pending_patch_ = entry.id;
+            mods_.pending_patch() = entry.id;
             invalidate();
             return;
         }
     }
     ModChoice entry;
-    entry.id = unique_mod_id(mod_entries_, L"patch:" + delta.filename().wstring());
+    entry.id = unique_mod_id(mods_.entries(), L"patch:" + delta.filename().wstring());
     entry.name = delta.stem().wstring();
     entry.patch = true;
     entry.installed = true;
     entry.delta = delta;
-    mod_entries_.push_back(std::move(entry));
-    pending_patch_ = mod_entries_.back().id;
+    mods_.entries().push_back(std::move(entry));
+    mods_.pending_patch() = mods_.entries().back().id;
     mods_note_.clear();
     invalidate();
 }
@@ -325,19 +277,19 @@ void App::apply_mods() {
     }
 
     std::vector<std::wstring> missing;
-    for (const auto& id : pending_mods_) {
-        const ModChoice* entry = find_mod(id);
+    for (const auto& id : mods_.pending()) {
+        const ModChoice* entry = mods_.find(id);
         if (!entry || entry->installed) continue;
-        if (entry->known && entry->catalog < catalog_mods_.size() &&
-            catalog_mods_[entry->catalog].downloadable()) {
+        if (entry->known && entry->catalog < mods_.catalog().size() &&
+            mods_.catalog()[entry->catalog].downloadable()) {
             missing.push_back(id);
         }
     }
-    if (!pending_patch_.empty()) {
-        const ModChoice* entry = find_mod(pending_patch_);
+    if (!mods_.pending_patch().empty()) {
+        const ModChoice* entry = mods_.find(mods_.pending_patch());
         if (entry && !entry->installed && entry->known &&
-            entry->catalog < catalog_mods_.size() &&
-            catalog_mods_[entry->catalog].downloadable()) {
+            entry->catalog < mods_.catalog().size() &&
+            mods_.catalog()[entry->catalog].downloadable()) {
             missing.push_back(entry->id);
         }
     }
@@ -358,9 +310,9 @@ void App::download_mods(const std::vector<std::wstring>& ids) {
 
     std::vector<Task> tasks;
     for (const auto& id : ids) {
-        const ModChoice* entry = find_mod(id);
-        if (!entry || entry->catalog >= catalog_mods_.size()) continue;
-        const CatalogMod& known = catalog_mods_[entry->catalog];
+        const ModChoice* entry = mods_.find(id);
+        if (!entry || entry->catalog >= mods_.catalog().size()) continue;
+        const CatalogMod& known = mods_.catalog()[entry->catalog];
         auto fetch = std::make_shared<Fetch>();
         fetch->id = known.id;
         fetch->name = known.name.empty() ? known.id : known.name;
@@ -507,7 +459,7 @@ void App::download_mods(const std::vector<std::wstring>& ids) {
 void App::apply_mods_now() {
     if (!project_) return;
 
-    const ModChoice* chosen_patch = pending_patch_.empty() ? nullptr : find_mod(pending_patch_);
+    const ModChoice* chosen_patch = mods_.pending_patch().empty() ? nullptr : mods_.find(mods_.pending_patch());
     if (!chosen_patch || !chosen_patch->installed) {
         commit_mods({}, {});
         return;
@@ -582,9 +534,8 @@ void App::commit_mods(const fs::path& delta, const PatchFit& fit) {
         append_log(format(L"[launcher] patch: %ls\n", delta.filename().c_str()));
     }
 
-    enabled_mods_ = pending_mods_;
-    applied_patch_id_ = pending_patch_;
-    settings_.mods[project_->game()] = enabled_mods_;
+    mods_.commit();
+    settings_.mods[project_->game()] = mods_.enabled();
     save_settings();
 
     // Activity says what the overlay became, once; refresh() reads the disk back so the
@@ -592,8 +543,7 @@ void App::commit_mods(const fs::path& delta, const PatchFit& fit) {
     write_mod_overlay();
     mods_note_ = L"Applied. The game reads this the next time it starts.";
     refresh();
-    pending_mods_ = enabled_mods_;
-    pending_patch_ = applied_patch_id_;
+    mods_.take_from_written();
     invalidate();
 }
 
@@ -603,8 +553,8 @@ void App::commit_mods(const fs::path& delta, const PatchFit& fit) {
 void App::write_mod_overlay() {
     if (!project_ || rendering_) return;
     std::vector<ModInfo> chosen;
-    for (const auto& id : enabled_mods_) {
-        const ModChoice* entry = find_mod(id);
+    for (const auto& id : mods_.enabled()) {
+        const ModChoice* entry = mods_.find(id);
         if (!entry || entry->patch || !entry->installed) continue;
         chosen.push_back(entry->mod);
     }

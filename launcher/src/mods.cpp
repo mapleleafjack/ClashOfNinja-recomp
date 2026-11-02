@@ -165,6 +165,67 @@ bool mod_supports(const ModInfo& mod, const std::wstring& disc_id) {
     return false;
 }
 
+void ModSelection::clear() {
+    entries_.clear();
+    enabled_.clear();
+    pending_.clear();
+    applied_patch_.clear();
+    pending_patch_.clear();
+    catalog_.clear();
+}
+
+void ModSelection::take_from_written() {
+    pending_ = enabled_;
+    pending_patch_ = applied_patch_;
+}
+
+void ModSelection::commit() {
+    enabled_ = pending_;
+    applied_patch_ = pending_patch_;
+}
+
+const ModChoice* ModSelection::find(const std::wstring& id) const {
+    for (const auto& entry : entries_) {
+        if (entry.id == id) return &entry;
+    }
+    return nullptr;
+}
+
+bool ModSelection::checked(const std::wstring& id) const {
+    const ModChoice* entry = find(id);
+    if (entry && entry->patch) return pending_patch_ == id;
+    return std::find(pending_.begin(), pending_.end(), id) != pending_.end();
+}
+
+bool ModSelection::downloadable(const std::wstring& id) const {
+    const ModChoice* entry = find(id);
+    if (!entry) return false;
+    if (entry->installed) return true;
+    return entry->known && entry->catalog < catalog_.size() &&
+           catalog_[entry->catalog].downloadable();
+}
+
+std::size_t ModSelection::rows() const {
+    constexpr std::size_t kMaxRows = 10;
+    return std::min(entries_.size(), kMaxRows);
+}
+
+void ModSelection::toggle(const std::wstring& id) {
+    const ModChoice* entry = find(id);
+    if (!entry) return;
+    if (!downloadable(id)) return;
+    if (entry->patch) {
+        pending_patch_ = pending_patch_ == id ? std::wstring() : id;
+        return;
+    }
+    auto found = std::find(pending_.begin(), pending_.end(), id);
+    if (found == pending_.end()) {
+        pending_.push_back(id);
+    } else {
+        pending_.erase(found);
+    }
+}
+
 std::wstring unique_mod_id(const std::vector<ModChoice>& entries, const std::wstring& wanted) {
     std::wstring id = wanted;
     for (int suffix = 2;; ++suffix) {

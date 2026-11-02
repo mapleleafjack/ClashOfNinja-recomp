@@ -119,14 +119,10 @@ class App {
     // Checks or unchecks a row. Nothing is written until apply_mods(): closing the panel
     // without it leaves the game as it was.
     void toggle_mod(const std::wstring& id);
-    bool mod_checked(const std::wstring& id) const;
     // Whether a row can be applied at all: its files are here, or the catalog says where
     // to get them.
-    bool mod_downloadable(const std::wstring& id) const;
     std::wstring mods_summary() const;
     // How many mod rows the panel draws, so a folder with a dozen mods still opens.
-    std::size_t mod_rows() const;
-    const ModChoice* find_mod(const std::wstring& id) const;
     // Fetches the checked mods this machine does not have, then writes the overlay and
     // the patch the runtime reads.
     void apply_mods();
@@ -273,16 +269,8 @@ class App {
     bool forced_busy_ = false;
     bool forced_running_ = false;
 
-    // The Mods table. `mod_entries_` is what this disc may play; `pending_mods_` and
-    // `pending_patch_` are the checks the panel shows, and `enabled_mods_` and
-    // `applied_patch_id_` are what has been written. A later mod wins where two replace
-    // the same file, so `enabled_mods_` keeps the order they were switched on.
-    std::vector<CatalogMod> catalog_mods_;
-    std::vector<ModChoice> mod_entries_;
-    std::vector<std::wstring> enabled_mods_;
-    std::vector<std::wstring> pending_mods_;
-    std::wstring applied_patch_id_;
-    std::wstring pending_patch_;
+    // The Mods table: what this disc may play, and what is written against what is staged.
+    ModSelection mods_;
     std::wstring mods_note_;   // the line under the table: why it is empty, or what Apply did
     std::wstring mods_log_;    // what the Activity log already says about the mods
     std::wstring catalog_log_; // the catalog error Activity already reported

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -69,6 +71,62 @@ struct ModChoice {
 std::vector<ModChoice> collect_mods(const std::vector<CatalogMod>& catalog,
                                     const fs::path& mods_dir, const fs::path& patches_dir,
                                     const std::wstring& disc_id);
+
+// What the Mods panel offers, and what is checked on it.
+//
+// Two sets of ids, and the difference between them is the point: `pending` and
+// `pending_patch` are the checks the panel is showing, and `enabled` and `applied_patch` are
+// what has been written and what the game is playing. A later mod wins where two replace the
+// same file, so `enabled` keeps the order they were switched on.
+class ModSelection {
+  public:
+    // What this disc may play, and the catalog those rows came from.
+    std::vector<ModChoice>& entries() { return entries_; }
+    const std::vector<ModChoice>& entries() const { return entries_; }
+    std::vector<CatalogMod>& catalog() { return catalog_; }
+    const std::vector<CatalogMod>& catalog() const { return catalog_; }
+
+    // What has been written.
+    std::vector<std::wstring>& enabled() { return enabled_; }
+    const std::vector<std::wstring>& enabled() const { return enabled_; }
+    std::wstring& applied_patch() { return applied_patch_; }
+    const std::wstring& applied_patch() const { return applied_patch_; }
+
+    // What the panel is showing as checked.
+    std::vector<std::wstring>& pending() { return pending_; }
+    const std::vector<std::wstring>& pending() const { return pending_; }
+    std::wstring& pending_patch() { return pending_patch_; }
+    const std::wstring& pending_patch() const { return pending_patch_; }
+
+    // Nothing known yet, which is where refresh() starts from.
+    void clear();
+    // The panel is opened: it shows what is written, so nothing reads as changed.
+    void take_from_written();
+    // The panel's Apply succeeded: what was staged is now what is written.
+    void commit();
+    // Whether the panel has anything to apply.
+    bool staged() const { return pending_ != enabled_ || pending_patch_ != applied_patch_; }
+
+    const ModChoice* find(const std::wstring& id) const;
+    // What a row's checkbox shows: the staged choice, not what the game is playing.
+    bool checked(const std::wstring& id) const;
+    // A row whose files are neither here nor downloadable cannot be applied, so it is not a
+    // choice the panel offers.
+    bool downloadable(const std::wstring& id) const;
+    // How many rows the panel draws: enough to fill it on the smallest window the launcher
+    // opens, and no more, so a long list says how many are past the end.
+    std::size_t rows() const;
+    // Flips a row's check, when the row is one the panel offers.
+    void toggle(const std::wstring& id);
+
+  private:
+    std::vector<CatalogMod> catalog_;
+    std::vector<ModChoice> entries_;
+    std::vector<std::wstring> enabled_;
+    std::vector<std::wstring> pending_;
+    std::wstring applied_patch_;
+    std::wstring pending_patch_;
+};
 
 // An id no row has yet, for a delta added from this machine. The wanted name is used as
 // it is when it is free, else with "-2", "-3" and so on.

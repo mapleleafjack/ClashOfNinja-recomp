@@ -491,8 +491,8 @@ void App::activate(Id id) {
 
     if (overlay_.is(OverlayPage::Mods)) {
         const int row = static_cast<int>(id) - static_cast<int>(Id::ModRow);
-        if (id >= Id::ModRow && id < Id::ModRowEnd && row < static_cast<int>(mod_rows())) {
-            toggle_mod(mod_entries_[static_cast<size_t>(row)].id);
+        if (id >= Id::ModRow && id < Id::ModRowEnd && row < static_cast<int>(mods_.rows())) {
+            toggle_mod(mods_.entries()[static_cast<size_t>(row)].id);
             return;
         }
         switch (id) {

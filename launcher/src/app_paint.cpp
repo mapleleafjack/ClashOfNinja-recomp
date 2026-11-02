@@ -1132,7 +1132,8 @@ void App::paint_overlay() {
         static_cast<float>(wrapped_lines(painter_, overlay_.text(), Face::Body,
                                          panel_w - 52.0f));
     float panel_h = overlay_.is(OverlayPage::Players) ? 168.0f + 34.0f * kPads
-                    : overlay_.is(OverlayPage::Mods) ? 250.0f + 34.0f * static_cast<float>(mod_rows())
+                    : overlay_.is(OverlayPage::Mods)
+                        ? 250.0f + 34.0f * static_cast<float>(mods_.rows())
                     : overlay_.is(OverlayPage::Geckos)
                         ? 308.0f + 22.0f * static_cast<float>(code_rows())
                         : std::clamp(60.0f + message_lines * painter_.line_height(Face::Body) +
@@ -1195,16 +1196,16 @@ void App::paint_overlay() {
         painter_.text(L"Author", RectF(version_right, y, right, y + 16), Face::Tiny,
                       rgb(theme::Muted), TextAlign::Trailing);
         y += 22;
-        for (size_t i = 0; i < mod_rows(); ++i) {
-            const ModChoice& entry = mod_entries_[i];
+        for (size_t i = 0; i < mods_.rows(); ++i) {
+            const ModChoice& entry = mods_.entries()[i];
             Id id = static_cast<Id>(static_cast<int>(Id::ModRow) + static_cast<int>(i));
-            const bool available = mod_downloadable(entry.id);
+            const bool available = mods_.downloadable(entry.id);
             std::wstring label = entry.name;
             if (entry.patch) label += L" · disc patch";
             else if (!entry.mod.gecko_files.empty()) label += L" · codes";
             if (!entry.installed) label += L" · download";
             ui_.checkbox(id, left, y + 6, ui_.elide(label, Face::Small, version_left - left - 30),
-                     mod_checked(entry.id), !busy_ && available);
+                     mods_.checked(entry.id), !busy_ && available);
             painter_.text(ui_.elide(entry.version, Face::Tiny, 84),
                           RectF(version_left, y + 4, version_right - 6, y + 26), Face::Tiny,
                           rgb(theme::Muted), TextAlign::Trailing);
@@ -1220,12 +1221,12 @@ void App::paint_overlay() {
         // pressed. The description is here rather than in a column because it is the one
         // thing about a mod a table cannot keep short.
         const ModChoice* hovered = nullptr;
-        for (size_t i = 0; i < mod_rows(); ++i) {
+        for (size_t i = 0; i < mods_.rows(); ++i) {
             if (ui_.hover() == static_cast<Id>(static_cast<int>(Id::ModRow) + static_cast<int>(i)))
-                hovered = &mod_entries_[i];
+                hovered = &mods_.entries()[i];
         }
         const bool staged =
-            pending_mods_ != enabled_mods_ || pending_patch_ != applied_patch_id_;
+            mods_.staged();
         std::wstring note;
         if (hovered && !hovered->description.empty()) {
             note = hovered->description;
@@ -1241,9 +1242,9 @@ void App::paint_overlay() {
         if (!patch_note_.empty()) {
             painter_.text(ui_.elide(patch_note_, Face::Tiny, right - left),
                           RectF(left, y + 30, right, y + 48), Face::Tiny, rgb(theme::Muted));
-        } else if (mod_rows() < mod_entries_.size()) {
+        } else if (mods_.rows() < mods_.entries().size()) {
             painter_.text(format(L"… and %zu more in the mods folder.",
-                                 mod_entries_.size() - mod_rows()),
+                                 mods_.entries().size() - mods_.rows()),
                           RectF(left, y + 30, right, y + 48), Face::Tiny, rgb(theme::Muted));
         }
         ui_.link(Id::ModsFolder, Rect{left, panel.y + panel.h - 84, 160, 18},
