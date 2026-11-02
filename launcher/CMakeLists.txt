@@ -61,6 +61,16 @@ else()
   set(NLA_SDL2 SDL2::SDL2-static)
 endif()
 
+# The util layer is four files, not one: text, paths, processes and digests. Almost every
+# target here needs some of it, and the tests that need none of the platform half would
+# still rather link the lot than keep a list of their own in step.
+set(NLA_UTIL_SOURCES
+  src/text.cpp
+  src/paths.cpp
+  src/proc.cpp
+  src/crypto.cpp
+)
+
 set(NLA_SOURCES
   src/main.cpp
   # The launcher's window class, split by what each part of it does: the shell and its
@@ -106,7 +116,7 @@ set(NLA_SOURCES
   src/ui.cpp
   src/update.cpp
   src/update_screen.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
   src/window.cpp
 )
 
@@ -338,7 +348,7 @@ add_executable(update_test
   src/jobs.cpp
   src/tools.cpp
   src/update.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(update_test PRIVATE src)
 if(WIN32)
@@ -364,7 +374,7 @@ add_executable(update_screen_test
   src/git.cpp
   src/tools.cpp
   src/jobs.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(update_screen_test PRIVATE src)
 # A development version, so the check is a build that cannot ask GitHub: the test needs no
@@ -390,7 +400,7 @@ add_executable(mods_test
   src/codes.cpp
   src/gecko.cpp
   src/mods.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
   ../gcn-recomp/runtime/hw/patch.cpp
 )
 target_include_directories(mods_test PRIVATE src ../gcn-recomp/runtime/hw)
@@ -431,7 +441,7 @@ add_executable(mods_screen_test
   src/tools.cpp
   src/update.cpp
   src/git.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
   ../gcn-recomp/runtime/hw/patch.cpp
 )
 target_include_directories(mods_screen_test PRIVATE src ../gcn-recomp/runtime/hw)
@@ -452,7 +462,7 @@ add_test(NAME mods-screen-logic COMMAND $<TARGET_FILE:mods_screen_test>)
 add_executable(gecko_test
   tests/gecko_test.cpp
   src/gecko.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(gecko_test PRIVATE src)
 if(WIN32)
@@ -485,7 +495,7 @@ src/painter.cpp
 src/font.cpp
 src/ui.cpp
   src/tools.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(geckos_screen_test PRIVATE src)
 if(WIN32)
@@ -512,7 +522,7 @@ add_executable(activity_test
   src/ui.cpp
   src/painter.cpp
   src/font.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(activity_test PRIVATE src)
 if(WIN32)
@@ -537,7 +547,7 @@ add_executable(covers_test
   src/image.cpp
   src/painter.cpp
   src/font.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(covers_test PRIVATE src)
 if(WIN32)
@@ -557,7 +567,7 @@ add_executable(picker_test
   src/picker.cpp
   src/painter.cpp
   src/font.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(picker_test PRIVATE src)
 if(WIN32)
@@ -583,7 +593,7 @@ add_executable(picker_screen_test
   src/painter.cpp
   src/font.cpp
   src/ui.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(picker_screen_test PRIVATE src)
 if(WIN32)
@@ -604,7 +614,7 @@ add_executable(project_test
   src/project_state.cpp
   src/project_templates.cpp
   src/settings.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(project_test PRIVATE src)
 if(WIN32)
@@ -638,7 +648,7 @@ add_executable(games_screen_test
   src/settings.cpp
   src/jobs.cpp
   src/tools.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(games_screen_test PRIVATE src)
 if(WIN32)
@@ -667,7 +677,7 @@ add_executable(players_screen_test
   src/settings.cpp
   src/jobs.cpp
   src/tools.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
   src/painter.cpp
   src/font.cpp
   src/ui.cpp
@@ -697,7 +707,7 @@ add_executable(settings_screen_test
   src/git.cpp
   src/tools.cpp
   src/jobs.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
   src/painter.cpp
   src/font.cpp
   src/ui.cpp
@@ -724,7 +734,7 @@ add_executable(hash_test
   tests/hash_test.cpp
   src/tools_package.cpp
   src/jobs.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(hash_test PRIVATE src)
 if(WIN32)
@@ -763,7 +773,7 @@ add_executable(overlay_test
   src/ui.cpp
   src/painter.cpp
   src/font.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(overlay_test PRIVATE src)
 if(WIN32)
@@ -796,7 +806,7 @@ install(TARGETS NarutoLauncher
 add_executable(extract_test EXCLUDE_FROM_ALL
   tests/extract_test.cpp
   src/disc.cpp
-  src/util.cpp
+  ${NLA_UTIL_SOURCES}
 )
 target_include_directories(extract_test PRIVATE src)
 if(WIN32)
