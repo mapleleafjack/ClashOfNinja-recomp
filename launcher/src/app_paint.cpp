@@ -19,6 +19,37 @@ std::wstring scale_label(int factor) {
     return format(L"%d×   %d × %d", factor, 640 * factor, 480 * factor);
 }
 
+// How many lines `text` takes when Painter draws it wrapped into `width`: words break at
+// spaces and each newline starts a paragraph. A block that sizes itself to this before
+// drawing keeps its text from being cut off.
+int wrapped_lines(Painter& painter, const std::wstring& text, Face face, float width) {
+    int lines = 0;
+    size_t start = 0;
+    do {
+        size_t end = text.find(L'\n', start);
+        if (end == std::wstring::npos) end = text.size();
+        const std::wstring paragraph = text.substr(start, end - start);
+        ++lines;
+        std::wstring line;
+        size_t word_start = 0;
+        while (word_start <= paragraph.size()) {
+            size_t word_end = paragraph.find(L' ', word_start);
+            if (word_end == std::wstring::npos) word_end = paragraph.size();
+            const std::wstring word = paragraph.substr(word_start, word_end - word_start);
+            std::wstring candidate = line.empty() ? word : line + L" " + word;
+            if (!line.empty() && painter.measure(candidate, face) > width) {
+                ++lines;
+                line = word;
+            } else {
+                line = candidate;
+            }
+            word_start = word_end + 1;
+        }
+        start = end + 1;
+    } while (start <= text.size());
+    return std::max(1, lines);
+}
+
 bool write_bmp(const std::string& path, const std::uint32_t* pixels, int width, int height) {
     std::FILE* file = std::fopen(path.c_str(), "wb");
     if (!file) return false;
@@ -425,14 +456,20 @@ void App::paint_games() {
         // Play asks for a disc when there is no verified tree, which is what launch() does:
         // the button says so rather than starting and then asking.
         const bool needs_disc = !project_ || !status_.disc.verified;
+        const std::wstring play_label = needs_disc ? L"Set up the disc…" : L"Play";
         const float button_w = std::min(180.0f, width * 0.5f - 8.0f);
         const float gap = 16.0f;
         const float left = center_x - button_w - gap / 2;
-        button(Id::Play, Rect{left, top, button_w, 50},
-               needs_disc ? L"Set up the disc…" : L"Play", true, !waiting, false,
-               Face::ButtonLarge);
+        // A narrow column drops to the smaller face rather than clipping the label.
+        auto face_for = [this, button_w](const std::wstring& label) {
+            return text_width(label, Face::ButtonLarge) <= button_w - 12.0f
+                       ? Face::ButtonLarge
+                       : Face::Button;
+        };
+        button(Id::Play, Rect{left, top, button_w, 50}, play_label, true, !waiting, false,
+               face_for(play_label));
         button(Id::Mods, Rect{left + button_w + gap, top, button_w, 50}, L"Mods", false,
-               !waiting && project_ != std::nullopt, false, Face::ButtonLarge);
+               !waiting && project_ != std::nullopt, false, face_for(L"Mods"));
     };
 
     auto draw_controls = [&](float center_x, float top, float width) {
@@ -458,8 +495,12 @@ void App::paint_games() {
             bottom += 24;
         }
         if (!play_status_.empty() && !busy_) {
+            // The note stays inside the column it belongs to: a narrow column would
+            // otherwise print it across the covers.
+            float note_w = std::min(660.0f, width);
             painter_.text(play_status_,
-                          RectF(center_x - 330, bottom + 2, center_x + 330, bottom + 20),
+                          RectF(center_x - note_w / 2, bottom + 2, center_x + note_w / 2,
+                                bottom + 20),
                           Face::Tiny, rgb(theme::Muted), TextAlign::Center);
         }
     };
@@ -491,7 +532,14 @@ void App::paint_games() {
     const float label_height = compact ? 22.0f : 28.0f;
     const float status_height = compact ? 0.0f : 172.0f;
 
-    float max_tile_width = (width_ - 96.0f - gap * (count - 1)) / count;
+    // With the details open the covers share the row with them: the details keep a column
+    // of their own against the right edge and the covers take what is left of the row, so
+    // the pill, the text and the buttons all stay inside the column.
+    const float status_w = compact ? std::clamp(width_ * 0.32f, 300.0f, 380.0f) : 0.0f;
+    const float status_left = compact ? width_ - 24.0f - status_w : 0.0f;
+
+    float row_right = compact ? status_left - 28.0f : width_ - 72.0f;
+    float max_tile_width = (row_right - 24.0f - gap * (count - 1)) / count;
     float max_tile_height = height_ - kHeaderBottom - 48.0f - label_height - status_height;
     if (compact) max_tile_height = std::min(max_tile_height, 216.0f);
     max_tile_height = std::max(160.0f, std::min(max_tile_height, 470.0f));
@@ -521,7 +569,7 @@ void App::paint_games() {
         Rect tile{x, top, tile_width, tile_height};
         paint_cover(static_cast<Id>(static_cast<int>(Id::GameCover) + index), tile, game,
                     selected, can_launch);
-        painter_.text(game.short_title,
+        painter_.text(elide(game.short_title, Face::Button, tile_width - 6.0f),
                       RectF(tile.x, tile.y + tile.h + 4, tile.x + tile.w,
                             tile.y + tile.h + 4 + label_height),
                       Face::Button, selected ? rgb(theme::Accent) : rgb(theme::Muted),
@@ -530,19 +578,48 @@ void App::paint_games() {
     }
 
     if (compact) {
-        float status_left = left + row_width + 28.0f;
-        float status_right = width_ - 24.0f;
-        float pill_w = text_width(pill_text, Face::Small) + 32;
-        pill(Rect{status_left, top + 2, pill_w, 22}, pill_text, pill_state);
-        painter_.text(title,
-                      RectF(status_left, top + 32, status_right, top + 60),
+        const float status_right = width_ - 24.0f;
+        const float column_width = status_right - status_left;
+        const float column_center = (status_left + status_right) / 2.0f;
+        const float pill_h = 22.0f;
+        const float title_line = painter_.line_height(Face::CardTitle);
+        const float body_line = painter_.line_height(Face::Body);
+        const float buttons_h = 50.0f;
+        // The step's controls sit under the buttons: a progress bar with Cancel, or the
+        // note the last launch left behind.
+        const float controls_h = busy_ ? 44.0f
+                                : game_.running() ? 46.0f
+                                : play_status_.empty() ? 0.0f
+                                                       : 20.0f;
+
+        const float title_h =
+            static_cast<float>(wrapped_lines(painter_, title, Face::CardTitle, column_width)) *
+            title_line;
+        const float detail_h =
+            static_cast<float>(wrapped_lines(painter_, detail, Face::Body, column_width)) *
+            body_line;
+        // The column is as tall as its own text, so the covers beside it can be short
+        // without the buttons, the text and the log card running into each other.
+        const float column_h = 2.0f + pill_h + 8.0f + title_h + 6.0f + detail_h + 12.0f +
+                               buttons_h + (controls_h > 0 ? 10.0f + controls_h : 0.0f);
+        const float block_h = std::max(tile_height + label_height, column_h);
+
+        float y = top + 2.0f;
+        float pill_w = std::min(text_width(pill_text, Face::Small) + 32, column_width);
+        pill(Rect{status_left, y, pill_w, pill_h}, pill_text, pill_state);
+        y += pill_h + 8.0f;
+        painter_.text(title, RectF(status_left, y, status_right, y + title_h),
                       Face::CardTitle, rgb(theme::Text));
-        painter_.text(detail, RectF(status_left, top + 66, status_right, top + 132),
-                      Face::Body, rgb(theme::Muted));
-        draw_game_buttons((status_left + status_right) / 2, top + 136, 280.0f);
-        draw_controls((status_left + status_right) / 2, top + 196,
-                      std::min(420.0f, status_right - status_left));
-        paint_activity(top + tile_height + label_height + 26.0f);
+        y += title_h + 6.0f;
+        painter_.text(detail, RectF(status_left, y, status_right, y + detail_h), Face::Body,
+                      rgb(theme::Muted));
+        y += detail_h + 12.0f;
+        draw_game_buttons(column_center, y, column_width);
+        y += buttons_h;
+        if (controls_h > 0) {
+            draw_controls(column_center, y + 10.0f, std::min(420.0f, column_width));
+        }
+        paint_activity(top + block_h + 26.0f);
         return;
     }
 

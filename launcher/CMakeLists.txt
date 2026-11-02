@@ -90,7 +90,6 @@ set(NLA_SOURCES
   src/project.cpp
   src/project_templates.cpp
   src/settings.cpp
-  src/shortcut.cpp
   src/tools.cpp
   src/tools_package.cpp
   src/update.cpp
@@ -234,12 +233,20 @@ else()
 endif()
 
 if(APPLE)
+  # Finder, the Dock and Launchpad take the icon from the bundle, so the .icns is copied
+  # into Resources and named in Info.plist. It is the same mark the window draws; remake
+  # it with iconutil from src/logo.png at 16, 32, 64, 128, 256, 512 and 1024 pixels.
+  set(NLA_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/AppIcon.icns")
+  set_source_files_properties("${NLA_ICON}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+  target_sources(NarutoLauncher PRIVATE "${NLA_ICON}")
+
   set_target_properties(NarutoLauncher PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "Naruto Launcher"
     MACOSX_BUNDLE_GUI_IDENTIFIER "local.naruto.launcher"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/Info.plist.in"
+    MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
   )
 endif()
 

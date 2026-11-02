@@ -157,9 +157,6 @@ class App {
     Id hit_at(float x, float y) const;
 
     void refresh();
-    // Gives a built game a menu entry of its own, so a desktop -- or a Steam Deck, whose
-    // Game Mode lists installed entries -- starts the game rather than the launcher.
-    void write_game_entry();
     void locate_project();
     // The games the project folder supplies, in the launcher's fixed order.
     std::vector<GameInfo> available_games() const;
@@ -284,9 +281,6 @@ class App {
     Settings settings_;
     std::optional<Project> project_;
     ProjectStatus status_;
-    // The game and settings the entry on disk was written for, so a rebuild or a change to
-    // them rewrites it and nothing else does.
-    std::wstring game_entry_for_;
     std::map<std::wstring, Cover> covers_;
     Cover placeholder_;
     // The box art download, and whether one is in flight. Quitting sets the stop flag so

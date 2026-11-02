@@ -483,7 +483,11 @@ bool read_file_at(void* user, std::uint64_t offset, void* dst, std::uint32_t len
 
 ReadFile open_for_read(const fs::path& path) {
     ReadFile file;
+#if defined(_WIN32)
     file.f = _wfopen(path.c_str(), L"rb");
+#else
+    file.f = std::fopen(path.c_str(), "rb");
+#endif
     if (!file.f) return file;
     std::fseek(file.f, 0, SEEK_END);
     file.size = static_cast<std::uint64_t>(std::ftell(file.f));
