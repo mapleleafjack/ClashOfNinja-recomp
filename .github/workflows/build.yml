@@ -211,12 +211,46 @@ jobs:
           # SDL2 is built from source below, and a subsystem it finds no headers for is
           # left out of the library silently -- no video, no audio, no gamepads at run
           # time. So the development packages it would otherwise detect are installed.
+          # libgl-dev is in the list for the game's GL header check, and unzip and xz-utils
+          # for the tool archive this job writes.
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config \
+            build-essential cmake ninja-build pkg-config curl ca-certificates \
+            unzip xz-utils libgl-dev \
             libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
             libxfixes-dev libxss-dev libxkbcommon-dev libdrm-dev libgbm-dev \
             libwayland-dev libdecor-0-dev fonts-dejavu-core xvfb
+
+      - name: Build the tool archive
+        shell: bash
+        # The archive a player downloads on a machine with no toolchain, which is what
+        # SteamOS is. Written here so the packaging script is exercised on every run, not
+        # only when a release is cut.
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          stage="$RUNNER_TEMP/tool-stage"
+          mkdir -p "$stage/archive"
+          ./launcher/packaging/build-tools-linux.sh "$stage/tools" \
+            "$stage/archive/NarutoLauncher-tools-linux-x64-v${version}.tar.xz"
+
+      - name: Pin the tool archive
+        shell: bash
+        # A tag publishes one, so its URL is known and pinned. A branch build leaves the
+        # URL empty, and the launcher then only ever looks for tools already installed.
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          archive="$RUNNER_TEMP/tool-stage/archive/NarutoLauncher-tools-linux-x64-v${version}.tar.xz"
+          {
+            echo "NLA_TOOLS_SHA256=$(sha256sum "$archive" | cut -d' ' -f1)"
+            echo "NLA_TOOLS_BYTES=$(stat -c%s "$archive")"
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              echo "NLA_TOOLS_URL=https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/NarutoLauncher-tools-linux-x64-v${version}.tar.xz"
+            else
+              echo "NLA_TOOLS_URL="
+            fi
+          } >> "$GITHUB_ENV"
 
       - name: Build SDL2 statically
         shell: pwsh
@@ -233,6 +267,9 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DSDL2_DIR="$SDL2_DIR"
           -DNLA_VERSION="${{ steps.version.outputs.value }}"
+          -DNLA_TOOLS_URL="$NLA_TOOLS_URL"
+          -DNLA_TOOLS_SHA256="$NLA_TOOLS_SHA256"
+          -DNLA_TOOLS_BYTES="$NLA_TOOLS_BYTES"
 
       - name: Build
         # update_test is a ctest case of its own, so it has to exist before ctest runs.
@@ -271,7 +308,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
-          path: launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+          # The launcher, and the tool archive a release publishes beside it.
+          path: |
+            launcher/build-ci/NarutoLauncher-Linux-x64-*.tar.xz
+            ${{ runner.temp }}/tool-stage/archive/NarutoLauncher-tools-linux-x64-*.tar.xz
           if-no-files-found: error
 
   windows:
