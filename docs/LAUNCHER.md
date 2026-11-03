@@ -158,7 +158,10 @@ nothing else has to be installed for it to start.
   everywhere). On Windows, when the build tools are nowhere to be found, the launcher offers
   to fetch them itself: it downloads the archive pinned when it was built, checks it against
   the pinned SHA-256, and unpacks it into `tools/` — the prompt that appears when a build is
-  asked for without them.
+  asked for without them. A folder it fetched is stamped with that digest in
+  `tools/.nla-tools`, and a launcher that pins a different archive fetches the tools again
+  before the next build — an update replaces the launcher and `gcn-recomp/` but never the
+  tools, so that is what keeps the two in step.
 
 Drag a disc image or a project folder onto the window, or click a cover. A package carries no
 game project, so the covers are always shown and the first game chosen sets its folder up
@@ -213,3 +216,15 @@ downloads and still matches its digest.
 `--version` prints the version the launcher was built at — the one it compares a release
 against — and exits. The release checks read it to confirm a download reports the version the
 tag names.
+
+## Known issues
+
+- **Under WSL, *Set up the disc…* can look like it did nothing.** The Linux launcher hands the
+  chooser to `zenity` or `kdialog` and then waits for its answer, and through WSLg that dialog
+  does not come up over the launcher's window, so there is nothing to click: the click looks
+  ignored and the built-in picker — the one a machine with neither tool gets — is never reached.
+  Renaming `zenity` (or `kdialog`) out of `PATH` puts the player on the built-in picker, which
+  works there.
+- **Where that picker opens.** It starts in the launcher's own folder, so a disc image left
+  beside the launcher is the first thing it lists: with no chooser installed, dropping the image
+  in that folder saves browsing for it.

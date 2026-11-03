@@ -230,6 +230,47 @@ bool tools_package_available() {
 #endif
 }
 
+// Nothing is pinned in a branch build, or in a launcher with no archive behind it, and then no
+// folder is out of date. A marker with no text is a folder no build recorded, which
+// tools_package_stale() judges by its shape rather than by this.
+bool tools_marker_current(std::wstring_view marker, std::wstring_view pinned) {
+    if (pinned.empty()) return true;
+    if (marker == kToolsMarkerBundled) return true;
+    return !marker.empty() && to_lower(std::wstring(marker)) == to_lower(std::wstring(pinned));
+}
+
+std::wstring read_tools_marker(const fs::path& tools_dir) {
+    std::error_code ec;
+    fs::path path = tools_dir / kToolsMarkerName;
+    if (!fs::is_regular_file(path, ec)) return {};
+    return trim(read_text_file(path));
+}
+
+std::wstring tools_marker() { return read_tools_marker(launcher_tools_dir()); }
+
+// What either packager's archive unpacks: build-release.ps1's tools\ and
+// build-release-linux.sh's. The Linux launcher tarball carries tools/sdl2 and the two scripts
+// with no toolchain in it, and a folder of that shape is not one to replace.
+bool tools_holds_toolchain(const fs::path& tools_dir) {
+    for (const wchar_t* entry : {L"cmake/bin/cmake.exe", L"cmake/bin/cmake",
+                                 L"ninja/ninja.exe", L"ninja/ninja", L"mingw64/bin/g++.exe",
+                                 L"zig", L"python/python.exe"}) {
+        std::error_code ec;
+        if (fs::exists(tools_dir / entry, ec)) return true;
+    }
+    return false;
+}
+
+bool tools_package_stale() {
+    if (!tools_package_available()) return false;
+    if (tools_marker_current(tools_marker(), widen(kToolsSha256))) return false;
+    // A folder with no marker is one no launcher of this version fetched. It is replaced when
+    // it holds a toolchain the archives unpack - the install v1.7.0 left - and left alone when
+    // it does not: a machine building with its own cmake and gcc has nothing to replace, and
+    // neither has a Linux copy whose tools\ holds only the SDL2 prefix and the scripts.
+    return tools_holds_toolchain(launcher_tools_dir());
+}
+
 std::wstring tools_package_size() {
     if (kToolsBytes == 0) return {};
     return format(L"%llu MB", (kToolsBytes + (1 << 20) - 1) >> 20);
@@ -279,6 +320,12 @@ std::vector<Task> tools_package_tasks() {
                          }
                          int code = job.run_process(
                              tar, {L"-xf", archive.wstring(), L"-C", exe_dir()}, home_dir());
+                         if (code == 0) {
+                             // Which archive this folder came from, so a launcher that pins a
+                             // newer one replaces it instead of building with it.
+                             write_text_file(launcher_tools_dir() / kToolsMarkerName,
+                                             narrow(widen(kToolsSha256)));
+                         }
                          std::error_code ec;
                          fs::remove(archive, ec);
                          return code;

@@ -353,6 +353,13 @@ std::vector<Task> App::build_tasks() {
     // without one: dtk makes it from the DOL the launcher extracted. dtk resolves the paths
     // in its config against the working directory and misreads a Windows drive letter, so
     // everything is relative to the game folder, which is where it runs.
+    //
+    // Tools from an archive this launcher no longer pins are fetched again before that,
+    // without asking: an update replaces the launcher and gcn-recomp and never tools\, so a
+    // folder left by a release that shipped a tool which could not run would otherwise be
+    // built with for the life of the install. dtk comes out of that folder too.
+    if (tools_package_stale()) tasks = tools_package_tasks();
+
     std::error_code symbols_ec;
     if (!fs::is_regular_file(state_.project()->analysis_symbols(), symbols_ec)) {
         auto game_dir = state_.project()->game_dir();

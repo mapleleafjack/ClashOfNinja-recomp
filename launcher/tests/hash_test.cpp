@@ -147,6 +147,58 @@ void checking_an_archive() {
     fs::remove_all(nla::temp_dir() / L"nla-hash-test", ec);
 }
 
+// Which tools folder a launcher may build with. An update replaces the launcher and
+// gcn-recomp and leaves tools\ alone, so this is the one thing that notices a folder fetched
+// from an archive that has since been replaced - v1.7.0 shipped one with a Chocolatey shim in
+// place of ninja.exe, which no amount of retrying could fix.
+void the_tools_marker() {
+    const std::wstring digest(64, L'a');
+    check(nla::tools_marker_current(digest, digest), "a folder from the pinned archive is current");
+    check(nla::tools_marker_current(std::wstring(64, L'B'), std::wstring(64, L'b')),
+          "and the digest is compared without regard to case");
+    check(!nla::tools_marker_current(std::wstring(64, L'c'), digest),
+          "one from another archive is not");
+    check(!nla::tools_marker_current(L"", digest),
+          "a folder with no marker is not, so an older install is replaced");
+    check(nla::tools_marker_current(nla::kToolsMarkerBundled, digest),
+          "the copies a full release ships are never downloaded over");
+    // A launcher with no archive pinned - a branch build, or a -Lean release nothing published
+    // - has nothing to compare, and must not report its tools as out of date.
+    check(nla::tools_marker_current(L"", L""), "nothing pinned means nothing to compare");
+
+    // The file the verdict is made from, round-tripped the way a download leaves it.
+    const fs::path tools = nla::temp_dir() / L"nla-hash-test" / L"tools";
+    std::error_code ec;
+    fs::create_directories(tools, ec);
+    check(nla::read_tools_marker(tools).empty(), "a tools folder with no marker has none");
+    nla::write_text_file(tools / nla::kToolsMarkerName, "abc123\n");
+    check(nla::read_tools_marker(tools) == L"abc123",
+          "a written marker reads back, minus its newline");
+    nla::write_text_file(tools / nla::kToolsMarkerName, "");
+    check(nla::read_tools_marker(tools).empty(),
+          "and an empty marker reads as none, so that folder is replaced rather than trusted");
+
+    // What a marker-less folder is judged by. An install v1.7.0 left is shaped like the
+    // archive; a Linux copy, which carries only the SDL2 prefix and two scripts, is not, and a
+    // machine with its own toolchain has no such folder at all. Replacing one of those would
+    // download a toolchain over tools that already work.
+    fs::remove_all(tools, ec);
+    fs::create_directories(tools, ec);
+    check(!nla::tools_holds_toolchain(tools), "an empty tools folder holds no toolchain");
+    fs::create_directories(tools / L"sdl2", ec);
+    nla::write_text_file(tools / L"extract_disc.py", "# stand-in\n");
+    check(!nla::tools_holds_toolchain(tools),
+          "nor does the Linux launcher's, which has the SDL2 prefix and the scripts only");
+    check(!nla::tools_holds_toolchain(tools / L"absent"), "a folder that is not there has none");
+    fs::create_directories(tools / L"cmake" / L"bin", ec);
+    nla::write_text_file(tools / L"cmake" / L"bin" / L"cmake.exe", "stand-in\n");
+    check(nla::tools_holds_toolchain(tools), "the archive's cmake makes it one to replace");
+    fs::remove_all(tools / L"cmake", ec);
+    fs::create_directories(tools / L"zig", ec);
+    check(nla::tools_holds_toolchain(tools), "so does the Linux archive's zig");
+    fs::remove_all(nla::temp_dir() / L"nla-hash-test", ec);
+}
+
 int run() {
     sha256_vectors();
     the_block_boundary();
@@ -154,6 +206,7 @@ int run() {
     sha1_vectors();
     hashing_a_file();
     checking_an_archive();
+    the_tools_marker();
     std::printf("%s\n", failures ? "some checks failed" : "all checks passed");
     return failures ? 1 : 0;
 }

@@ -88,6 +88,10 @@ and no toolchain, and fetches the pinned dtk itself the first time it needs a sy
 full release adds `tools\cmake`, `tools\ninja`, `tools\mingw64`, `tools\python`, `tools\sdl2`,
 `tools\nodtool` and `tools\dtk`.
 
+The tools come from this machine, so `build-release.ps1` will not copy a Chocolatey shim: it
+has the tool's name and finds nothing once it is moved out of its install, which is how a
+release shipped a `ninja.exe` that could not run. Each tool is run once before it is packed.
+
 `-Split` writes `launcher/dist/NarutoLauncher-tools-windows-x64-v<Version>.zip` and prints its
 SHA-256 and size. Pass those three to CMake when the launcher is configured, so the build can
 only ever fetch what it was built against:

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "jobs.h"
@@ -19,6 +21,27 @@ bool tools_package_available();
 
 // The pinned size in the form the button shows, e.g. "187 MB"; empty when unknown.
 std::wstring tools_package_size();
+
+// Which archive the tools\ folder came from, kept in tools\.nla-tools: the digest of the
+// archive it was unpacked from, or "bundled" for the copies that shipped beside the launcher.
+//
+// A launcher replaces tools\ it did not fetch from the archive it pins. An update replaces the
+// launcher and gcn-recomp and never tools\, so without this a folder fetched from an archive
+// that turned out to be broken would be built with for the life of the install - which is what
+// v1.7.0 shipped, with a Chocolatey shim in place of ninja.exe.
+constexpr const wchar_t* kToolsMarkerName = L".nla-tools";
+constexpr const wchar_t* kToolsMarkerBundled = L"bundled";
+bool tools_marker_current(std::wstring_view marker, std::wstring_view pinned);
+
+// The marker a tools folder holds: its text, empty when the folder has none.
+std::wstring read_tools_marker(const fs::path& tools_dir);
+// The same, for the tools\ beside the launcher.
+std::wstring tools_marker();
+// Whether a tools folder is shaped like one these archives unpack - cmake/, ninja/, zig/ and
+// the rest - rather than a folder holding something else.
+bool tools_holds_toolchain(const fs::path& tools_dir);
+// Whether the tools beside the launcher came from an archive other than the pinned one.
+bool tools_package_stale();
 
 // Download, check and unpack that archive into tools\ beside the launcher.
 std::vector<Task> tools_package_tasks();

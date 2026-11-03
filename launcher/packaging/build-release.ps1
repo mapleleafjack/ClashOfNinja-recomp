@@ -64,19 +64,58 @@ function Find-Tool([string]$name) {
     return $null
 }
 
+# A Chocolatey shim is a launcher for a file inside the Chocolatey install, not the tool: put
+# one in a release and it finds nothing beside it, so the first build dies at "Cannot find file
+# at '..\lib\ninja\tools\ninja.exe'". Its version information names it, which is how a copy
+# that looks like the tool is told apart from the tool.
+function Test-Shim([string]$exe) {
+    $info = (Get-Item $exe -ErrorAction SilentlyContinue).VersionInfo
+    if (-not $info) { return $false }
+    return ($info.ProductName -like '*Shim*') -or ($info.FileDescription -like '*Shim*')
+}
+
+# The real tool, wherever this machine keeps it: the package manager's own copy first, then
+# the binary behind a Chocolatey PATH entry, then PATH itself. A shim is never the answer.
+function Find-RealTool([string]$name, [string]$packageFilter) {
+    $candidates = @()
+    $candidates += Find-PackageTool $name $packageFilter
+    $choco = if ($env:ChocolateyInstall) { $env:ChocolateyInstall } else { 'C:\ProgramData\chocolatey' }
+    $lib = Join-Path $choco 'lib'
+    if (Test-Path $lib) {
+        $candidates += @(Get-ChildItem $lib -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "tools\$name" } |
+            Where-Object { Test-Path $_ })
+    }
+    $candidates += @(Get-Command $name -All -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Source)
+    foreach ($candidate in $candidates) {
+        if (-not $candidate) { continue }
+        if (Test-Shim $candidate) {
+            Write-Host "skipping the shim at $candidate"
+            continue
+        }
+        return $candidate
+    }
+    return $null
+}
+
 # Prefer the dedicated CMake and Ninja packages: MinGW ships its own copies, and its
 # CMake only works with MinGW's share directory, which a release does not carry twice.
-$cmake = Find-PackageTool 'cmake.exe' 'Kitware.CMake_*'
-if (-not $cmake) { $cmake = Find-Tool 'cmake.exe' }
-$ninja = Find-PackageTool 'ninja.exe' 'Ninja-build.Ninja_*'
-if (-not $ninja) { $ninja = Find-Tool 'ninja.exe' }
-$gxx = Find-PackageTool 'g++.exe' 'BrechtSanders.WinLibs*'
-if (-not $gxx) { $gxx = Find-PackageTool 'clang++.exe' 'LLVM*' }
-if (-not $gxx) { $gxx = Find-Tool 'g++.exe' }
+$cmake = Find-RealTool 'cmake.exe' 'Kitware.CMake_*'
+$ninja = Find-RealTool 'ninja.exe' 'Ninja-build.Ninja_*'
+$gxx = Find-RealTool 'g++.exe' 'BrechtSanders.WinLibs*'
+if (-not $gxx) { $gxx = Find-RealTool 'clang++.exe' 'LLVM*' }
 if (-not $cmake) { throw 'cmake was not found. Install it with: winget install Kitware.CMake' }
 if (-not $ninja) { throw 'ninja was not found. Install it with: winget install Ninja-build.Ninja' }
 if (-not $gxx) {
     throw 'No C++ compiler was found. Install MinGW-w64: winget install BrechtSanders.WinLibs.POSIX.UCRT'
+}
+
+# The archive is what builds on a player's machine, so a copy that cannot run here cannot be
+# shipped: this is where a shim, a quarantined file or a half-copied one is caught.
+foreach ($tool in @($cmake, $ninja, $gxx)) {
+    $null = & $tool --version 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "$tool does not run, so a release cannot carry it" }
 }
 
 Write-Host "cmake:    $cmake"
@@ -244,6 +283,15 @@ if (-not $Lean) {
         }
     } else {
         Copy-Item $dtk (Join-Path $dtkOut 'dtk.exe')
+    }
+
+    # A launcher replaces a tools\ folder whose marker does not match the archive it pins, so
+    # the folder is only ever as good as its last download. These copies came with this
+    # release rather than from a download, and are marked as such: no player is asked to
+    # re-fetch what is already in front of them. The tools archive itself gets no marker - the
+    # launcher writes its digest there once it has unpacked it.
+    if (-not $Split) {
+        Set-Content -Path (Join-Path $tools '.nla-tools') -Value 'bundled' -NoNewline
     }
 }
 

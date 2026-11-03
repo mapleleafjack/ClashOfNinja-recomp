@@ -482,8 +482,15 @@ jobs:
             -ArgumentList '--fetch-tools', (Join-Path $dir 'fetch.log') -Wait -PassThru
           Get-Content (Join-Path $dir 'fetch.log')
           if ($process.ExitCode -ne 0) { throw "fetching the tools failed ($($process.ExitCode))" }
-          if (-not (Test-Path (Join-Path $dir 'tools/mingw64/bin/g++.exe'))) {
-            throw 'the tools archive did not unpack'
+          foreach ($relative in 'tools\cmake\bin\cmake.exe',
+                                'tools\ninja\ninja.exe',
+                                'tools\mingw64\bin\g++.exe') {
+            $tool = Join-Path $dir $relative
+            if (-not (Test-Path $tool)) { throw "the tools archive is missing $relative" }
+            # Present is not the same as usable: v1.7.0 shipped a Chocolatey shim in
+            # tools\ninja, which finds nothing once it is moved out of its install.
+            & $tool --version
+            if ($LASTEXITCODE -ne 0) { throw "$relative --version failed ($LASTEXITCODE)" }
           }
 
       - name: Pin the published URL

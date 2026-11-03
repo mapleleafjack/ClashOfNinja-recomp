@@ -206,6 +206,13 @@ try {
                 Fail "the release carries a toolchain but not $want, which a first build needs"
             }
         }
+        # Present is not the same as usable: a Chocolatey shim has the tool's name and finds
+        # nothing once it is copied out of its install.
+        foreach ($want in 'tools\cmake\bin\cmake.exe', 'tools\ninja\ninja.exe', 'tools\mingw64\bin\g++.exe') {
+            $tool = Join-Path $stage $want
+            $null = & $tool --version 2>&1
+            if ($LASTEXITCODE -ne 0) { Fail "$want does not run from the release folder" }
+        }
         Say "the folder carries the toolchain"
     } else {
         Say "no toolchain in the folder: the launcher downloads the pinned tools archive on first use"
