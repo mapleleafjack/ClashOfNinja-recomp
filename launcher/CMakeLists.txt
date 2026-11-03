@@ -757,6 +757,28 @@ else()
 endif()
 add_test(NAME hash-logic COMMAND $<TARGET_FILE:hash_test>)
 
+# The host thread a guest thread runs on, and how it is given up: the runtime's own
+# platform.cpp, because the bug this covers was in that file's thread exit - it unwound the
+# thread, which crashes a Zig-built binary whose personality routine comes from its own
+# libc++abi. A host compiler cannot reproduce the mismatch, so the test checks the path: the
+# exit does not return, the process carries on, and the next thread still works.
+add_executable(thread_exit_test
+  tests/thread_exit_test.cpp
+  ../gcn-recomp/runtime/platform.cpp
+)
+target_include_directories(thread_exit_test PRIVATE ../gcn-recomp/runtime)
+if(WIN32)
+  target_compile_definitions(thread_exit_test PRIVATE
+    UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(thread_exit_test PRIVATE dbghelp)
+  if(MINGW)
+    target_link_options(thread_exit_test PRIVATE -static -municode)
+  endif()
+else()
+  target_link_libraries(thread_exit_test PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+endif()
+add_test(NAME thread-exit-logic COMMAND $<TARGET_FILE:thread_exit_test>)
+
 # Which disc a boot accepts: a patch is a disc of its own and may rename the ID it carries,
 # so the check is made against the tree the patch decodes from. The runtime has no test
 # project of its own, and this one needs nothing but its header.

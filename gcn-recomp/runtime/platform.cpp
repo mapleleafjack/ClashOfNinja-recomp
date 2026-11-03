@@ -1,5 +1,7 @@
 // Host OS services: POSIX and Windows implementations of platform.h.
 #include "platform.h"
+#include "compat.h"
+#include <csetjmp>
 #include <cctype>
 #include <chrono>
 #include <ctime>
@@ -338,18 +340,53 @@ void plat_install_crash_handlers(void (*on_interrupt)(), void (*on_fault)(const 
     sigaction(SIGBUS, &sa, nullptr);
 }
 
+struct ThreadStart {
+    void* (*fn)(void*);
+    void* arg;
+};
+
+// Where a guest thread that gives up its host thread lands, set by thread_entry below.
+static thread_local jmp_buf* t_exit_jump = nullptr;
+
+static void* thread_entry(void* p) {
+    auto* ts = (ThreadStart*)p;
+    jmp_buf jb;
+    t_exit_jump = &jb;
+    if (GCN_SETJMP(jb) == 0) ts->fn(ts->arg);
+    t_exit_jump = nullptr;
+    delete ts;
+    return nullptr;
+}
+
 bool plat_thread_start(void* (*fn)(void*), void* arg, size_t stack_size) {
+    // The entry point is this trampoline rather than `fn`, so plat_thread_exit has a frame of
+    // ours to jump back to. See it for why that matters.
+    auto* ts = new ThreadStart{fn, arg};
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, stack_size);
     pthread_t th;
-    int rc = pthread_create(&th, &attr, fn, arg);
+    int rc = pthread_create(&th, &attr, thread_entry, ts);
     pthread_attr_destroy(&attr);
-    if (rc != 0) fprintf(stderr, "pthread_create: %s (a %zu MB stack)\n", strerror(rc), stack_size >> 20);
+    if (rc == 0) pthread_detach(th);
+    if (rc != 0) {
+        delete ts;
+        fprintf(stderr, "pthread_create: %s (a %zu MB stack)\n", strerror(rc), stack_size >> 20);
+    }
     return rc == 0;
 }
 
 void plat_thread_exit() {
+    // pthread_exit() unwinds the thread to run its cleanup handlers, and glibc forces that
+    // unwind through libgcc_s while the personality routine that answers it comes from the
+    // binary. In a Zig-built copy - the Linux tool archive - those are two different
+    // implementations: libc++abi's __gxx_personality_v0 reads libgcc's context with its own
+    // _Unwind_GetLanguageSpecificData and jumps to the stack address it gets back, which is a
+    // SIGSEGV four seconds into the game. Jumping straight to the thread's entry skips the
+    // unwind entirely and leaves the thread the way ExitThread does on Windows, which is what
+    // giving up a guest thread wants anyway: no destructors, no cleanup.
+    if (t_exit_jump) GCN_LONGJMP(*t_exit_jump, 1);
+    // A thread this file did not start has no jump to take, and pthread_exit is all there is.
     pthread_exit(nullptr);
     for (;;) {}  // not reached
 }
