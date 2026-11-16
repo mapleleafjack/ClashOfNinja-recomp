@@ -9,6 +9,10 @@
 #include "util.h"
 
 #include <chrono>
+#include <cstdio>
+#include <future>
+#include <memory>
+#include <mutex>
 #include <thread>
 
 namespace nla {
@@ -313,6 +317,137 @@ void App::begin_setup(const fs::path& image, bool then_launch) {
                      [this, image, then_launch] { begin_setup(image, then_launch); },
                           L"Use a different image", [this] { choose_image(); });
                          }});
+}
+
+// The setup the Launch button runs (convert, extract, build), without a window: for a
+// launcher that passes the player's disc image and reads the progress lines.
+int App::prepare(const fs::path& image) {
+    auto fail = [](const std::wstring& text) {
+        std::fprintf(stderr, "%s\n", narrow(text).c_str());
+        return 1;
+    };
+    std::error_code ec;
+    if (!fs::is_regular_file(image, ec)) return fail(L"No such disc image: " + image.wstring());
+    auto root = Project::locate();
+    if (!root) return fail(L"The launcher's folder could not be found");
+    state_.set_project(*root, Project::default_game());
+    if (!state_.project()->complete()) {
+        std::wstring error;
+        if (!Project::create(*root, &error)) return fail(error);
+        state_.set_project(*root, Project::default_game());
+    }
+
+    fs::path disc_dir = state_.project()->disc();
+    std::wstring disc_id = state_.project()->disc_id();
+    std::wstring expected = state_.project()->expected_sha1();
+    bool convert = needs_nodtool(image);
+    auto converted = std::make_shared<std::wstring>();
+    std::vector<Task> tasks;
+
+    if (convert) {
+        tasks.push_back({
+            L"Converting the image to ISO…",
+            [this, image, converted](Job& job) -> int {
+                auto nodtool = find_tool(L"nodtool" + wstring(exe_suffix()));
+                if (nodtool.empty()) {
+                    job.log(L"[launcher] this image needs nodtool, which was not found\n");
+                    return 127;
+                }
+                fs::path output = fs::temp_directory_path() / L"naruto-launcher" / L"disc.iso";
+                std::error_code ec;
+                fs::create_directories(output.parent_path(), ec);
+                fs::remove(output, ec);
+                int code = job.run_process(nodtool, {L"convert", image.wstring(),
+                                                     output.wstring()},
+                                           state_.project() ? state_.project()->root() : fs::path());
+                if (code == 0) *converted = output.wstring();
+                return code;
+            }});
+    }
+    tasks.push_back({
+        L"Extracting the disc…",
+        [image, converted, convert, disc_dir, disc_id, expected](Job& job) -> int {
+            fs::path source = convert ? fs::path(*converted) : image;
+            if (source.empty()) {
+                job.log(L"[launcher] the converted image is missing\n");
+                return 1;
+            }
+            ExtractRequest request{source, disc_dir, disc_id, expected};
+            auto progress = [&job](int percent, const std::wstring& stage_text) {
+                job.progress(percent);
+                job.stage(stage_text);
+            };
+            auto outcome = extract_disc(request, progress, job.cancel_flag());
+            if (!outcome.ok) {
+                job.log(L"[launcher] " + outcome.error + L"\n");
+                return 1;
+            }
+            if (convert) {
+                std::error_code remove_ec;
+                fs::remove(source, remove_ec);
+            }
+            return 0;
+        }});
+
+    auto build = build_tasks();
+    if (build.empty()) return fail(L"cmake and ninja were not found, so the game cannot be built");
+    for (auto& task : build) tasks.push_back(std::move(task));
+
+    std::mutex mutex;
+    std::wstring stage = L"Starting";
+    std::wstring last_line;
+    double fraction = 0.0;
+    int printed = -1;
+    auto emit = [&] {
+        printed = static_cast<int>(fraction * 100);
+        std::printf("progress %.2f %s\n", fraction, narrow(stage).c_str());
+        std::fflush(stdout);
+    };
+    auto bump = [&](double at) {
+        if (at > fraction) fraction = at;
+    };
+    auto finished = std::make_shared<std::promise<int>>();
+    auto result = finished->get_future();
+    job_.start(
+        std::move(tasks),
+        [&](const std::wstring& text) {
+            std::lock_guard<std::mutex> lock(mutex);
+            size_t end = text.find_last_not_of(L"\r\n");
+            if (end == std::wstring::npos) return;
+            size_t begin = text.find_last_of(L"\r\n", end);
+            begin = begin == std::wstring::npos ? 0 : begin + 1;
+            std::wstring line = text.substr(begin, end - begin + 1);
+            if (line.rfind(L"[launcher] ", 0) == 0) line.erase(0, 11);
+            last_line = line;
+        },
+        [&](const std::wstring& text) {
+            std::lock_guard<std::mutex> lock(mutex);
+            stage = text;
+            if (text.rfind(L"Writing ", 0) == 0) return;
+            if (text.rfind(L"Fetching dtk", 0) == 0) bump(0.32);
+            else if (text.rfind(L"Reading the disc's symbols", 0) == 0) bump(0.35);
+            else if (text.rfind(L"Configuring CMake", 0) == 0) bump(0.40);
+            else if (text.rfind(L"Compiling the game", 0) == 0) bump(0.45);
+            emit();
+        },
+        [&](int percent) {
+            std::lock_guard<std::mutex> lock(mutex);
+            bump(0.3 * percent / 100.0);
+            if (static_cast<int>(fraction * 100) != printed) emit();
+        },
+        [finished](int code) { finished->set_value(code); });
+    int code = result.get();
+    if (code != 0) {
+        std::lock_guard<std::mutex> lock(mutex);
+        return fail(last_line.empty() ? format(L"setup failed (status %d)", code) : last_line);
+    }
+    // What the mods' codes were when this build went in, as a finished build records it.
+    fs::create_directories(state_.project()->build_dir(), ec);
+    write_text_file(state_.project()->code_stamp(),
+                    narrow(read_text_file(state_.project()->disc() / L"mods.code")));
+    std::printf("progress 1.00 Ready\n");
+    std::fflush(stdout);
+    return 0;
 }
 
 std::vector<Task> App::build_tasks() {

@@ -216,6 +216,7 @@ mkdir -p "$stage/tools" "$out"
 
 cp "$exe" "$stage/NarutoLauncher"
 cp "$launcher/mods.json" "$stage/"
+cp "$project/recomplauncher.json" "$stage/"
 cp -a "$project/gcn-recomp" "$stage/gcn-recomp"
 cp "$project/tools/extract_disc.py" "$project/tools/setup.sh" "$stage/tools/"
 

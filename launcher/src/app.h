@@ -53,6 +53,10 @@ class App {
     // A window size may be given, so the layout can be checked as a large window draws it.
     int render_to(const std::string& path, float scale, const std::string& view = "main",
                   int window_width = 0, int window_height = 0);
+    // Sets the first game up without a window: the same disc extraction and build the
+    // Launch button runs, from the disc image given. Prints "progress N text" lines, and
+    // returns 0 when the game is built, or 1 with one line on stderr.
+    int prepare(const std::filesystem::path& image);
 
     // The width of the panel a message is shown in. A message written for it can be cut to
     // fit before it is stored, which is how a long path stays on one line.

@@ -66,6 +66,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         LocalFree(argv);
         return ok ? 0 : 1;
     }
+    // Sets the first game up from the player's disc without a window, for RecompLauncher.
+    if (argv && argc >= 4 && wcscmp(argv[1], L"--prepare") == 0 &&
+        wcscmp(argv[2], L"--game") == 0) {
+        nla::App app;
+        int code = app.prepare(std::filesystem::path(argv[3]));
+        LocalFree(argv);
+        return code;
+    }
     if (argv) LocalFree(argv);
     nla::App app;
     return app.create() ? app.run() : 1;
@@ -95,6 +103,12 @@ int main(int argc, char** argv) {
         bool ok = nla::Project::create(std::filesystem::path(argv[2]), &error);
         if (!ok) std::fprintf(stderr, "%s\n", nla::narrow(error).c_str());
         return ok ? 0 : 1;
+    }
+    // Sets the first game up from the player's disc without a window, for RecompLauncher.
+    if (argc >= 4 && std::strcmp(argv[1], "--prepare") == 0 &&
+        std::strcmp(argv[2], "--game") == 0) {
+        nla::App app;
+        return app.prepare(std::filesystem::path(argv[3]));
     }
     nla::App app;
     return app.create() ? app.run() : 1;

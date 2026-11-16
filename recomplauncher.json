@@ -1,0 +1,37 @@
+{
+    "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+    "format": 1,
+    "repo": "mapleleafjack/ClashOfNinja-recomp",
+    "game": {
+        "kind": "iso",
+        "label": "Your GameCube disc image of Naruto: Clash of Ninja (USA, disc ID GNREDA). ISO, CISO, RVZ and the other formats the launcher reads are fine.",
+        "check": {
+            "ids": [
+                "GNREDA"
+            ]
+        }
+    },
+    "prepare": {
+        "program": [
+            "NarutoLauncher.exe",
+            "NarutoLauncher"
+        ],
+        "args": [
+            "--prepare",
+            "--game",
+            "{game}"
+        ],
+        "label": "Extracting your disc and building the game",
+        "timeout": 3600
+    },
+    "start": {
+        "program": [
+            "naruto/build/naruto.exe",
+            "naruto/build/naruto"
+        ],
+        "args": [
+            "{install}/naruto/rom/disc",
+            "--controls={install}/naruto/controls.txt"
+        ]
+    }
+}

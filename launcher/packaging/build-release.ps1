@@ -152,6 +152,8 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path $exe) { Copy-Item $exe (Join-Path $outDir 'NarutoLauncher.exe') }
 # The mods the launcher knows before any is downloaded, and where each one comes from.
 Copy-Item (Join-Path $launcher 'mods.json') (Join-Path $outDir 'mods.json')
+# The file RecompLauncher reads to set the game up and start it.
+Copy-Item (Join-Path $project 'recomplauncher.json') (Join-Path $outDir 'recomplauncher.json')
 
 if (-not $Lean) {
     $tools = Join-Path $outDir 'tools'

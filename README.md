@@ -1,5 +1,7 @@
 # Naruto: Clash of Ninja — static recompilation
 
+<a href="https://recomplauncher.com/game/clashofninja-recomp"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
+
 [![Build](https://github.com/mapleleafjack/ClashOfNinja-recomp/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/mapleleafjack/ClashOfNinja-recomp/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/mapleleafjack/ClashOfNinja-recomp?style=flat-square&label=release)](https://github.com/mapleleafjack/ClashOfNinja-recomp/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
